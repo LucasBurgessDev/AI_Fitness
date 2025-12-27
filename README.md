@@ -3,7 +3,9 @@
 ![GitHub stars](https://img.shields.io/github/stars/johnson4601/Fitness-Bot-V1?style=social)
 
 
-![GitHub all releases](https://img.shields.io/github/downloads/johnson4601/Fitness-Bot-V1/total)
+Welcome, This is a project that i have been thinking about for a while, giving access to my Gemini Gem Personnel trainer. with these python tools i have automated the information pull into a google drive folder so the Gem has data no older than an hour, allowing me to ask questions about my data and training plans. 
+
+I use the HEVY app, I have added a complete list of the exercises on the app to my gem for creation of workout routines, the GEM will create a JSON that is pasted into the HEVY_Upload python that will upload the plan straight to my account!    
 
 
 
@@ -12,7 +14,8 @@
 AI Fitness Data Pipeline (Garmin + Hevy)
 This project creates a "Cyber-Physical System" for your fitness data. It automatically pulls your biometrics (Garmin) and weightlifting data (Hevy), aggregates them into CSV files, and syncs them to a location of your choice (like Google Drive) for analysis by AI tools like Gemini or ChatGPT.
 
-🚀 Features
+#🚀 Features
+
 Garmin Biometrics: Tracks Weight, Sleep Score, HRV, Stress, and Body Battery hourly.
 
 Garmin Runs: detailed run analysis including Splits, Pace, HR Zones, and Elevation.
@@ -23,12 +26,13 @@ Smart Sync: Checks for existing data to prevent duplicates; safe to run hourly.
 
 Secure: Uses environment variables to keep your passwords safe.
 
-🛠️ Prerequisites
-Before you start, you need three things installed on your computer:
-
-Python 3.12+:
+#🛠️ Prerequisites
 
 Hevy, a pro membership is required to access to the developer API.
+
+Before you start, you need three things installed on your computer:
+
+Python 3.12+: It would not work on the new version for me.
 
 Crucial: When installing, check the box "Add Python to PATH" at the bottom of the installer.
 
@@ -36,7 +40,8 @@ Google Drive for Desktop (Optional): If you want the files to automatically sync
 
 Git (Optional): To easily download updates.
 
-📥 Installation
+#📥 Installation
+
 1. Download the Code
 Open your terminal (PowerShell or Command Prompt) and run:
 
@@ -52,8 +57,10 @@ We need to install the Python libraries that talk to Garmin and Hevy. Run this c
 PowerShell
 
 pip install -r requirements.txt
-⚙️ Configuration (The Important Part)
-We do not hardcode passwords. We use a special secure file.
+
+#⚙️ Configuration (The Important Part)
+
+We do not hardcode passwords. We use a special file.
 
 Find the file named .env.example in the folder.
 
@@ -80,7 +87,8 @@ SAVE_PATH=G:\My Drive\Gemini Gems\Personal trainer
 Example for local users:
 SAVE_PATH=C:\Users\User\Documents\FitnessData
 
-🏃‍♂️ First Run & Authentication
+#🏃‍♂️ First Run & Authentication
+
 1. Login to Garmin
 Garmin requires a one-time secure login to generate session tokens. Run this command:
 
@@ -101,7 +109,8 @@ Pull run history (Since 2023)
 python garmin_runs_daily.py
 Check your SAVE_PATH folder. You should see hevy_stats.csv and garmin_runs.csv full of data.
 
-🤖 Automation (Set it and Forget it)
+#🤖 Automation (Set it and Forget it)
+
 To have this run automatically every hour, we use Windows Task Scheduler.
 
 The Easy Way (PowerShell Script)
@@ -123,7 +132,8 @@ Argument: hevy_pull.py
 
 TaskName: "Hevy Daily Pull"
 
-❓ Troubleshooting
+#❓ Troubleshooting
+
 "python is not recognized" You didn't check "Add to PATH" when installing Python. Re-install Python and check that box.
 
 Garmin Login Fails Garmin security is strict. If direct_login.py fails:
@@ -139,7 +149,8 @@ Files not updating Check the logs. Open the .env file and ensure SAVE_PATH point
 Disclaimer: This tool is for personal use. Be mindful of API rate limits. Running scripts more frequently than once every 15-30 minutes may get your IP temporarily restricted by Garmin.
 
 
-🧠 AI Persona (Gemini Gem / ChatGPT) EXAMPLE
+#🧠 AI Persona (Gemini Gem / ChatGPT) EXAMPLE
+
 Once your data is syncing to Google Drive, use this prompt to configure your AI Personal Trainer.
 
 Instructions:
