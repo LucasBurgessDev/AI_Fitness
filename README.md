@@ -1,3 +1,14 @@
+![Visitors](https://api.visitorbadge.io/api/visitors?path=johnson4601/Fitness-Bot-V1&label=Visitors&countColor=%2337d67a)
+
+![GitHub stars](https://img.shields.io/github/stars/johnson4601/Fitness-Bot-V1?style=social)
+
+
+![GitHub all releases](https://img.shields.io/github/downloads/johnson4601/Fitness-Bot-V1/total)
+
+
+
+
+
 AI Fitness Data Pipeline (Garmin + Hevy)
 This project creates a "Cyber-Physical System" for your fitness data. It automatically pulls your biometrics (Garmin) and weightlifting data (Hevy), aggregates them into CSV files, and syncs them to a location of your choice (like Google Drive) for analysis by AI tools like Gemini or ChatGPT.
 
@@ -15,7 +26,9 @@ Secure: Uses environment variables to keep your passwords safe.
 🛠️ Prerequisites
 Before you start, you need three things installed on your computer:
 
-Python 3.12+: Download Here
+Python 3.12+:
+
+Hevy, a pro membership is required to access to the developer API.
 
 Crucial: When installing, check the box "Add Python to PATH" at the bottom of the installer.
 
@@ -52,21 +65,21 @@ Open .env with Notepad.
 
 Fill in your details:
 
-Ini, TOML
 
-# Garmin Credentials
+Garmin Credentials
 GARMIN_EMAIL=your_email@example.com
 GARMIN_PASSWORD=your_password
 
-# Hevy API Key (Requires Hevy Pro)
-# Get this from: https://hevy.com/settings (Developer tab)
+Hevy API Key (Requires Hevy Pro)
+Get this from: https://hevy.com/settings (Developer tab)
 HEVY_API_KEY=your_long_api_key_here
 
-# Where should the CSV files be saved?
-# Example for Google Drive users:
+Where should the CSV files be saved?
+Example for Google Drive users:
 SAVE_PATH=G:\My Drive\Gemini Gems\Personal trainer
-# Example for local users:
-# SAVE_PATH=C:\Users\Brian\Documents\FitnessData
+Example for local users:
+SAVE_PATH=C:\Users\User\Documents\FitnessData
+
 🏃‍♂️ First Run & Authentication
 1. Login to Garmin
 Garmin requires a one-time secure login to generate session tokens. Run this command:
@@ -81,10 +94,10 @@ Let's pull all your past data so your database isn't empty.
 
 PowerShell
 
-# Pull lifting history (Since 2023)
+Pull lifting history (Since 2023)
 python hevy_history_pull.py
 
-# Pull run history (Since 2023)
+Pull run history (Since 2023)
 python garmin_runs_daily.py
 Check your SAVE_PATH folder. You should see hevy_stats.csv and garmin_runs.csv full of data.
 
