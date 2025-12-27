@@ -28,6 +28,8 @@ Before you start, you need three things installed on your computer:
 
 Python 3.12+:
 
+Hevy, a pro membership is required to access to the developer API.
+
 Crucial: When installing, check the box "Add Python to PATH" at the bottom of the installer.
 
 Google Drive for Desktop (Optional): If you want the files to automatically sync to the cloud for your AI agent.
