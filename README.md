@@ -26,7 +26,7 @@ Secure: Uses environment variables to keep your passwords safe.
 🛠️ Prerequisites
 Before you start, you need three things installed on your computer:
 
-Python 3.12+: Download Here
+Python 3.12+:
 
 Crucial: When installing, check the box "Add Python to PATH" at the bottom of the installer.
 
@@ -63,21 +63,20 @@ Open .env with Notepad.
 
 Fill in your details:
 
-Ini, TOML
 
-# Garmin Credentials
+Garmin Credentials
 GARMIN_EMAIL=your_email@example.com
 GARMIN_PASSWORD=your_password
 
-# Hevy API Key (Requires Hevy Pro)
-# Get this from: https://hevy.com/settings (Developer tab)
+Hevy API Key (Requires Hevy Pro)
+Get this from: https://hevy.com/settings (Developer tab)
 HEVY_API_KEY=your_long_api_key_here
 
-# Where should the CSV files be saved?
-# Example for Google Drive users:
+Where should the CSV files be saved?
+Example for Google Drive users:
 SAVE_PATH=G:\My Drive\Gemini Gems\Personal trainer
-# Example for local users:
-# SAVE_PATH=C:\Users\User\Documents\FitnessData
+Example for local users:
+SAVE_PATH=C:\Users\User\Documents\FitnessData
 
 🏃‍♂️ First Run & Authentication
 1. Login to Garmin
