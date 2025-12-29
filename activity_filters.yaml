@@ -1,0 +1,25 @@
+version: 1
+
+include:
+  running:
+    - running
+    - treadmill_running
+    - trail_running
+  cycling:
+    - cycling
+    - road_cycling
+    - gravel_cycling
+    - mountain_biking
+    - indoor_cycling
+    - virtual_ride
+    - spinning
+
+exclude:
+  - strength_training
+  - weightlifting
+
+behavior:
+  normalize_activity_type: true
+  default_include_groups:
+    - running
+    - cycling
