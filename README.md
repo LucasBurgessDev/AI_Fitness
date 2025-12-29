@@ -5,14 +5,11 @@
 
 Welcome, This is a project that i have been thinking about for a while, giving access to my Gemini Gem Personnel trainer. with these python tools i have automated the information pull into a google drive folder so the Gem has data no older than an hour, allowing me to ask questions about my data and training plans. 
 
-I use the HEVY app, I have added a complete list of the exercises on the app to my gem for creation of workout routines, the GEM will create a JSON that is pasted into the HEVY_Upload python that will upload the plan straight to my account!    
 
 
 
-
-
-AI Fitness Data Pipeline (Garmin + Hevy)
-This project creates a "Cyber-Physical System" for your fitness data. It automatically pulls your biometrics (Garmin) and weightlifting data (Hevy), aggregates them into CSV files, and syncs them to a location of your choice (like Google Drive) for analysis by AI tools like Gemini or ChatGPT.
+AI Fitness Data Pipeline (Garmin)
+This project creates a "Cyber-Physical System" for your fitness data. It automatically pulls your biometrics (Garmin), aggregates them into CSV files, and syncs them to a location of your choice (like Google Drive) for analysis by AI tools like Gemini or ChatGPT.
 
 #🚀 Features
 
@@ -20,15 +17,11 @@ Garmin Biometrics: Tracks Weight, Sleep Score, HRV, Stress, and Body Battery hou
 
 Garmin Runs: detailed run analysis including Splits, Pace, HR Zones, and Elevation.
 
-Hevy Integration: Pulls detailed sets, reps, weight, and RPE for every gym session.
-
 Smart Sync: Checks for existing data to prevent duplicates; safe to run hourly.
 
 Secure: Uses environment variables to keep your passwords safe.
 
 #🛠️ Prerequisites
-
-Hevy, a pro membership is required to access to the developer API.
 
 Before you start, you need three things installed on your computer:
 
@@ -52,7 +45,7 @@ cd Fitness-Bot-V1
 (Or just download the ZIP file from GitHub and unzip it).
 
 2. Install Dependencies
-We need to install the Python libraries that talk to Garmin and Hevy. Run this command in your project folder:
+We need to install the Python libraries that talk to Garmin. Run this command in your project folder:
 
 PowerShell
 
@@ -77,10 +70,6 @@ Garmin Credentials
 GARMIN_EMAIL=your_email@example.com
 GARMIN_PASSWORD=your_password
 
-Hevy API Key (Requires Hevy Pro)
-Get this from: https://hevy.com/settings (Developer tab)
-HEVY_API_KEY=your_long_api_key_here
-
 Where should the CSV files be saved?
 Example for Google Drive users:
 SAVE_PATH=G:\My Drive\Gemini Gems\Personal trainer
@@ -102,12 +91,10 @@ Let's pull all your past data so your database isn't empty.
 
 PowerShell
 
-Pull lifting history (Since 2023)
-python hevy_history_pull.py
 
 Pull run history (Since 2023)
 python garmin_runs_daily.py
-Check your SAVE_PATH folder. You should see hevy_stats.csv and garmin_runs.csv full of data.
+Check your SAVE_PATH folder. You should see garmin_runs.csv full of data.
 
 #🤖 Automation (Set it and Forget it)
 
@@ -126,11 +113,6 @@ $Trigger.Repetition.Duration = $null
 Register-ScheduledTask -TaskName "Garmin Daily Pull" -Action $Action -Trigger $Trigger -Force
 (Make sure to replace C:\Path\To\Fitness-Bot-V1 with the actual folder location on your PC).
 
-Task 2: Hevy Lifts (Hourly) Repeat the command above, but change:
-
-Argument: hevy_pull.py
-
-TaskName: "Hevy Daily Pull"
 
 #❓ Troubleshooting
 
@@ -157,7 +139,7 @@ Instructions:
 
 Create a new Gemini Gem or ChatGPT Custom GPT.
 
-Upload the garmin_stats.csv, hevy_stats.csv, and garmin_runs.csv files to its knowledge base.
+Upload the garmin_stats.csv, and garmin_runs.csv files to its knowledge base.
 
 Paste the following into the System Instructions:
 
@@ -166,7 +148,7 @@ You are an expert Strength and Conditioning Coach specialized in "Hybrid Athlete
 
 **Your Personality:**
 * **Professional & Strict:** You are data-driven. You do not guess; you analyze.
-* **Charismatic & Playful:** You are flirtatious and complimentary when it fits naturally to reward good data or hard work (e.g., "Good morning, handsome. Impressive lift."), but never at the expense of solid advice.
+* **Charismatic & Playful:** You are flirtatious and complimentary when it fits naturally to reward good data or hard work (e.g., "Good morning, handsome. Impressive run."), but never at the expense of solid advice.
 * **Tone:** Tough love mixed with genuine affection. Avoid military jargon; speak like a high-level private sector coach.
 
 **Primary Objective:**
@@ -175,19 +157,16 @@ Guide the user through a "Recomposition" phase (Lose Fat, Build Muscle) while im
 **Key Data Sources (Attached Files):**
 You have access to three automatically updated files. **ALWAYS** check these before answering progress questions:
 1.  **`garmin_stats.csv` (Daily Biometrics):** Contains Weight, Sleep Score, HRV Status, Body Battery, and Stress.
-2.  **`hevy_stats.csv` (Lifting Logs):** Contains every set, rep, weight, and RPE for gym sessions.
-3.  **`garmin_runs.csv` (Run Analysis):** Contains specific run metrics like Avg Pace, Heart Rate, and Splits.
+2.  **`garmin_runs.csv` (Run Analysis):** Contains specific run metrics like Avg Pace, Heart Rate, and Splits.
 
 **System Instruction: Data Integration Strategy**
 * **Recovery Check (`garmin_stats.csv`):**
     * Check **"Body Batt High"**. If <75, ask about his energy levels before prescribing heavy volume.
     * Check **"HRV Status"**. If "Unbalanced" or "Low" for 3+ days, suggest an Active Recovery day.
     * Check **"Sleep Score"**. <70 requires a "go to bed earlier" scolding.
-* **Strength Check (`hevy_stats.csv`):**
-    * Look for "Progressive Overload" (Weight or Reps trending up) on key lifts (Squat, Bench, Deadlift).
 * **Run Check (`garmin_runs.csv`):**
     * For the 2-Mile goal, analyze the **"Avg Pace"** column. Compare recent runs to the target pace.
-* **The "Concurrent Session" Rule:** IF a Garmin entry and Hevy entry share a date/time (±15 mins), treat them as a SINGLE session.
+* **The "Concurrent Session" Rule:** IF Garmin entries share a date/time (±15 mins), treat them as a SINGLE session.
 
 **Safety & Lifestyle Context:**
 * **Mental Health/De-load:** If "Avg Stress" in `garmin_stats.csv` is high (>40), suggest his specific hobbies for recovery (Hiking, Photography, working on cars) rather than just "resting."
