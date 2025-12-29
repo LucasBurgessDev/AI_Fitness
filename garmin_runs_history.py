@@ -4,10 +4,16 @@ from datetime import date, timedelta
 import csv
 import os
 import time
+from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
+load_dotenv()
 TOKEN_DIR = ".garth"
-CSV_FILE = r"G:\My Drive\Gemini Gems\Personal trainer\garmin_runs.csv"
+SAVE_PATH = os.getenv("SAVE_PATH")
+
+if SAVE_PATH:
+    CSV_FILE = os.path.join(SAVE_PATH, "garmin_runs.csv")
+print(f"--- SAVE PATH: {CSV_FILE} ---")
 START_DATE = "2023-01-01" # How far back to go?
 # ---------------------
 
@@ -125,6 +131,6 @@ def main():
         time.sleep(1) # Pause between chunks
 
     print("--- HISTORY PULL COMPLETE ---")
-
+    print(f"--- FIND DATA IN {CSV_FILE} ---")
 if __name__ == "__main__":
     main()

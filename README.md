@@ -93,7 +93,7 @@ PowerShell
 
 
 Pull run history (Since 2023)
-python garmin_runs_daily.py
+python garmin_runs_history.py
 Check your SAVE_PATH folder. You should see garmin_runs.csv full of data.
 
 #🤖 Automation (Set it and Forget it)
