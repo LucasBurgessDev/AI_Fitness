@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+.venv/
+venv/
+env/
+
+# Local auth + secrets
+.garth/
+.env
+*.log
+
+# OS
+.DS_Store
+
+# Data outputs
+*.csv
+output/
+data/
+
+# Git
+.git/
+.gitignore
