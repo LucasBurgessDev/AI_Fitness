@@ -22,7 +22,9 @@ jobs:
 
       - name: Submit Build
         run: |
-          gcloud builds submit --tag "europe-west2-docker.pkg.dev/health-data-482722/health-jobs/garmin-fitness-daily:latest"
+          gcloud builds submit \
+            --tag "europe-west2-docker.pkg.dev/health-data-482722/health-jobs/garmin-fitness-daily:latest" \
+            --gcs-source-staging-dir="gs://garmin-fitness-health-data-482722/cloudbuild_source"
 
       - name: Deploy Cloud Run Job
         run: |
