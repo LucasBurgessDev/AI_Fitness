@@ -25,7 +25,7 @@ HEADERS = [
     "Date",
     "Weight (lbs)", "Muscle Mass (lbs)", "Body Fat %", "Water %",
     "Sleep Total (hr)", "Sleep Deep (hr)", "Sleep REM (hr)", "Sleep Score",
-    "RHR", "Min HR", "Max HR", "Avg Stress", "Respiration", "SpO2",
+    "RHR", "Min HR", "Max HR", "Avg Stress", "Body Battery", "Respiration", "SpO2",
     "VO2 Max", "Training Status", "HRV Status", "HRV Avg",
     "Steps", "Step Goal", "Cals Total", "Cals Active",
     "Activities",
@@ -104,15 +104,82 @@ def main():
             min_hr = get_safe(user_stats, "minHeartRate")
             max_hr = get_safe(user_stats, "maxHeartRate")
             stress_avg = get_safe(user_stats, "averageStressLevel")
+            
+            # Body Battery
+            body_battery = get_safe(user_stats, "bodyBatteryMostRecentValue")
+            if body_battery is None:
+                # try charged/drained math or just leave None
+                body_battery = get_safe(user_stats, "bodyBatteryChargedValue") # fallback if needed?
+            
             steps = get_safe(user_stats, "totalSteps")
             vo2_max = get_safe(user_stats, "vo2Max")
+            
+            # Improved Respiration / SpO2 logic
             spo2_avg = get_safe(user_stats, "averageSpO2")
+            if spo2_avg is None:
+                spo2_avg = get_safe(user_stats, "latestSpo2")
+
             respiration_avg = get_safe(user_stats, "averageRespirationValue")
+            if respiration_avg is None:
+                respiration_avg = get_safe(user_stats, "avgWakingRespirationValue")
+            if respiration_avg is None:
+                respiration_avg = get_safe(user_stats, "latestRespirationValue")
+
             cals_total = get_safe(user_stats, "totalKilocalories")
             cals_active = get_safe(user_stats, "activeKilocalories")
             step_goal = get_safe(user_stats, "dailyStepGoal")
         except Exception:
-            rhr = min_hr = max_hr = stress_avg = steps = vo2_max = spo2_avg = respiration_avg = cals_total = cals_active = step_goal = None
+            rhr = min_hr = max_hr = stress_avg = body_battery = steps = vo2_max = spo2_avg = respiration_avg = cals_total = cals_active = step_goal = None
+
+        # --- FALLBACKS FOR PARTIAL DAY ---
+        if steps is None:
+            try:
+                steps_data = api.get_steps_data(today)
+                if steps_data and isinstance(steps_data, list):
+                    current_steps = 0
+                    for item in steps_data:
+                        if "steps" in item:
+                            current_steps += item["steps"]
+                    steps = current_steps
+            except Exception:
+                pass
+
+        if min_hr is None or max_hr is None:
+            try:
+                hr_data = api.get_heart_rates(today)
+                if hr_data and "heartRateValues" in hr_data:
+                    # format is [timestamp, value, ...]
+                    valid_hrs = [
+                        x[1]
+                        for x in hr_data["heartRateValues"]
+                        if x[1] is not None
+                    ]
+                    if valid_hrs:
+                        measured_min = min(valid_hrs)
+                        measured_max = max(valid_hrs)
+                        # Prefer summary if available (unlikely if we are here), else calc
+                        if min_hr is None:
+                            min_hr = measured_min
+                        if max_hr is None:
+                            max_hr = measured_max
+            except Exception:
+                pass
+        
+        if stress_avg is None:
+            try:
+                stress_data = api.get_stress_data(today)
+                if stress_data and "stressValuesArray" in stress_data:
+                    # filter out -1 or nulls if any, usually just check valid values
+                    valid_stress = [
+                        x[1] 
+                        for x in stress_data["stressValuesArray"] 
+                        if x[1] is not None and x[1] > 0
+                    ]
+                    if valid_stress:
+                        stress_avg = int(sum(valid_stress) / len(valid_stress))
+            except Exception:
+                pass
+        # ---------------------------------
 
         # 2) Sleep
         try:
@@ -176,7 +243,7 @@ def main():
             today,
             weight, muscle_mass, fat_pct, water_pct,
             sleep_total, sleep_deep, sleep_rem, sleep_score,
-            rhr, min_hr, max_hr, stress_avg, respiration_avg, spo2_avg,
+            rhr, min_hr, max_hr, stress_avg, body_battery, respiration_avg, spo2_avg,
             vo2_max, training_status, hrv_status, hrv_avg,
             steps, step_goal, cals_total, cals_active,
             activity_str,

@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 
 from token_cache_gcs import download_token_cache, upload_token_cache
-from drive_uploader import upload_all_csvs
+from drive_uploader import upload_all_csvs, download_file_if_exists
+
 
 
 def _setup_logging() -> None:
@@ -60,6 +61,11 @@ def main() -> None:
     save_path = Path(os.getenv("SAVE_PATH", "/tmp"))
     save_path.mkdir(parents=True, exist_ok=True)
     LOGGER.info("SAVE_PATH=%s", str(save_path))
+
+    # Pull existing CSVs from Drive so we append reliably across executions
+    download_file_if_exists(drive_folder_id, "garmin_activities.csv", save_path / "garmin_activities.csv")
+    download_file_if_exists(drive_folder_id, "garmin_stats.csv", save_path / "garmin_stats.csv")
+
 
     # Run scripts
     run_cmd(["python", "garmin_activities_daily.py"])

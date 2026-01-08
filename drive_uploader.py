@@ -8,6 +8,8 @@ import google.auth
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaIoBaseDownload
+import io
 
 
 LOGGER = logging.getLogger("drive_uploader")
@@ -150,3 +152,26 @@ def upload_all_csvs(folder_id: str, save_path: Path) -> None:
 
     LOGGER.info("Folder listing after upload:")
     _list_folder(service, folder_id)
+
+
+def download_file_if_exists(folder_id: str, filename: str, dest_path: Path) -> bool:
+    service = _drive_service()
+    _folder_check(service, folder_id)
+
+    file_id = _find_file_in_folder(service, folder_id, filename)
+    if not file_id:
+        LOGGER.info("Drive download: %s not found in folder %s", filename, folder_id)
+        return False
+
+    LOGGER.info("Drive download starting: %s fileId=%s -> %s", filename, file_id, dest_path)
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+    fh = io.FileIO(str(dest_path), "wb")
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+        if status:
+            LOGGER.info("Drive download progress: %s%%", int(status.progress() * 100))
+
+    LOGGER.info("Drive download complete: %s bytes=%s", filename, dest_path.stat().st_size)
+    return True
