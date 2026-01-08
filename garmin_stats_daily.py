@@ -1,6 +1,6 @@
 import garth
 from garminconnect import Garmin
-from datetime import date
+from datetime import date, datetime
 import csv
 import os
 from dotenv import load_dotenv
@@ -22,7 +22,7 @@ TOKEN_DIR = os.getenv("GARTH_DIR", ".garth")
 
 
 HEADERS = [
-    "Date",
+    "Date", "Timestamp",
     "Weight (lbs)", "Muscle Mass (lbs)", "Body Fat %", "Water %",
     "Sleep Total (hr)", "Sleep Deep (hr)", "Sleep REM (hr)", "Sleep Score",
     "RHR", "Min HR", "Max HR", "Avg Stress", "Body Battery", "Respiration", "SpO2",
@@ -94,8 +94,10 @@ def main():
 
         flt = load_activity_filter()
 
-        today = date.today().isoformat()
-        print(f"2. Pulling data for {today}...")
+        now = datetime.now()
+        today = now.date().isoformat()
+        now_str = now.strftime("%H:%M:%S")
+        print(f"2. Pulling data for {today} at {now_str}...")
 
         # 1) Core Biometrics
         try:
@@ -240,7 +242,7 @@ def main():
         activity_str = build_activity_str(api, today, flt)
 
         new_row = [
-            today,
+            today, now_str,
             weight, muscle_mass, fat_pct, water_pct,
             sleep_total, sleep_deep, sleep_rem, sleep_score,
             rhr, min_hr, max_hr, stress_avg, body_battery, respiration_avg, spo2_avg,
@@ -249,7 +251,7 @@ def main():
             activity_str,
         ]
 
-        # --- SMART SAVE: replace today's row if already present ---
+        # --- SMART SAVE: APPEND NEW ROW (and migrate schema if needed) ---
         rows = []
         file_exists = os.path.isfile(CSV_FILE)
 
@@ -258,20 +260,33 @@ def main():
                 with open(CSV_FILE, mode="r", newline="", encoding="utf-8") as f:
                     reader = csv.reader(f)
                     all_data = list(reader)
+                    
                     if all_data:
-                        rows = [row for row in all_data[1:] if row and row[0] != today]
+                        existing_headers = all_data[0]
+                        existing_rows = all_data[1:]
+                        
+                        # Check for schema migration (missing Timestamp column)
+                        if "Timestamp" not in existing_headers:
+                            print("Migrating CSV schema: Adding 'Timestamp' column...")
+                            # Inserting empty string at index 1 for all old rows
+                            for r in existing_rows:
+                                r.insert(1, "")
+                        
+                        rows = existing_rows
+
             except Exception as e:
                 print(f"Warning reading existing CSV: {e}")
 
         rows.append(new_row)
-        rows.sort(key=lambda x: x[0])
+        # Optional: Sort by Date then Timestamp if desired, currently date sort is simple
+        # rows.sort(key=lambda x: x[0]) 
 
         with open(CSV_FILE, mode="w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(HEADERS)
             writer.writerows(rows)
 
-        print(f"SUCCESS: Saved data for {today} to {CSV_FILE}")
+        print(f"SUCCESS: Saved data for {today} at {now_str} to {CSV_FILE}")
 
     except Exception as e:
         print(f"Global Error: {e}")
