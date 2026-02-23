@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+from datetime import date
 from pathlib import Path
 
+import batch_control
+import bigquery_writer
 from token_cache_gcs import download_token_cache, upload_token_cache
 from drive_uploader import upload_all_csvs, download_file_if_exists
-
 
 
 def _setup_logging() -> None:
@@ -48,10 +50,12 @@ def main() -> None:
 
     token_uri = os.environ["TOKEN_CACHE_GCS_URI"]
     drive_folder_id = os.environ["DRIVE_FOLDER_ID"]
+    project_id = os.getenv("BQ_PROJECT_ID", "")
 
     LOGGER.info("Starting job")
     LOGGER.info("TOKEN_CACHE_GCS_URI=%s", token_uri)
     LOGGER.info("DRIVE_FOLDER_ID=%s", drive_folder_id)
+    LOGGER.info("BQ_PROJECT_ID=%s", project_id or "(not set — BigQuery write skipped)")
 
     # Download token cache to /tmp/.garth
     garth_dir = download_token_cache(token_uri, Path("/tmp"))
@@ -66,8 +70,7 @@ def main() -> None:
     download_file_if_exists(drive_folder_id, "garmin_activities.csv", save_path / "garmin_activities.csv")
     download_file_if_exists(drive_folder_id, "garmin_stats.csv", save_path / "garmin_stats.csv")
 
-
-    # Run scripts
+    # Run data collection scripts
     run_cmd(["python", "garmin_activities_daily.py"])
     run_cmd(["python", "garmin_stats_daily.py"])
 
@@ -76,7 +79,40 @@ def main() -> None:
     csvs = list(save_path.glob("*.csv"))
     LOGGER.info("CSV count in SAVE_PATH: %s", len(csvs))
 
-    # Upload to Drive
+    # ------------------------------------------------------------------
+    # BigQuery write (skipped gracefully if BQ_PROJECT_ID is not set)
+    # ------------------------------------------------------------------
+    if project_id:
+        import pandas as pd
+
+        today = date.today()
+        batch_id = batch_control.start_batch(project_id, "garmin-fitness-daily")
+        total_rows = 0
+
+        try:
+            stats_csv = save_path / "garmin_stats.csv"
+            acts_csv = save_path / "garmin_activities.csv"
+
+            if stats_csv.exists():
+                df_stats = pd.read_csv(stats_csv)
+                total_rows += bigquery_writer.write_stats(df_stats, project_id, today, batch_id)
+
+            if acts_csv.exists():
+                df_acts = pd.read_csv(acts_csv)
+                total_rows += bigquery_writer.write_activities(df_acts, project_id, today, batch_id)
+
+            batch_control.end_batch(project_id, batch_id, total_rows, "SUCCESS")
+            LOGGER.info("BigQuery write complete: %d rows", total_rows)
+
+        except Exception as bq_err:
+            LOGGER.error("BigQuery write failed: %s", bq_err)
+            try:
+                batch_control.end_batch(project_id, batch_id, total_rows, "FAILED", str(bq_err))
+            except Exception:
+                pass
+    # ------------------------------------------------------------------
+
+    # Upload updated CSVs to Drive
     LOGGER.info("Uploading CSVs to Drive folder")
     upload_all_csvs(drive_folder_id, save_path)
     LOGGER.info("Drive upload complete")

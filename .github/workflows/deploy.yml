@@ -1,12 +1,24 @@
-name: Deploy Cloud Run Job
+name: Deploy Cloud Run Job + ADK Cycling Service
 
 on:
   push:
     branches:
       - main
 
+env:
+  PROJECT_ID: health-data-482722
+  REGION: europe-west2
+  AR_REPO: health-jobs
+  SA_EMAIL: garmin-fitness-daily-sa@health-data-482722.iam.gserviceaccount.com
+  BUCKET: garmin-fitness-health-data-482722
+  DRIVE_FOLDER_ID: 1hTPk71hZmqLk8RNPggjZOfIRY9Ax1op-
+
 jobs:
-  deploy:
+  # -----------------------------------------------------------------------
+  # Job 1: Build & deploy the Garmin data pipeline (Cloud Run Job)
+  # -----------------------------------------------------------------------
+  deploy-pipeline:
+    name: Deploy Garmin Pipeline
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -20,23 +32,63 @@ jobs:
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Submit Build
+      - name: Build pipeline image
         run: |
           gcloud builds submit \
-            --project "health-data-482722" \
-            --tag "europe-west2-docker.pkg.dev/health-data-482722/health-jobs/garmin-fitness-daily:latest" \
-            --service-account "projects/health-data-482722/serviceAccounts/garmin-fitness-daily-sa@health-data-482722.iam.gserviceaccount.com" \
-            --gcs-source-staging-dir="gs://garmin-fitness-health-data-482722/cloudbuild_source" \
-            --gcs-log-dir="gs://garmin-fitness-health-data-482722/cloudbuild_logs"
+            --project "$PROJECT_ID" \
+            --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily:latest" \
+            --service-account "projects/$PROJECT_ID/serviceAccounts/$SA_EMAIL" \
+            --gcs-source-staging-dir="gs://$BUCKET/cloudbuild_source" \
+            --gcs-log-dir="gs://$BUCKET/cloudbuild_logs"
 
       - name: Deploy Cloud Run Job
         run: |
-          gcloud run jobs deploy "garmin-fitness-daily" \
-            --image "europe-west2-docker.pkg.dev/health-data-482722/health-jobs/garmin-fitness-daily:latest" \
-            --service-account "garmin-fitness-daily-sa@health-data-482722.iam.gserviceaccount.com" \
-            --set-env-vars "TOKEN_CACHE_GCS_URI=gs://garmin-fitness-health-data-482722/garmin/token_cache.tar.gz,DRIVE_FOLDER_ID=1hTPk71hZmqLk8RNPggjZOfIRY9Ax1op-,SAVE_PATH=/tmp,LOOKBACK_DAYS=3,FTP_LOOKBACK_DAYS=60" \
+          gcloud run jobs deploy garmin-fitness-daily \
+            --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily:latest" \
+            --service-account "$SA_EMAIL" \
+            --set-env-vars "TOKEN_CACHE_GCS_URI=gs://$BUCKET/garmin/token_cache.tar.gz,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,SAVE_PATH=/tmp,LOOKBACK_DAYS=3,FTP_LOOKBACK_DAYS=60,BQ_PROJECT_ID=$PROJECT_ID" \
             --max-retries 1 \
             --task-timeout 900 \
             --memory 1Gi \
             --cpu 1 \
-            --region europe-west2
+            --region "$REGION"
+
+  # -----------------------------------------------------------------------
+  # Job 2: Build & deploy the ADK Cycling Coach (Cloud Run Service)
+  # -----------------------------------------------------------------------
+  deploy-cycling-coach:
+    name: Deploy ADK Cycling Coach
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build ADK cycling coach image
+        run: |
+          gcloud builds submit adk_cycling/ \
+            --project "$PROJECT_ID" \
+            --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach:latest" \
+            --service-account "projects/$PROJECT_ID/serviceAccounts/$SA_EMAIL" \
+            --gcs-source-staging-dir="gs://$BUCKET/cloudbuild_source" \
+            --gcs-log-dir="gs://$BUCKET/cloudbuild_logs"
+
+      - name: Deploy Cloud Run Service
+        run: |
+          gcloud run deploy cycling-coach \
+            --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach:latest" \
+            --region "$REGION" \
+            --service-account "$SA_EMAIL" \
+            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET" \
+            --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
+            --allow-unauthenticated \
+            --memory 1Gi \
+            --cpu 1 \
+            --port 8080

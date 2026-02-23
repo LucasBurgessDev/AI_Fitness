@@ -1,0 +1,10 @@
+google-adk
+fastapi
+uvicorn[standard]
+python-multipart
+google-auth-oauthlib
+google-auth-httplib2
+google-cloud-storage
+itsdangerous
+httpx
+jinja2
