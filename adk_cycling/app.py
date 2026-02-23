@@ -21,7 +21,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 # ---------------------------------------------------------------------------
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 GOOGLE_CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
-ALLOWED_EMAIL = os.environ["ALLOWED_EMAIL"]
+ALLOWED_EMAILS = {e.strip().lower() for e in os.environ["ALLOWED_EMAIL"].split(",") if e.strip()}
 SECRET_KEY = os.environ["SECRET_KEY"]
 PROJECT_ID = os.environ.get("PROJECT_ID", "health-data-482722")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8080/auth/callback")
@@ -110,7 +110,7 @@ async def auth_callback(request: Request, code: str):
     userinfo = resp.json()
     email = userinfo.get("email", "")
 
-    if email.lower() != ALLOWED_EMAIL.lower():
+    if email.lower() not in ALLOWED_EMAILS:
         raise HTTPException(status_code=403, detail=f"Access denied for {email}")
 
     session_cookie = signer.dumps({"email": email})
