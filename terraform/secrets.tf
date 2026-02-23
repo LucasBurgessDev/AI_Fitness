@@ -10,7 +10,10 @@ resource "random_password" "secret_key" {
 
 resource "google_secret_manager_secret" "secret_key" {
   secret_id = "cycling-coach-secret-key"
-  replication { auto {} }
+
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
 }
@@ -33,21 +36,30 @@ resource "google_secret_manager_secret_version" "secret_key" {
 
 resource "google_secret_manager_secret" "oauth_client_id" {
   secret_id = "cycling-coach-oauth-client-id"
-  replication { auto {} }
+
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
 }
 
 resource "google_secret_manager_secret" "oauth_client_secret" {
   secret_id = "cycling-coach-oauth-client-secret"
-  replication { auto {} }
+
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
 }
 
 resource "google_secret_manager_secret" "allowed_email" {
   secret_id = "cycling-coach-allowed-email"
-  replication { auto {} }
+
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
 }
