@@ -123,7 +123,124 @@ def _build_instruction(p: dict) -> str:
     )
 
 
-def _make_runner(instruction: str) -> Runner:
+_NOT_CONNECTED = "Calendar not connected — ask the user to sign out and sign back in to grant calendar access."
+
+
+def _make_runner(instruction: str, user_email: str = "") -> Runner:
+    # --- Google Calendar tools (closures capturing user_email) ---
+
+    def list_calendar_events(days_ahead: int = 14) -> str:
+        """List upcoming Google Calendar events.
+
+        Args:
+            days_ahead: Number of days ahead to look (default 14).
+
+        Returns:
+            Formatted list of events with date, time, title, and description.
+            Returns a message if calendar is not connected.
+        """
+        import calendar_store
+        creds = calendar_store.load_tokens(user_email)
+        if creds is None:
+            return _NOT_CONNECTED
+        try:
+            import datetime
+            from googleapiclient.discovery import build
+            service = build("calendar", "v3", credentials=creds)
+            now = datetime.datetime.utcnow()
+            time_min = now.isoformat() + "Z"
+            time_max = (now + datetime.timedelta(days=days_ahead)).isoformat() + "Z"
+            result = service.events().list(
+                calendarId="primary",
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=50,
+            ).execute()
+            events = result.get("items", [])
+            if not events:
+                return f"No events found in the next {days_ahead} days."
+            lines = []
+            for ev in events:
+                start = ev["start"].get("dateTime", ev["start"].get("date", ""))
+                title = ev.get("summary", "(no title)")
+                desc = ev.get("description", "")
+                event_id = ev.get("id", "")
+                line = f"[{start}] {title} (id: {event_id})"
+                if desc:
+                    line += f"\n  {desc}"
+                lines.append(line)
+            return "\n".join(lines)
+        except Exception as exc:
+            LOGGER.error("list_calendar_events error: %s", exc)
+            return f"Error fetching calendar events: {exc}"
+
+    def create_training_event(
+        title: str,
+        date: str,
+        start_time: str,
+        duration_minutes: int,
+        description: str = "",
+    ) -> str:
+        """Create a Google Calendar event for a training session or rest day.
+
+        Args:
+            title: e.g. "Z2 Endurance Ride — 2hr" or "Rest Day"
+            date: YYYY-MM-DD
+            start_time: HH:MM (24-hour)
+            duration_minutes: Duration as an integer number of minutes.
+            description: Optional notes e.g. "Target 120–140W, RPE 6"
+
+        Returns:
+            Confirmation with event ID, or error message.
+        """
+        import calendar_store
+        creds = calendar_store.load_tokens(user_email)
+        if creds is None:
+            return _NOT_CONNECTED
+        try:
+            import datetime
+            from googleapiclient.discovery import build
+            service = build("calendar", "v3", credentials=creds)
+            start_dt = datetime.datetime.fromisoformat(f"{date}T{start_time}:00")
+            end_dt = start_dt + datetime.timedelta(minutes=duration_minutes)
+            event_body = {
+                "summary": title,
+                "description": description,
+                "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/London"},
+                "end": {"dateTime": end_dt.isoformat(), "timeZone": "Europe/London"},
+            }
+            created = service.events().insert(calendarId="primary", body=event_body).execute()
+            event_id = created.get("id", "")
+            html_link = created.get("htmlLink", "")
+            return f"Event created: '{title}' on {date} at {start_time} for {duration_minutes} min. ID: {event_id}. Link: {html_link}"
+        except Exception as exc:
+            LOGGER.error("create_training_event error: %s", exc)
+            return f"Error creating calendar event: {exc}"
+
+    def delete_calendar_event(event_id: str) -> str:
+        """Delete a Google Calendar event by ID.
+
+        Args:
+            event_id: ID from list_calendar_events or create_training_event.
+
+        Returns:
+            Confirmation or error message.
+        """
+        import calendar_store
+        creds = calendar_store.load_tokens(user_email)
+        if creds is None:
+            return _NOT_CONNECTED
+        try:
+            from googleapiclient.discovery import build
+            service = build("calendar", "v3", credentials=creds)
+            service.events().delete(calendarId="primary", eventId=event_id).execute()
+            return f"Event {event_id} deleted successfully."
+        except Exception as exc:
+            LOGGER.error("delete_calendar_event error: %s", exc)
+            return f"Error deleting calendar event: {exc}"
+
     agent = LlmAgent(
         model="gemini-2.0-flash",
         name="cycling_expert",
@@ -132,12 +249,15 @@ def _make_runner(instruction: str) -> Runner:
             FunctionTool(func=query_garmin_data),
             FunctionTool(func=get_recent_activities),
             FunctionTool(func=get_recent_stats),
+            FunctionTool(func=list_calendar_events),
+            FunctionTool(func=create_training_event),
+            FunctionTool(func=delete_calendar_event),
         ],
     )
     return Runner(agent=agent, app_name=_APP_NAME, session_service=_session_service)
 
 
-def _get_runner(session_id: str) -> Runner:
+def _get_runner(session_id: str, user_email: str = "") -> Runner:
     """Return a cached runner for this session, rebuilding if the profile changed."""
     current_profile = profile_store.load()
 
@@ -147,7 +267,7 @@ def _get_runner(session_id: str) -> Runner:
             return runner
 
     instruction = _build_instruction(current_profile)
-    runner = _make_runner(instruction)
+    runner = _make_runner(instruction, user_email=user_email)
     _runners[session_id] = (runner, dict(current_profile))
     return runner
 
@@ -159,9 +279,9 @@ def invalidate_sessions() -> None:
     LOGGER.info("All agent sessions invalidated; will rebuild on next request")
 
 
-async def run_agent(message: str, session_id: str = "default") -> str:
+async def run_agent(message: str, session_id: str = "default", user_email: str = "") -> str:
     """Run the cycling agent for a single user message and return the response text."""
-    runner = _get_runner(session_id)
+    runner = _get_runner(session_id, user_email=user_email)
 
     # Create session on first use; get_session returns None (not an exception) when not found.
     session = await _session_service.get_session(

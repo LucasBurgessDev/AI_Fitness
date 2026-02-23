@@ -30,6 +30,7 @@ SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/calendar",
 ]
 
 # ---------------------------------------------------------------------------
@@ -113,6 +114,9 @@ async def auth_callback(request: Request, code: str):
     if email.lower() not in ALLOWED_EMAILS:
         raise HTTPException(status_code=403, detail=f"Access denied for {email}")
 
+    import calendar_store
+    calendar_store.save_tokens(email, credentials)
+
     session_cookie = signer.dumps({"email": email})
     response = RedirectResponse("/")
     response.set_cookie("session", session_cookie, httponly=True, samesite="lax", max_age=86400 * 7)
@@ -151,7 +155,7 @@ async def chat(request: Request):
 
     session_id = _session_id_for(session["email"])
     try:
-        response_text = await run_agent(message, session_id=session_id)
+        response_text = await run_agent(message, session_id=session_id, user_email=session["email"])
     except Exception as e:
         LOGGER.exception("Agent error: %s", e)
         raise HTTPException(status_code=500, detail="Agent error — please try again")
