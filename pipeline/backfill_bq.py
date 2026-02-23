@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""One-off backfill: download CSVs from Google Drive and load all rows into BigQuery.
+"""One-off backfill: download CSVs from Google Drive and append all rows into BigQuery.
 
-Truncates both garmin_stats and garmin_activities tables then reloads from the
-full CSV, using each row's own date as run_date.
+Skips a table if it already contains data (idempotent re-runs).
+Each row uses its own date as run_date so history is correctly partitioned.
 
 Run via:
     make backfill-bq
@@ -29,18 +29,36 @@ TOKEN_CACHE_GCS_URI = os.environ["TOKEN_CACHE_GCS_URI"]
 SAVE_PATH = Path(os.getenv("SAVE_PATH", "/tmp"))
 
 
+def _table_row_count(client: bigquery.Client, table_id: str) -> int:
+    """Return the approximate row count of a BQ table (0 if not found)."""
+    try:
+        result = client.query(f"SELECT COUNT(*) AS n FROM `{table_id}`").result()
+        return next(iter(result))["n"]
+    except Exception:
+        return 0
+
+
 def _backfill_table(
     df: pd.DataFrame,
     table_id: str,
     schema: list,
     coerce_fn,
 ) -> int:
-    """Truncate table and reload all rows, using each row's 'date' as run_date."""
+    """Append all rows to table using each row's 'date' as run_date.
+
+    Skips the table if it already contains rows (to avoid duplicates on re-runs).
+    """
+    client = bigquery.Client(project=PROJECT_ID)
+
+    existing = _table_row_count(client, table_id)
+    if existing > 0:
+        LOGGER.info("Table %s already has %d rows — skipping backfill", table_id, existing)
+        return 0
+
     if "date" not in df.columns:
         LOGGER.error("No 'date' column — skipping %s", table_id)
         return 0
 
-    # Drop rows with no date
     df = df[df["date"].notna() & (df["date"].astype(str).str.strip() != "")]
     if df.empty:
         LOGGER.warning("No valid rows for %s", table_id)
@@ -52,10 +70,9 @@ def _backfill_table(
     df = coerce_fn(df)
     df = bigquery_writer._ensure_schema_cols(df, schema)
 
-    client = bigquery.Client(project=PROJECT_ID)
     job_config = bigquery.LoadJobConfig(
         schema=schema,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
         time_partitioning=bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY,
             field="run_date",
@@ -91,6 +108,10 @@ def backfill_stats(df: pd.DataFrame) -> int:
 
 def backfill_activities(df: pd.DataFrame) -> int:
     out = df.copy()
+
+    # activity_id is numeric in the CSV but STRING in BQ schema
+    if "activity_id" in out.columns:
+        out["activity_id"] = out["activity_id"].astype(str)
 
     if "avg_pace_min_mile" in out.columns:
         out["avg_pace_min_mile"] = out["avg_pace_min_mile"].apply(

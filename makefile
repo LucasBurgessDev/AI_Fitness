@@ -83,18 +83,11 @@ run:
 	gcloud run jobs execute "$(JOB_NAME)" --wait
 
 backfill-bq:
-	gcloud run jobs deploy garmin-fitness-backfill \
-	  --image "$(IMAGE_URI)" \
-	  --service-account "$(SA_EMAIL)" \
+	gcloud run jobs execute "$(JOB_NAME)" \
+	  --region "$(REGION)" \
 	  --command "python" \
 	  --args "backfill_bq.py" \
-	  --set-env-vars "TOKEN_CACHE_GCS_URI=$(TOKEN_CACHE_GCS_URI),DRIVE_FOLDER_ID=$(DRIVE_FOLDER_ID),SAVE_PATH=/tmp,BQ_PROJECT_ID=$(PROJECT_ID)" \
-	  --max-retries 0 \
-	  --task-timeout 900 \
-	  --memory 1Gi \
-	  --cpu 1 \
-	  --region "$(REGION)" || true
-	gcloud run jobs execute garmin-fitness-backfill --wait --region "$(REGION)"
+	  --wait
 
 logs:
 	gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=$(JOB_NAME)" --limit 120
