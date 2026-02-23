@@ -71,7 +71,7 @@ def get_recent_activities(days: int = 30, activity_type: str = "") -> str:
                avg_power_w, normalized_power_w, tss, ftp_watts,
                avg_hr, max_hr, elevation_gain_m, calories
         FROM `{PROJECT_ID}.garmin.garmin_activities`
-        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
         {type_filter}
         ORDER BY date DESC
         LIMIT 50
@@ -93,7 +93,7 @@ def get_recent_stats(days: int = 30) -> str:
                hrv_avg, hrv_status, body_battery, vo2_max,
                training_status, steps, cals_total
         FROM `{PROJECT_ID}.garmin.garmin_stats`
-        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
         ORDER BY date DESC
         LIMIT 60
     """
