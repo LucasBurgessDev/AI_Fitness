@@ -7,7 +7,8 @@ from typing import Optional
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.adk.tools.mcp_tool import MCPToolset, StdioServerParameters
+from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
+from mcp import StdioServerParameters
 from google.genai.types import Content, Part
 
 import profile as profile_store
@@ -45,23 +46,27 @@ def _build_instruction(p: dict) -> str:
 
 
 def _make_runner(instruction: str) -> Runner:
-    bq_mcp = MCPToolset(
-        connection_params=StdioServerParameters(
-            command="npx",
-            args=[
-                "-y",
-                "@modelcontextprotocol/server-bigquery",
-                "--project",
-                PROJECT_ID,
-                "--dataset",
-                "garmin",
-            ],
+    bq_mcp = McpToolset(
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command="npx",
+                args=[
+                    "-y",
+                    "@modelcontextprotocol/server-bigquery",
+                    "--project",
+                    PROJECT_ID,
+                    "--dataset",
+                    "garmin",
+                ],
+            )
         )
     )
-    drive_mcp = MCPToolset(
-        connection_params=StdioServerParameters(
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-gdrive"],
+    drive_mcp = McpToolset(
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command="npx",
+                args=["-y", "@modelcontextprotocol/server-gdrive"],
+            )
         )
     )
     agent = LlmAgent(
