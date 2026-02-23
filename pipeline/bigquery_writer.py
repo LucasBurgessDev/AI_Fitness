@@ -154,6 +154,143 @@ def _ensure_schema_cols(df: pd.DataFrame, schema: list) -> pd.DataFrame:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _existing_dates(client: bigquery.Client, table_id: str, dates: list[str]) -> set[str]:
+    """Return the set of dates from the given list that already exist in the table."""
+    date_list = ", ".join(f"'{d}'" for d in dates)
+    try:
+        rows = client.query(
+            f"SELECT DISTINCT date FROM `{table_id}` WHERE date IN ({date_list})"
+        ).result()
+        return {row["date"] for row in rows}
+    except Exception:
+        return set()
+
+
+def _existing_activity_ids(client: bigquery.Client, table_id: str, dates: list[str]) -> set[str]:
+    """Return activity_ids already in the table for the given dates."""
+    date_list = ", ".join(f"'{d}'" for d in dates)
+    try:
+        rows = client.query(
+            f"SELECT DISTINCT activity_id FROM `{table_id}` WHERE date IN ({date_list})"
+        ).result()
+        return {row["activity_id"] for row in rows}
+    except Exception:
+        return set()
+
+
+def write_stats_range(
+    df: pd.DataFrame,
+    project_id: str,
+    dates: list[str],
+    batch_id: str = "",
+) -> int:
+    """Write stats rows for the given dates, skipping any already present in BQ."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.garmin.garmin_stats"
+
+    out = df.rename(columns=_CSV_TO_STATS_COLS).copy()
+    if "date" not in out.columns:
+        return 0
+
+    # Only keep rows in the requested date window
+    out = out[out["date"].astype(str).isin(dates)]
+    if out.empty:
+        LOGGER.info("No stats rows in date range %s–%s", dates[-1], dates[0])
+        return 0
+
+    # Skip dates that already have data in BQ
+    existing = _existing_dates(client, table_id, dates)
+    if existing:
+        LOGGER.info("Stats dates already in BQ (skipping): %s", sorted(existing))
+        out = out[~out["date"].astype(str).isin(existing)]
+    if out.empty:
+        LOGGER.info("All stats dates for range already in BQ")
+        return 0
+
+    out.insert(0, "run_date", out["date"].astype(str))
+    out.insert(1, "batch_id", batch_id)
+
+    out = _coerce_int_cols(out, {"sleep_score", "rhr", "min_hr", "max_hr", "avg_stress",
+                                  "body_battery", "steps", "step_goal", "cals_total", "cals_active"})
+    out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
+                                    "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
+                                    "respiration", "spo2", "vo2_max", "hrv_avg"})
+    out = _ensure_schema_cols(out, _STATS_SCHEMA)
+
+    job_config = bigquery.LoadJobConfig(
+        schema=_STATS_SCHEMA,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        time_partitioning=bigquery.TimePartitioning(
+            type_=bigquery.TimePartitioningType.DAY,
+            field="run_date",
+        ),
+    )
+    job = client.load_table_from_dataframe(out, table_id, job_config=job_config)
+    job.result()
+    LOGGER.info("Wrote %d stats rows to %s", len(out), table_id)
+    return len(out)
+
+
+def write_activities_range(
+    df: pd.DataFrame,
+    project_id: str,
+    dates: list[str],
+    batch_id: str = "",
+) -> int:
+    """Write activity rows for the given dates, skipping any activity_ids already in BQ."""
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.garmin.garmin_activities"
+
+    out = df.copy()
+    if "date" not in out.columns:
+        return 0
+
+    # Only keep rows in the requested date window
+    out = out[out["date"].astype(str).isin(dates)]
+    if out.empty:
+        LOGGER.info("No activity rows in date range %s–%s", dates[-1], dates[0])
+        return 0
+
+    # Skip activity_ids already in BQ
+    if "activity_id" in out.columns:
+        out["activity_id"] = out["activity_id"].astype(str)
+        existing = _existing_activity_ids(client, table_id, dates)
+        if existing:
+            LOGGER.info("Activity IDs already in BQ (skipping): %d", len(existing))
+            out = out[~out["activity_id"].isin(existing)]
+    if out.empty:
+        LOGGER.info("All activities for range already in BQ")
+        return 0
+
+    out.insert(0, "run_date", out["date"].astype(str))
+    out.insert(1, "batch_id", batch_id)
+
+    if "avg_pace_min_mile" in out.columns:
+        out["avg_pace_min_mile"] = out["avg_pace_min_mile"].apply(_pace_str_to_float)
+
+    out = _coerce_int_cols(out, {"calories", "avg_hr", "max_hr",
+                                  "running_cadence_spm", "cycling_cadence_rpm"})
+    out = _coerce_float_cols(out, {"distance_m", "duration_s", "avg_speed_mps", "max_speed_mps",
+                                    "avg_pace_min_mile", "avg_power_w", "max_power_w",
+                                    "elevation_gain_m", "aerobic_te", "anaerobic_te",
+                                    "best_20m_watts", "ftp_watts", "normalized_power_w",
+                                    "intensity_factor", "tss"})
+    out = _ensure_schema_cols(out, _ACTIVITIES_SCHEMA)
+
+    job_config = bigquery.LoadJobConfig(
+        schema=_ACTIVITIES_SCHEMA,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        time_partitioning=bigquery.TimePartitioning(
+            type_=bigquery.TimePartitioningType.DAY,
+            field="run_date",
+        ),
+    )
+    job = client.load_table_from_dataframe(out, table_id, job_config=job_config)
+    job.result()
+    LOGGER.info("Wrote %d activity rows to %s", len(out), table_id)
+    return len(out)
+
+
 def write_stats(
     df: pd.DataFrame,
     project_id: str,

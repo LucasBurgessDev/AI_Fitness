@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import batch_control
@@ -73,8 +73,12 @@ def main() -> None:
     LOGGER.info("SAVE_PATH=%s", str(save_path))
 
     # Pull existing CSVs from Drive so we append reliably across executions
-    download_file_if_exists(drive_folder_id, "garmin_activities.csv", save_path / "garmin_activities.csv")
-    download_file_if_exists(drive_folder_id, "garmin_stats.csv", save_path / "garmin_stats.csv")
+    # Non-fatal: if Drive is unavailable the data collection still runs and BQ still gets updated
+    for fname in ("garmin_activities.csv", "garmin_stats.csv"):
+        try:
+            download_file_if_exists(drive_folder_id, fname, save_path / fname)
+        except Exception as dl_err:
+            LOGGER.warning("Drive download failed for %s (continuing): %s", fname, dl_err)
 
     # Run data collection scripts
     run_cmd(["python", "garmin_activities_daily.py"])
@@ -91,7 +95,10 @@ def main() -> None:
     if project_id:
         import pandas as pd
 
+        lookback_days = int(os.getenv("LOOKBACK_DAYS", "3"))
         today = date.today()
+        dates = [(today - timedelta(days=i)).isoformat() for i in range(lookback_days)]
+
         batch_id = batch_control.start_batch(project_id, "garmin-fitness-daily")
         total_rows = 0
 
@@ -101,11 +108,11 @@ def main() -> None:
 
             if stats_csv.exists():
                 df_stats = pd.read_csv(stats_csv)
-                total_rows += bigquery_writer.write_stats(df_stats, project_id, today, batch_id)
+                total_rows += bigquery_writer.write_stats_range(df_stats, project_id, dates, batch_id)
 
             if acts_csv.exists():
                 df_acts = pd.read_csv(acts_csv)
-                total_rows += bigquery_writer.write_activities(df_acts, project_id, today, batch_id)
+                total_rows += bigquery_writer.write_activities_range(df_acts, project_id, dates, batch_id)
 
             batch_control.end_batch(project_id, batch_id, total_rows, "SUCCESS")
             LOGGER.info("BigQuery write complete: %d rows", total_rows)
