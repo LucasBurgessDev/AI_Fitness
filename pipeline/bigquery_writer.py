@@ -198,6 +198,12 @@ def write_stats_range(
         LOGGER.info("No stats rows in date range %s–%s", dates[-1], dates[0])
         return 0
 
+    # Keep only the latest row per date (the CSV accumulates one row per pipeline run)
+    if "timestamp" in out.columns:
+        out = out.sort_values("timestamp", ascending=False).drop_duplicates(subset=["date"])
+    else:
+        out = out.drop_duplicates(subset=["date"], keep="last")
+
     # Skip dates that already have data in BQ
     existing = _existing_dates(client, table_id, dates)
     if existing:
