@@ -114,7 +114,7 @@ deploy-adk:
 	  --image "$(ADK_IMAGE_URI)" \
 	  --region "$(REGION)" \
 	  --service-account "$(SA_EMAIL)" \
-	  --set-env-vars "PROJECT_ID=$(PROJECT_ID),DRIVE_FOLDER_ID=$(DRIVE_FOLDER_ID),GCS_PROFILE_BUCKET=$(BUCKET)" \
+	  --set-env-vars "PROJECT_ID=$(PROJECT_ID),DRIVE_FOLDER_ID=$(DRIVE_FOLDER_ID),GCS_PROFILE_BUCKET=$(BUCKET),REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback" \
 	  --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
 	  --allow-unauthenticated \
 	  --memory 1Gi \
