@@ -22,34 +22,20 @@ _SCHEMA = [
     bigquery.SchemaField("error_message", "STRING"),
 ]
 
+# In-memory start times so end_batch can write a single complete row (avoids
+# streaming-buffer UPDATE restriction in BigQuery).
+_start_times: dict[str, datetime] = {}
+
 
 def start_batch(project_id: str, job_name: str) -> str:
-    """Insert a RUNNING row into data_control.batch_control and return the new batch_id."""
-    client = bigquery.Client(project=project_id)
-    table_id = f"{project_id}.{_TABLE}"
+    """Record a new batch start and return the batch_id.
 
+    No row is written to BigQuery yet — a single complete row is written by
+    end_batch, which avoids the streaming-buffer UPDATE restriction.
+    """
     batch_id = str(uuid.uuid4())
-    now = datetime.now(tz=timezone.utc)
-
-    rows = [
-        {
-            "batch_id": batch_id,
-            "job_name": job_name,
-            "run_date": date.today().isoformat(),
-            "start_time": now.isoformat(),
-            "end_time": None,
-            "rows_inserted": None,
-            "status": "RUNNING",
-            "error_message": None,
-        }
-    ]
-
-    errors = client.insert_rows_json(table_id, rows)
-    if errors:
-        LOGGER.warning("start_batch insert errors: %s", errors)
-    else:
-        LOGGER.info("Batch started: %s  job=%s", batch_id, job_name)
-
+    _start_times[batch_id] = datetime.now(tz=timezone.utc)
+    LOGGER.info("Batch started: %s  job=%s", batch_id, job_name)
     return batch_id
 
 
@@ -60,22 +46,28 @@ def end_batch(
     status: str,
     error: Optional[str] = None,
 ) -> None:
-    """Update the batch_control row with end_time, final status, and row count."""
+    """Insert a single complete row into data_control.batch_control."""
     client = bigquery.Client(project=project_id)
     table_id = f"{project_id}.{_TABLE}"
-    now = datetime.now(tz=timezone.utc)
 
-    query = f"UPDATE `{table_id}` SET end_time = @end_time, rows_inserted = @rows_inserted, status = @status, error_message = @error_message WHERE batch_id = @batch_id"
+    start_time = _start_times.pop(batch_id, datetime.now(tz=timezone.utc))
+    end_time = datetime.now(tz=timezone.utc)
 
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("end_time", "TIMESTAMP", now),
-            bigquery.ScalarQueryParameter("rows_inserted", "INT64", rows_inserted),
-            bigquery.ScalarQueryParameter("status", "STRING", status),
-            bigquery.ScalarQueryParameter("error_message", "STRING", error),
-            bigquery.ScalarQueryParameter("batch_id", "STRING", batch_id),
-        ]
-    )
-    job = client.query(query, job_config=job_config)
-    job.result()
-    LOGGER.info("Batch ended: %s  status=%s  rows=%s", batch_id, status, rows_inserted)
+    rows = [
+        {
+            "batch_id": batch_id,
+            "job_name": "garmin-fitness-daily",
+            "run_date": date.today().isoformat(),
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "rows_inserted": rows_inserted,
+            "status": status,
+            "error_message": error,
+        }
+    ]
+
+    errors = client.insert_rows_json(table_id, rows)
+    if errors:
+        LOGGER.warning("end_batch insert errors: %s", errors)
+    else:
+        LOGGER.info("Batch ended: %s  status=%s  rows=%s", batch_id, status, rows_inserted)
