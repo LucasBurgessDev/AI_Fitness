@@ -31,17 +31,14 @@ python pipeline/bootstrap_tokens_to_gcs.py
 
 ### Cloud Deployment (via Makefile)
 
+Infrastructure is provisioned by OpenTofu (see CI/CD). Manual makefile targets for one-off operations:
+
 ```bash
 # Garmin pipeline (Cloud Run Job)
-make enable-apis        # Enable required GCP APIs (includes bigquery.googleapis.com)
 make build              # Build Docker image and push to Artifact Registry
-make deploy             # Deploy to Cloud Run Job (includes BQ_PROJECT_ID env var)
+make deploy             # Deploy to Cloud Run Job
 make run                # Execute Cloud Run Job on demand
 make logs               # View job execution logs
-
-# BigQuery setup (one-time)
-make bq-create-datasets # Create garmin + data_control datasets in europe-west2
-make bq-iam             # Grant SA bigquery.dataEditor + bigquery.jobUser roles
 
 # Scheduler (every 30 min, 06:00–23:30 London time)
 make scheduler-create   # Create Cloud Scheduler job
@@ -128,6 +125,13 @@ Two independent Cloud Run deployments share a single GCS bucket, BigQuery projec
 │       ├── login.html
 │       ├── chat.html
 │       └── settings.html
+├── terraform/                  # OpenTofu infrastructure-as-code
+│   ├── main.tf                 # Provider config + GCS backend
+│   ├── variables.tf
+│   ├── apis.tf                 # API enablement
+│   ├── storage.tf              # GCS bucket + Artifact Registry
+│   ├── bigquery.tf             # BQ datasets + batch_control table + IAM
+│   └── secrets.tf              # Secret Manager resources + SA IAM
 ├── .github/workflows/
 │   └── deploy.yml
 ├── makefile
@@ -297,19 +301,38 @@ Stored as Secret Manager secrets, mounted by Cloud Run:
 | `DRIVE_FOLDER_ID` | Drive folder (for Drive MCP tool) |
 | `REDIRECT_URI` | OAuth callback URL (default: localhost for dev) |
 
+## Infrastructure (OpenTofu)
+
+All GCP infrastructure is managed as code in `terraform/` using OpenTofu. State is stored in `gs://garmin-fitness-health-data-482722/terraform/state`.
+
+| File | Manages |
+|---|---|
+| `apis.tf` | Enables all required GCP APIs (run, bigquery, secretmanager, cloudresourcemanager, etc.) |
+| `storage.tf` | GCS bucket, Artifact Registry repo (`health-jobs`), SA `storage.objectAdmin` binding |
+| `bigquery.tf` | `garmin` + `data_control` datasets, `batch_control` table schema, SA BQ IAM |
+| `secrets.tf` | Secret Manager resources for all 4 coach secrets; auto-generates `cycling-coach-secret-key` via `random_password` with `ignore_changes` (never rotated after first apply); SA accessor bindings |
+
+To apply locally:
+```bash
+tofu -chdir=terraform init
+tofu -chdir=terraform apply
+```
+
+**Note:** `cloudresourcemanager.googleapis.com` must be enabled manually before the first `tofu apply` (it's a bootstrap dependency). The SA (`GCP_SA_KEY`) needs the following roles: `roles/bigquery.admin`, `roles/secretmanager.admin`, `roles/serviceusage.serviceUsageAdmin`, `roles/resourcemanager.projectIamAdmin`, `roles/storage.admin`, `roles/artifactregistry.admin`.
+
 ## CI/CD
 
-GitHub Actions (`.github/workflows/deploy.yml`) triggers on push to `main` and runs two parallel jobs:
+GitHub Actions (`.github/workflows/deploy.yml`) triggers on push to `main` and runs three sequential/parallel jobs:
 
-**deploy-pipeline** (Garmin Cloud Run Job):
+**provision-infra** (runs first):
 1. Authenticates to GCP using `GCP_SA_KEY` secret
-2. Builds Docker image via Cloud Build → Artifact Registry
-3. Deploys `garmin-fitness-daily` Cloud Run Job with `BQ_PROJECT_ID` env var
+2. Bootstraps GCS state bucket if missing
+3. Runs `tofu init` + imports any already-existing resources (idempotent)
+4. Runs `tofu apply -auto-approve`
 
-**deploy-cycling-coach** (ADK Cloud Run Service):
-1. Authenticates to GCP using `GCP_SA_KEY` secret
-2. Builds `adk_cycling/` Docker image via Cloud Build
-3. Deploys `cycling-coach` Cloud Run Service with secrets mounted
+**deploy-pipeline** + **deploy-cycling-coach** (both `needs: provision-infra`, run in parallel):
+- Pipeline: builds `pipeline/` via Cloud Build → deploys `garmin-fitness-daily` Cloud Run Job
+- Coach: builds `adk_cycling/` via Cloud Build → deploys `cycling-coach` Cloud Run Service with secrets mounted
 
 Cloud Run Job limits: 1Gi memory, 1 CPU, 900s timeout, max 1 retry.
 Cloud Run Service limits: 1Gi memory, 1 CPU.
