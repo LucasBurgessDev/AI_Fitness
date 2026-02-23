@@ -33,7 +33,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v2
+        uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: "1.9.0"
 
