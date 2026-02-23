@@ -11,22 +11,22 @@ A Python pipeline that pulls biometric and activity data from Garmin Connect, sy
 ### Local Development
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install pipeline dependencies
+pip install -r pipeline/requirements.txt
 
 # One-time Garmin authentication (creates .garth/ token directory)
-python direct_login.py
+python pipeline/direct_login.py
 
 # Run daily data pulls (reads LOOKBACK_DAYS env var, default 3)
-python garmin_stats_daily.py
-python garmin_activities_daily.py
+python pipeline/garmin_stats_daily.py
+python pipeline/garmin_activities_daily.py
 
 # Historical backfill
-python garmin_stats_history.py
-python garmin_activities_history.py
+python pipeline/garmin_stats_history.py
+python pipeline/garmin_activities_history.py
 
 # Bootstrap tokens to GCS for Cloud Run
-python bootstrap_tokens_to_gcs.py
+python pipeline/bootstrap_tokens_to_gcs.py
 ```
 
 ### Cloud Deployment (via Makefile)
@@ -65,7 +65,7 @@ Two independent Cloud Run deployments share a single GCS bucket, BigQuery projec
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Cloud Run Job — garmin-fitness-daily  (runs every 30 min)      │
-│  cloud_run_entrypoint.py                                        │
+│  pipeline/cloud_run_entrypoint.py                               │
 │    ├─ token_cache_gcs.py   ← download .garth/ from GCS         │
 │    ├─ garmin_activities_daily.py  ← pull activities             │
 │    ├─ garmin_stats_daily.py       ← pull biometrics             │
@@ -96,6 +96,45 @@ Two independent Cloud Run deployments share a single GCS bucket, BigQuery projec
         │         ├─ @mcp/server-bigquery  (npx, queries BQ)      │
         │         └─ @mcp/server-gdrive   (npx, reads Drive)      │
         └────────────────────────────────────────────────────────┘
+
+### Repository Layout
+
+```
+.
+├── pipeline/                   # Cloud Run Job — Garmin data pipeline
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── cloud_run_entrypoint.py
+│   ├── garmin_stats_daily.py
+│   ├── garmin_stats_history.py
+│   ├── garmin_activities_daily.py
+│   ├── garmin_activities_history.py
+│   ├── activity_filter.py
+│   ├── activity_filters.yaml
+│   ├── bigquery_writer.py
+│   ├── batch_control.py
+│   ├── drive_uploader.py
+│   ├── token_cache_gcs.py
+│   ├── bootstrap_tokens_to_gcs.py
+│   └── direct_login.py
+├── adk_cycling/                # Cloud Run Service — ADK Cycling Coach
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── app.py
+│   ├── agent.py
+│   ├── profile.py
+│   ├── system_prompt.txt
+│   └── templates/
+│       ├── login.html
+│       ├── chat.html
+│       └── settings.html
+├── .github/workflows/
+│   └── deploy.yml
+├── makefile
+├── CLAUDE.md
+├── README.md
+└── .gitignore
+```
 ```
 
 ### Pipeline Execution Flow (`cloud_run_entrypoint.py`)

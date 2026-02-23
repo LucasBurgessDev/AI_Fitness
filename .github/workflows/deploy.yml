@@ -34,7 +34,7 @@ jobs:
 
       - name: Build pipeline image
         run: |
-          gcloud builds submit \
+          gcloud builds submit pipeline/ \
             --project "$PROJECT_ID" \
             --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily:latest" \
             --service-account "projects/$PROJECT_ID/serviceAccounts/$SA_EMAIL" \

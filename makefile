@@ -63,10 +63,10 @@ infra:
 	  --location="$(REGION)" || true
 
 bootstrap-tokens:
-	TOKEN_CACHE_GCS_URI="$(TOKEN_CACHE_GCS_URI)" python bootstrap_tokens_to_gcs.py
+	TOKEN_CACHE_GCS_URI="$(TOKEN_CACHE_GCS_URI)" python pipeline/bootstrap_tokens_to_gcs.py
 
 build:
-	gcloud builds submit --tag "$(IMAGE_URI)"
+	gcloud builds submit pipeline/ --tag "$(IMAGE_URI)"
 
 deploy:
 	gcloud run jobs deploy "$(JOB_NAME)" \
