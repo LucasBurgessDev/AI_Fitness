@@ -83,10 +83,13 @@ run:
 	gcloud run jobs execute "$(JOB_NAME)" --wait
 
 backfill-bq:
-	gcloud run jobs execute "$(JOB_NAME)" \
-	  --region "$(REGION)" \
-	  --update-env-vars "BACKFILL=1" \
-	  --wait
+	gcloud run jobs update "$(JOB_NAME)" --region "$(REGION)" --update-env-vars "BACKFILL=1" --quiet
+	gcloud run jobs execute "$(JOB_NAME)" --region "$(REGION)" --wait
+	gcloud run jobs update "$(JOB_NAME)" --region "$(REGION)" --remove-env-vars "BACKFILL" --quiet
+
+# Backfill from local historic_data folder (no Drive/GCS needed — uses ADC for BQ auth)
+backfill-bq-local:
+	cd pipeline && LOCAL_DATA_PATH=../historic_data BQ_PROJECT_ID=$(PROJECT_ID) python backfill_bq.py
 
 logs:
 	gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=$(JOB_NAME)" --limit 120

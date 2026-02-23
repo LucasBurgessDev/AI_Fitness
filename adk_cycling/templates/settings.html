@@ -1,35 +1,77 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cycling Coach AI – Settings</title>
   <style>
+    :root {
+      --bg:          #f0f4f8;
+      --surface:     #ffffff;
+      --surface-2:   #f8f9fb;
+      --border:      #dde3ec;
+      --text:        #1a1a1a;
+      --text-muted:  #666;
+      --accent:      #1a73e8;
+      --accent-dark: #1558b0;
+      --shadow:      0 1px 4px rgba(0,0,0,0.08);
+      --header-bg:   #1a73e8;
+      --header-text: #ffffff;
+    }
+    [data-theme="dark"] {
+      --bg:          #0f1117;
+      --surface:     #1c1f26;
+      --surface-2:   #161920;
+      --border:      #2e3340;
+      --text:        #e8eaf0;
+      --text-muted:  #8b929e;
+      --accent:      #5b9cf6;
+      --accent-dark: #4a87e8;
+      --shadow:      0 1px 4px rgba(0,0,0,0.35);
+      --header-bg:   #12151e;
+      --header-text: #e8eaf0;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f0f4f8;
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      transition: background 0.2s, color 0.2s;
     }
 
     header {
-      background: #1a73e8;
-      color: #fff;
-      padding: 0.75rem 1.25rem;
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 0.7rem 1.25rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
+      border-bottom: 1px solid rgba(0,0,0,0.1);
     }
     .header-left { display: flex; align-items: center; gap: 0.6rem; }
-    .header-left .icon { font-size: 1.4rem; }
-    .header-left h1 { font-size: 1.1rem; font-weight: 600; }
-    .header-right { display: flex; align-items: center; gap: 1rem; font-size: 0.85rem; opacity: 0.9; }
-    .header-right a { color: #fff; text-decoration: none; opacity: 0.75; }
+    .header-left .icon { font-size: 1.3rem; }
+    .header-left h1 { font-size: 1.05rem; font-weight: 600; color: var(--header-text); }
+    .header-right { display: flex; align-items: center; gap: 0.85rem; font-size: 0.83rem; }
+    .header-right a { color: var(--header-text); text-decoration: none; opacity: 0.75; transition: opacity 0.15s; }
     .header-right a:hover { opacity: 1; }
-    .header-right a.active { opacity: 1; font-weight: 600; border-bottom: 2px solid rgba(255,255,255,0.8); }
+    .header-right a.active { opacity: 1; font-weight: 600; }
+
+    #theme-toggle {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--header-text);
+      border-radius: 6px;
+      padding: 0.3rem 0.55rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #theme-toggle:hover { background: rgba(255,255,255,0.2); }
 
     main {
       flex: 1;
@@ -39,10 +81,9 @@
       padding: 0 1rem 3rem;
     }
 
-    h2 { font-size: 1.25rem; color: #1a1a1a; margin-bottom: 0.3rem; }
-    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 1.75rem; }
+    h2 { font-size: 1.2rem; color: var(--text); margin-bottom: 0.3rem; }
+    .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.75rem; }
 
-    /* Alert banners */
     .alert {
       border-radius: 6px;
       padding: 0.75rem 1rem;
@@ -51,24 +92,26 @@
     }
     .alert-success { background: #e6f4ea; color: #1e7e34; border: 1px solid #a8d5b5; }
     .alert-error   { background: #fce8e6; color: #c5221f; border: 1px solid #f5c6c4; }
+    [data-theme="dark"] .alert-success { background: #162a1c; color: #6fcf97; border-color: #2a5c38; }
+    [data-theme="dark"] .alert-error   { background: #2a1515; color: #f28b82; border-color: #5c2a2a; }
 
-    /* Form card */
     .card {
-      background: #fff;
+      background: var(--surface);
       border-radius: 10px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
       padding: 1.5rem;
       margin-bottom: 1.25rem;
     }
     .card h3 {
-      font-size: 0.95rem;
+      font-size: 0.88rem;
       font-weight: 600;
-      color: #1a73e8;
+      color: var(--accent);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 1.1rem;
       padding-bottom: 0.5rem;
-      border-bottom: 1px solid #e8edf2;
+      border-bottom: 1px solid var(--border);
     }
 
     .field-row {
@@ -78,72 +121,47 @@
     }
     @media (max-width: 500px) { .field-row { grid-template-columns: 1fr; } }
 
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-      margin-bottom: 0.9rem;
-    }
+    .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
     .field:last-child { margin-bottom: 0; }
 
-    label {
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: #444;
-    }
-    label .hint {
-      font-weight: 400;
-      color: #888;
-      margin-left: 0.35rem;
-    }
+    label { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+    label .hint { font-weight: 400; color: var(--text-muted); margin-left: 0.35rem; }
 
     input[type="number"],
     input[type="text"],
     textarea {
       padding: 0.55rem 0.75rem;
-      border: 1px solid #c8d3e0;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      font-size: 0.95rem;
+      font-size: 0.93rem;
       font-family: inherit;
-      color: #1a1a1a;
+      color: var(--text);
+      background: var(--bg);
       outline: none;
       transition: border-color 0.15s;
       width: 100%;
     }
-    input:focus, textarea:focus { border-color: #1a73e8; }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; line-height: 1.5; }
 
-    textarea {
-      resize: vertical;
-      line-height: 1.5;
-    }
+    .wpkg-preview { font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .wpkg-preview span { font-weight: 600; color: var(--accent); }
 
-    .wpkg-preview {
-      font-size: 0.82rem;
-      color: #555;
-      margin-top: 0.2rem;
-    }
-    .wpkg-preview span { font-weight: 600; color: #1a73e8; }
-
-    /* Save button */
     .actions { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
     .btn-save {
-      background: #1a73e8;
+      background: var(--accent);
       color: #fff;
       border: none;
       border-radius: 6px;
       padding: 0.65rem 1.75rem;
-      font-size: 0.95rem;
+      font-size: 0.93rem;
       font-weight: 500;
       cursor: pointer;
       transition: background 0.15s;
     }
-    .btn-save:hover { background: #1558b0; }
-    .btn-cancel {
-      color: #555;
-      font-size: 0.9rem;
-      text-decoration: none;
-    }
-    .btn-cancel:hover { color: #1a73e8; }
+    .btn-save:hover { background: var(--accent-dark); }
+    .btn-cancel { color: var(--text-muted); font-size: 0.9rem; text-decoration: none; }
+    .btn-cancel:hover { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -155,17 +173,18 @@
     <div class="header-right">
       <a href="/">Chat</a>
       <a href="/settings" class="active">Settings</a>
-      <span>{{ email }}</span>
+      <span style="opacity:0.6;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ email }}</span>
+      <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
       <a href="/logout">Sign out</a>
     </div>
   </header>
 
   <main>
     <h2>Coach Profile</h2>
-    <p class="subtitle">Update your stats, goals, and equipment. Changes apply immediately to new chat messages — no redeployment needed.</p>
+    <p class="subtitle">Update your stats, goals, and equipment. Changes apply immediately to new chat messages.</p>
 
     {% if saved %}
-    <div class="alert alert-success">✓ Profile saved successfully. Your next chat message will use the updated settings.</div>
+    <div class="alert alert-success">✓ Profile saved. Your next message will use the updated settings.</div>
     {% endif %}
     {% if error %}
     <div class="alert alert-error">⚠ Error saving profile: {{ error }}</div>
@@ -173,7 +192,6 @@
 
     <form method="post" action="/settings">
 
-      <!-- Stats -->
       <div class="card">
         <h3>My Stats</h3>
         <div class="field-row">
@@ -206,22 +224,21 @@
         </div>
       </div>
 
-      <!-- Goals -->
       <div class="card">
         <h3>Goals</h3>
         <div class="field">
-          <label for="goals">Current goals <span class="hint">(one per line, or free text)</span></label>
-          <textarea id="goals" name="goals" rows="6" placeholder="- Complete an event on [date]&#10;- Improve FTP to X watts&#10;- Lose X kg by [date]">{{ profile.goals }}</textarea>
+          <label for="goals">Current goals <span class="hint">(one per line or free text)</span></label>
+          <textarea id="goals" name="goals" rows="6"
+            placeholder="- Complete an event on [date]&#10;- Improve FTP to X watts&#10;- Lose X kg by [date]">{{ profile.goals }}</textarea>
         </div>
       </div>
 
-      <!-- Equipment -->
       <div class="card">
         <h3>Equipment</h3>
         <div class="field">
           <label for="equipment">Your kit</label>
           <textarea id="equipment" name="equipment" rows="3"
-                    placeholder="Zwift, Wahoo Kickr Core, Trek Domane, Garmin Edge 530...">{{ profile.equipment }}</textarea>
+            placeholder="Zwift, Wahoo Kickr Core, Trek Domane, Garmin Edge 530...">{{ profile.equipment }}</textarea>
         </div>
       </div>
 
@@ -234,11 +251,23 @@
   </main>
 
   <script>
+    const root = document.documentElement;
+    const t = localStorage.getItem('cc-theme') || 'light';
+    root.setAttribute('data-theme', t);
+    document.getElementById('theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
+
+    function toggleTheme() {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('cc-theme', next);
+      document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+    }
+
     function updateWpkg() {
       const ftp = parseFloat(document.getElementById('ftp').value) || 0;
-      const weight = parseFloat(document.getElementById('weight_kg').value) || 1;
-      const wpkg = weight > 0 ? (ftp / weight).toFixed(2) : 'N/A';
-      document.getElementById('wpkg-preview').innerHTML = `W/kg: <span>${wpkg}</span>`;
+      const w = parseFloat(document.getElementById('weight_kg').value) || 1;
+      document.getElementById('wpkg-preview').innerHTML =
+        `W/kg: <span>${w > 0 ? (ftp/w).toFixed(2) : 'N/A'}</span>`;
     }
     updateWpkg();
   </script>
