@@ -112,10 +112,13 @@ def main() -> None:
                 pass
     # ------------------------------------------------------------------
 
-    # Upload updated CSVs to Drive
+    # Upload updated CSVs to Drive (non-fatal — quota errors shouldn't abort the job)
     LOGGER.info("Uploading CSVs to Drive folder")
-    upload_all_csvs(drive_folder_id, save_path)
-    LOGGER.info("Drive upload complete")
+    try:
+        upload_all_csvs(drive_folder_id, save_path)
+        LOGGER.info("Drive upload complete")
+    except Exception as drive_err:
+        LOGGER.error("Drive upload failed (continuing): %s", drive_err)
 
     # Persist refreshed token cache
     upload_token_cache(token_uri, garth_dir)
