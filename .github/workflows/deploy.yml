@@ -146,7 +146,7 @@ jobs:
             --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach:latest" \
             --region "$REGION" \
             --service-account "$SA_EMAIL" \
-            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback" \
+            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=1" \
             --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
             --allow-unauthenticated \
             --memory 1Gi \
