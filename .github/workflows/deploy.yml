@@ -15,11 +15,70 @@ env:
 
 jobs:
   # -----------------------------------------------------------------------
-  # Job 1: Build & deploy the Garmin data pipeline (Cloud Run Job)
+  # Job 1: Provision infrastructure with OpenTofu
+  # -----------------------------------------------------------------------
+  provision-infra:
+    name: Provision Infrastructure (OpenTofu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: "1.9.0"
+
+      - name: Bootstrap state bucket
+        run: |
+          gcloud storage buckets create "gs://$BUCKET" \
+            --location="$REGION" \
+            --uniform-bucket-level-access || true
+
+      - name: OpenTofu Init
+        run: tofu -chdir=terraform init
+
+      - name: Import existing resources
+        working-directory: terraform
+        run: |
+          tofu import google_storage_bucket.pipeline_bucket "$BUCKET" 2>/dev/null || true
+          tofu import "google_artifact_registry_repository.health_jobs" \
+            "projects/$PROJECT_ID/locations/$REGION/repositories/health-jobs" 2>/dev/null || true
+          tofu import "google_bigquery_dataset.garmin" \
+            "projects/$PROJECT_ID/datasets/garmin" 2>/dev/null || true
+          tofu import "google_bigquery_dataset.data_control" \
+            "projects/$PROJECT_ID/datasets/data_control" 2>/dev/null || true
+          tofu import "google_bigquery_table.batch_control" \
+            "projects/$PROJECT_ID/datasets/data_control/tables/batch_control" 2>/dev/null || true
+          tofu import "google_secret_manager_secret.oauth_client_id" \
+            "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-id" 2>/dev/null || true
+          tofu import "google_secret_manager_secret.oauth_client_secret" \
+            "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-secret" 2>/dev/null || true
+          tofu import "google_secret_manager_secret.allowed_email" \
+            "projects/$PROJECT_ID/secrets/cycling-coach-allowed-email" 2>/dev/null || true
+          tofu import "google_secret_manager_secret.secret_key" \
+            "projects/$PROJECT_ID/secrets/cycling-coach-secret-key" 2>/dev/null || true
+          tofu import "google_secret_manager_secret_version.secret_key" \
+            "projects/$PROJECT_ID/secrets/cycling-coach-secret-key/versions/1" 2>/dev/null || true
+
+      - name: OpenTofu Apply
+        run: tofu -chdir=terraform apply -auto-approve
+
+  # -----------------------------------------------------------------------
+  # Job 2: Build & deploy the Garmin data pipeline (Cloud Run Job)
   # -----------------------------------------------------------------------
   deploy-pipeline:
     name: Deploy Garmin Pipeline
     runs-on: ubuntu-latest
+    needs: provision-infra
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,11 +113,12 @@ jobs:
             --region "$REGION"
 
   # -----------------------------------------------------------------------
-  # Job 2: Build & deploy the ADK Cycling Coach (Cloud Run Service)
+  # Job 3: Build & deploy the ADK Cycling Coach (Cloud Run Service)
   # -----------------------------------------------------------------------
   deploy-cycling-coach:
     name: Deploy ADK Cycling Coach
     runs-on: ubuntu-latest
+    needs: provision-infra
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,17 +130,6 @@ jobs:
 
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-
-      - name: Bootstrap cycling-coach-secret-key if missing
-        run: |
-          if ! gcloud secrets describe cycling-coach-secret-key --project "$PROJECT_ID" > /dev/null 2>&1; then
-            python3 -c "import secrets; print(secrets.token_hex(32), end='')" | \
-              gcloud secrets create cycling-coach-secret-key --data-file=- --project "$PROJECT_ID"
-            gcloud secrets add-iam-policy-binding cycling-coach-secret-key \
-              --member="serviceAccount:$SA_EMAIL" \
-              --role="roles/secretmanager.secretAccessor" \
-              --project "$PROJECT_ID"
-          fi
 
       - name: Build ADK cycling coach image
         run: |

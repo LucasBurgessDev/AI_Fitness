@@ -23,20 +23,9 @@ _SCHEMA = [
 ]
 
 
-def _ensure_table(client: bigquery.Client, project_id: str) -> None:
-    """Create data_control dataset and batch_control table if they don't exist."""
-    dataset_id = f"{project_id}.data_control"
-    client.create_dataset(bigquery.Dataset(dataset_id), exists_ok=True)
-
-    table_id = f"{project_id}.{_TABLE}"
-    table = bigquery.Table(table_id, schema=_SCHEMA)
-    client.create_table(table, exists_ok=True)
-
-
 def start_batch(project_id: str, job_name: str) -> str:
     """Insert a RUNNING row into data_control.batch_control and return the new batch_id."""
     client = bigquery.Client(project=project_id)
-    _ensure_table(client, project_id)
     table_id = f"{project_id}.{_TABLE}"
 
     batch_id = str(uuid.uuid4())

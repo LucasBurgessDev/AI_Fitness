@@ -8,3 +8,9 @@ garmin_stats.csv
 garmin_activities.csv
 garmin_runs.csv
 hevy_stats.csv
+
+# OpenTofu / Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup

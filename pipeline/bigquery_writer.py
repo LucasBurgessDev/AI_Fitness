@@ -154,12 +154,6 @@ def _ensure_schema_cols(df: pd.DataFrame, schema: list) -> pd.DataFrame:
 # Public API
 # ---------------------------------------------------------------------------
 
-def _ensure_dataset(client: bigquery.Client, project_id: str, dataset_name: str) -> None:
-    """Create a BigQuery dataset if it doesn't exist."""
-    dataset_id = f"{project_id}.{dataset_name}"
-    client.create_dataset(bigquery.Dataset(dataset_id), exists_ok=True)
-
-
 def write_stats(
     df: pd.DataFrame,
     project_id: str,
@@ -168,7 +162,6 @@ def write_stats(
 ) -> int:
     """Rename CSV columns, inject run_date/batch_id, and APPEND today's rows to garmin.garmin_stats."""
     client = bigquery.Client(project=project_id)
-    _ensure_dataset(client, project_id, "garmin")
     table_id = f"{project_id}.garmin.garmin_stats"
 
     out = df.rename(columns=_CSV_TO_STATS_COLS).copy()
@@ -214,7 +207,6 @@ def write_activities(
 ) -> int:
     """Inject run_date/batch_id and APPEND today's rows to garmin.garmin_activities."""
     client = bigquery.Client(project=project_id)
-    _ensure_dataset(client, project_id, "garmin")
     table_id = f"{project_id}.garmin.garmin_activities"
 
     out = df.copy()
