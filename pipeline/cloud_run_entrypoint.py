@@ -82,7 +82,12 @@ def main() -> None:
 
     # Run data collection scripts
     run_cmd(["python", "garmin_activities_daily.py"])
-    run_cmd(["python", "garmin_stats_daily.py"])
+    stats_history_start = os.getenv("STATS_HISTORY_START")
+    if stats_history_start:
+        LOGGER.info("Running stats history from %s", stats_history_start)
+        run_cmd(["python", "garmin_stats_history.py"])
+    else:
+        run_cmd(["python", "garmin_stats_daily.py"])
 
     # Confirm CSVs exist
     list_dir(save_path)
