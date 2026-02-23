@@ -71,6 +71,17 @@ jobs:
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Bootstrap cycling-coach-secret-key if missing
+        run: |
+          if ! gcloud secrets describe cycling-coach-secret-key --project "$PROJECT_ID" > /dev/null 2>&1; then
+            python3 -c "import secrets; print(secrets.token_hex(32), end='')" | \
+              gcloud secrets create cycling-coach-secret-key --data-file=- --project "$PROJECT_ID"
+            gcloud secrets add-iam-policy-binding cycling-coach-secret-key \
+              --member="serviceAccount:$SA_EMAIL" \
+              --role="roles/secretmanager.secretAccessor" \
+              --project "$PROJECT_ID"
+          fi
+
       - name: Build ADK cycling coach image
         run: |
           gcloud builds submit adk_cycling/ \
