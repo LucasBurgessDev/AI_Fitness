@@ -85,6 +85,7 @@ def main() -> None:
     stats_history_start = os.getenv("STATS_HISTORY_START")
     if stats_history_start:
         LOGGER.info("Running stats history from %s", stats_history_start)
+        os.environ["START_DATE"] = stats_history_start
         run_cmd(["python", "garmin_stats_history.py"])
     else:
         run_cmd(["python", "garmin_stats_daily.py"])
