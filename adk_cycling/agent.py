@@ -105,12 +105,12 @@ async def run_agent(message: str, session_id: str = "default") -> str:
     """Run the cycling agent for a single user message and return the response text."""
     runner = _get_runner(session_id)
 
-    # Create session on first use; reuse on subsequent calls
-    try:
-        await _session_service.get_session(
-            app_name=_APP_NAME, user_id="user", session_id=session_id
-        )
-    except Exception:
+    # Create session on first use; reuse on subsequent calls.
+    # get_session returns None (not an exception) when not found.
+    session = await _session_service.get_session(
+        app_name=_APP_NAME, user_id="user", session_id=session_id
+    )
+    if session is None:
         await _session_service.create_session(
             app_name=_APP_NAME, user_id="user", session_id=session_id
         )
