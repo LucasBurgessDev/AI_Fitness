@@ -85,8 +85,7 @@ run:
 backfill-bq:
 	gcloud run jobs execute "$(JOB_NAME)" \
 	  --region "$(REGION)" \
-	  --command "python" \
-	  --args "backfill_bq.py" \
+	  --update-env-vars "BACKFILL=1" \
 	  --wait
 
 logs:

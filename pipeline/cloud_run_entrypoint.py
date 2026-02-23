@@ -48,6 +48,12 @@ def list_dir(path: Path) -> None:
 def main() -> None:
     _setup_logging()
 
+    # Backfill mode: load full Drive CSV history into BigQuery
+    if os.getenv("BACKFILL") == "1":
+        import backfill_bq
+        backfill_bq.main()
+        return
+
     token_uri = os.environ["TOKEN_CACHE_GCS_URI"]
     drive_folder_id = os.environ["DRIVE_FOLDER_ID"]
     project_id = os.getenv("BQ_PROJECT_ID", "")
