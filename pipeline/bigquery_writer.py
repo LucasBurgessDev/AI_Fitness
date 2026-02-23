@@ -154,14 +154,14 @@ def _ensure_schema_cols(df: pd.DataFrame, schema: list) -> pd.DataFrame:
 # Public API
 # ---------------------------------------------------------------------------
 
-def _existing_dates(client: bigquery.Client, table_id: str, dates: list[str]) -> set[str]:
-    """Return the set of dates from the given list that already exist in the table."""
+def _existing_date_timestamps(client: bigquery.Client, table_id: str, dates: list[str]) -> set[str]:
+    """Return existing (date, timestamp) pairs as 'date|timestamp' strings for the given dates."""
     date_list = ", ".join(f"'{d}'" for d in dates)
     try:
         rows = client.query(
-            f"SELECT DISTINCT date FROM `{table_id}` WHERE date IN ({date_list})"
+            f"SELECT date, timestamp FROM `{table_id}` WHERE date IN ({date_list})"
         ).result()
-        return {row["date"] for row in rows}
+        return {f"{row['date']}|{row['timestamp']}" for row in rows}
     except Exception:
         return set()
 
@@ -198,19 +198,15 @@ def write_stats_range(
         LOGGER.info("No stats rows in date range %s–%s", dates[-1], dates[0])
         return 0
 
-    # Keep only the latest row per date (the CSV accumulates one row per pipeline run)
+    # Skip rows already in BQ (dedup on date+timestamp to allow multiple rows per day)
     if "timestamp" in out.columns:
-        out = out.sort_values("timestamp", ascending=False).drop_duplicates(subset=["date"])
-    else:
-        out = out.drop_duplicates(subset=["date"], keep="last")
-
-    # Skip dates that already have data in BQ
-    existing = _existing_dates(client, table_id, dates)
-    if existing:
-        LOGGER.info("Stats dates already in BQ (skipping): %s", sorted(existing))
-        out = out[~out["date"].astype(str).isin(existing)]
+        existing = _existing_date_timestamps(client, table_id, dates)
+        if existing:
+            mask = (out["date"].astype(str) + "|" + out["timestamp"].astype(str)).isin(existing)
+            out = out[~mask]
+            LOGGER.info("Skipped %d already-present stats rows", mask.sum())
     if out.empty:
-        LOGGER.info("All stats dates for range already in BQ")
+        LOGGER.info("All stats rows for range already in BQ")
         return 0
 
     out.insert(0, "run_date", out["date"].astype(str))

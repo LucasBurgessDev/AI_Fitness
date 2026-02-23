@@ -64,12 +64,6 @@ def _backfill_table(
         LOGGER.warning("No valid rows for %s", table_id)
         return 0
 
-    # Keep only the latest row per date (CSV has one row per pipeline run per day)
-    if "date" in df.columns:
-        sort_col = "timestamp" if "timestamp" in df.columns else "date"
-        df = df.sort_values(sort_col, ascending=False).drop_duplicates(subset=["date"])
-        LOGGER.info("After dedup: %d unique dates", len(df))
-
     df.insert(0, "run_date", df["date"].astype(str))
     df.insert(1, "batch_id", "backfill")
 

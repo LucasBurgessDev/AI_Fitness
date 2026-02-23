@@ -94,6 +94,7 @@ def get_recent_stats(days: int = 30) -> str:
                training_status, steps, cals_total
         FROM `{PROJECT_ID}.garmin.garmin_stats`
         WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1
         ORDER BY date DESC
         LIMIT 60
     """
