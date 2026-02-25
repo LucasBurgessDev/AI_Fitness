@@ -43,6 +43,9 @@ jobs:
             --location="$REGION" \
             --uniform-bucket-level-access || true
 
+      - name: Enable Google Calendar API
+        run: gcloud services enable calendar-json.googleapis.com --project "$PROJECT_ID" || true
+
       - name: OpenTofu Init
         run: tofu -chdir=terraform init
 
