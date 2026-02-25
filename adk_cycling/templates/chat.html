@@ -22,6 +22,8 @@
       --shadow:      0 1px 4px rgba(0,0,0,0.08);
       --header-bg:   #1a73e8;
       --header-text: #ffffff;
+      --sidebar-bg:  #f8f9fb;
+      --sidebar-w:   240px;
     }
     [data-theme="dark"] {
       --bg:          #0f1117;
@@ -39,6 +41,7 @@
       --shadow:      0 1px 4px rgba(0,0,0,0.35);
       --header-bg:   #12151e;
       --header-text: #e8eaf0;
+      --sidebar-bg:  #161920;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -97,6 +100,104 @@
       line-height: 1;
     }
     #theme-toggle:hover { background: rgba(255,255,255,0.2); }
+
+    /* ---- Main layout ---- */
+    .main-layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+      width: var(--sidebar-w);
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    #new-chat-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    #new-chat-btn:hover { background: var(--accent-dark); }
+
+    #session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.4rem 0;
+    }
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.5rem 0.85rem;
+      cursor: pointer;
+      border-radius: 6px;
+      margin: 0 0.4rem;
+      transition: background 0.12s;
+      min-width: 0;
+    }
+    .session-item:hover { background: var(--accent-bg); }
+    .session-item.active { background: var(--accent-bg); font-weight: 600; }
+    .session-item.active .session-title { color: var(--accent); }
+    .session-title {
+      flex: 1;
+      font-size: 0.82rem;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .session-del {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      padding: 0.1rem 0.25rem;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.12s, color 0.12s;
+      flex-shrink: 0;
+    }
+    .session-item:hover .session-del { opacity: 1; }
+    .session-del:hover { color: #c5221f; }
+
+    /* ---- Chat column ---- */
+    .chat-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
 
     /* ---- Chat area ---- */
     #chat-container {
@@ -223,27 +324,7 @@
       30% { transform: translateY(-5px); opacity: 1; }
     }
 
-    /* Save button on assistant messages */
-    .message-actions {
-      display: none;
-      gap: 0.3rem;
-      margin-top: 0.35rem;
-      padding-left: 0.25rem;
-    }
-    .message.assistant:hover .message-actions { display: flex; }
     .message-wrapper { display: flex; flex-direction: column; max-width: 78%; }
-    .action-btn {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      border-radius: 5px;
-      padding: 0.2rem 0.55rem;
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .action-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .action-btn.saved { border-color: #34a853; color: #34a853; }
 
     /* ---- Input area ---- */
     #input-area {
@@ -313,64 +394,10 @@
     #send-btn:hover:not(:disabled) { background: var(--accent-dark); }
     #send-btn:disabled { background: var(--text-muted); cursor: default; opacity: 0.6; }
 
-    /* Saved notes panel */
-    #saved-panel {
-      display: none;
-      position: fixed;
-      top: 0; right: 0;
-      width: min(380px, 100vw);
-      height: 100vh;
-      background: var(--surface);
-      border-left: 1px solid var(--border);
-      box-shadow: -4px 0 20px rgba(0,0,0,0.12);
-      flex-direction: column;
-      z-index: 100;
+    /* Mobile: hide sidebar */
+    @media (max-width: 600px) {
+      #sidebar { display: none; }
     }
-    #saved-panel.open { display: flex; }
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--border);
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-    .panel-close {
-      background: none; border: none;
-      font-size: 1.2rem; cursor: pointer;
-      color: var(--text-muted); line-height: 1;
-    }
-    #saved-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-    .saved-note {
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.75rem;
-      font-size: 0.85rem;
-    }
-    .saved-note-meta {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-bottom: 0.4rem;
-      display: flex;
-      justify-content: space-between;
-    }
-    .saved-note-del {
-      background: none; border: none;
-      cursor: pointer; color: var(--text-muted);
-      font-size: 0.75rem;
-    }
-    .saved-note-del:hover { color: #c5221f; }
-    .saved-note-body { color: var(--text); line-height: 1.5; }
-    #saved-empty { color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 2rem 0; }
   </style>
 </head>
 <body>
@@ -382,58 +409,60 @@
     <div class="header-right">
       <a href="/">Chat</a>
       <a href="/settings">Settings</a>
-      <a href="#" id="notes-toggle" onclick="togglePanel(event)">Notes</a>
       <span class="email">{{ email }}</span>
       <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
       <a href="/logout">Sign out</a>
     </div>
   </header>
 
-  <!-- Saved notes side panel -->
-  <div id="saved-panel">
-    <div class="panel-header">
-      <span>📌 Saved Notes</span>
-      <button class="panel-close" onclick="togglePanel()">✕</button>
-    </div>
-    <div id="saved-list">
-      <p id="saved-empty">No saved notes yet.<br>Hover a response and click Save.</p>
-    </div>
-  </div>
-
-  <div id="chat-container">
-    <div class="message assistant">
-      <div class="avatar">AI</div>
-      <div class="message-wrapper">
-        <div class="bubble">Hello! I'm your personal cycling coach with access to your Garmin data. I can analyse your recent rides, power trends, TSS, recovery, and tailor training advice to your actual fitness. What would you like to explore today?</div>
+  <div class="main-layout">
+    <!-- Session sidebar -->
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Conversations</span>
+        <button id="new-chat-btn" onclick="newChat()">+ New</button>
       </div>
+      <div id="session-list"></div>
     </div>
-  </div>
 
-  <div id="input-area">
-    <div id="suggestions">
-      <span class="suggestion" onclick="fillInput(this)">How was my most recent activity?</span>
-      <span class="suggestion" onclick="fillInput(this)">How is my training going?</span>
-      <span class="suggestion" onclick="fillInput(this)">How is my recovery today?</span>
-      <span class="suggestion" onclick="fillInput(this)">What should I do to improve my training?</span>
-      <span class="suggestion" onclick="fillInput(this)">What's my current fitness trend?</span>
-      <span class="suggestion" onclick="fillInput(this)">Build me a training plan for next week</span>
-    </div>
-    <div id="input-row">
-      <textarea
-        id="message-input"
-        placeholder="Ask about your rides, training load, FTP, recovery…"
-        rows="1"
-      ></textarea>
-      <button id="send-btn" onclick="sendMessage()">Send</button>
+    <!-- Chat column -->
+    <div class="chat-column">
+      <div id="chat-container">
+        <div class="message assistant" id="greeting-msg">
+          <div class="avatar">AI</div>
+          <div class="message-wrapper">
+            <div class="bubble">Hello! I'm your personal cycling coach with access to your Garmin data. I can analyse your recent rides, power trends, TSS, recovery, and tailor training advice to your actual fitness. What would you like to explore today?</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="input-area">
+        <div id="suggestions">
+          <span class="suggestion" onclick="fillInput(this)">How was my most recent activity?</span>
+          <span class="suggestion" onclick="fillInput(this)">How is my training going?</span>
+          <span class="suggestion" onclick="fillInput(this)">How is my recovery today?</span>
+          <span class="suggestion" onclick="fillInput(this)">What should I do to improve my training?</span>
+          <span class="suggestion" onclick="fillInput(this)">What's my current fitness trend?</span>
+          <span class="suggestion" onclick="fillInput(this)">Build me a training plan for next week</span>
+        </div>
+        <div id="input-row">
+          <textarea
+            id="message-input"
+            placeholder="Ask about your rides, training load, FTP, recovery…"
+            rows="1"
+          ></textarea>
+          <button id="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
     // ---- Theme ----
     const root = document.documentElement;
-    const saved_theme = localStorage.getItem('cc-theme') || 'light';
-    root.setAttribute('data-theme', saved_theme);
-    updateThemeBtn(saved_theme);
+    const savedTheme = localStorage.getItem('cc-theme') || 'light';
+    root.setAttribute('data-theme', savedTheme);
+    updateThemeBtn(savedTheme);
 
     function toggleTheme() {
       const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -446,52 +475,109 @@
       if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
     }
 
-    // ---- Saved notes ----
-    let notes = JSON.parse(localStorage.getItem('cc-notes') || '[]');
+    // ---- Session management ----
+    let activeSessionId = localStorage.getItem('cc-session-id') || null;
 
-    function renderNotes() {
-      const list = document.getElementById('saved-list');
-      const empty = document.getElementById('saved-empty');
-      const existing = list.querySelectorAll('.saved-note');
-      existing.forEach(n => n.remove());
-      if (notes.length === 0) {
-        empty.style.display = 'block';
+    async function initSessions() {
+      const sessions = await fetchSessions();
+      if (sessions.length === 0) {
+        // No sessions exist — create the first one
+        await newChat();
+        return;
+      }
+      // Verify the stored active session still exists
+      if (activeSessionId && sessions.some(s => s.session_id === activeSessionId)) {
+        renderSessionList(sessions);
       } else {
-        empty.style.display = 'none';
-        notes.forEach((note, i) => {
-          const el = document.createElement('div');
-          el.className = 'saved-note';
-          el.innerHTML = `
-            <div class="saved-note-meta">
-              <span>${note.time}</span>
-              <button class="saved-note-del" onclick="deleteNote(${i})">✕ Remove</button>
-            </div>
-            <div class="saved-note-body">${note.html}</div>`;
-          list.appendChild(el);
-        });
+        // Active session gone — switch to most recent
+        activeSessionId = sessions[0].session_id;
+        localStorage.setItem('cc-session-id', activeSessionId);
+        renderSessionList(sessions);
       }
     }
 
-    function saveNote(html) {
-      const time = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-      notes.unshift({ html, time });
-      localStorage.setItem('cc-notes', JSON.stringify(notes));
-      renderNotes();
+    async function fetchSessions() {
+      try {
+        const resp = await fetch('/sessions');
+        if (!resp.ok) return [];
+        return await resp.json();
+      } catch { return []; }
     }
 
-    function deleteNote(i) {
-      notes.splice(i, 1);
-      localStorage.setItem('cc-notes', JSON.stringify(notes));
-      renderNotes();
+    function renderSessionList(sessions) {
+      const list = document.getElementById('session-list');
+      list.innerHTML = '';
+      sessions.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'session-item' + (s.session_id === activeSessionId ? ' active' : '');
+        item.dataset.id = s.session_id;
+        item.innerHTML = `
+          <span class="session-title" title="${escHtml(s.title)}">${escHtml(s.title)}</span>
+          <button class="session-del" onclick="deleteSession(event, '${escHtml(s.session_id)}')" title="Delete">✕</button>`;
+        item.addEventListener('click', () => switchSession(s.session_id));
+        list.appendChild(item);
+      });
     }
 
-    function togglePanel(e) {
-      if (e) e.preventDefault();
-      const panel = document.getElementById('saved-panel');
-      panel.classList.toggle('open');
+    async function loadSessionList() {
+      const sessions = await fetchSessions();
+      renderSessionList(sessions);
     }
 
-    renderNotes();
+    async function newChat() {
+      try {
+        const resp = await fetch('/sessions', { method: 'POST' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        activeSessionId = data.session_id;
+        localStorage.setItem('cc-session-id', activeSessionId);
+        clearChat();
+        await loadSessionList();
+      } catch (e) { console.error('newChat error', e); }
+    }
+
+    function switchSession(id) {
+      if (id === activeSessionId) return;
+      activeSessionId = id;
+      localStorage.setItem('cc-session-id', id);
+      clearChat();
+      // Update active class without reloading
+      document.querySelectorAll('.session-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.id === id);
+        el.querySelector('.session-title').style.color = el.dataset.id === id ? 'var(--accent)' : '';
+      });
+    }
+
+    async function deleteSession(evt, id) {
+      evt.stopPropagation();
+      try {
+        await fetch(`/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (id === activeSessionId) {
+          await newChat();
+        } else {
+          await loadSessionList();
+        }
+      } catch (e) { console.error('deleteSession error', e); }
+    }
+
+    function clearChat() {
+      const chatEl = document.getElementById('chat-container');
+      chatEl.innerHTML = `
+        <div class="message assistant">
+          <div class="avatar">AI</div>
+          <div class="message-wrapper">
+            <div class="bubble">Hello! I'm your personal cycling coach with access to your Garmin data. I can analyse your recent rides, power trends, TSS, recovery, and tailor training advice to your actual fitness. What would you like to explore today?</div>
+          </div>
+        </div>`;
+      document.getElementById('suggestions').style.display = 'flex';
+    }
+
+    function escHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // Initialise on load
+    initSessions();
 
     // ---- Chat ----
     const chatEl = document.getElementById('chat-container');
@@ -512,7 +598,6 @@
     function fillInput(el) {
       inputEl.value = el.textContent;
       inputEl.focus();
-      // Hide suggestions once one is used
       document.getElementById('suggestions').style.display = 'none';
     }
 
@@ -551,9 +636,6 @@
         <div class="avatar">AI</div>
         <div class="message-wrapper">
           <div class="bubble"></div>
-          <div class="message-actions">
-            <button class="action-btn" onclick="onSaveNote(this)">📌 Save</button>
-          </div>
         </div>`;
       wrapper.querySelector('.bubble').innerHTML = html;
       chatEl.appendChild(wrapper);
@@ -561,19 +643,12 @@
       return wrapper;
     }
 
-    function onSaveNote(btn) {
-      const html = btn.closest('.message-wrapper').querySelector('.bubble').innerHTML;
-      saveNote(html);
-      btn.textContent = '✓ Saved';
-      btn.classList.add('saved');
-      setTimeout(() => { btn.textContent = '📌 Save'; btn.classList.remove('saved'); }, 2000);
-      // open panel so user sees it
-      document.getElementById('saved-panel').classList.add('open');
-    }
-
     async function sendMessage() {
       const text = inputEl.value.trim();
       if (!text || sendBtn.disabled) return;
+      if (!activeSessionId) {
+        await newChat();
+      }
 
       inputEl.value = '';
       inputEl.style.height = 'auto';
@@ -587,7 +662,7 @@
         const resp = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text }),
+          body: JSON.stringify({ message: text, session_id: activeSessionId }),
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({ detail: resp.statusText }));
@@ -597,6 +672,8 @@
         thinkingEl.remove();
         const html = marked.parse(data.response || '(no response)');
         appendAssistant(html);
+        // Refresh session list so title updates after first message
+        loadSessionList();
       } catch (err) {
         thinkingEl.remove();
         appendAssistant(`<em style="color:var(--text-muted)">Error: ${err.message}</em>`);

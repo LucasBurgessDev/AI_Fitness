@@ -31,6 +31,23 @@ resource "google_bigquery_table" "batch_control" {
   ])
 }
 
+resource "google_bigquery_table" "coaching_log" {
+  dataset_id          = google_bigquery_dataset.garmin.dataset_id
+  table_id            = "coaching_log"
+  deletion_protection = false
+
+  schema = jsonencode([
+    { name = "id",         type = "STRING",    mode = "REQUIRED" },
+    { name = "session_id", type = "STRING",    mode = "REQUIRED" },
+    { name = "email",      type = "STRING",    mode = "REQUIRED" },
+    { name = "date",       type = "DATE",      mode = "REQUIRED" },
+    { name = "timestamp",  type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "category",   type = "STRING",    mode = "REQUIRED" },
+    { name = "content",    type = "STRING",    mode = "REQUIRED" },
+    { name = "context",    type = "STRING",    mode = "NULLABLE" },
+  ])
+}
+
 resource "google_project_iam_member" "sa_bq_data_editor" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"

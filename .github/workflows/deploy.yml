@@ -58,6 +58,8 @@ jobs:
             "projects/$PROJECT_ID/datasets/data_control" 2>/dev/null || true
           tofu import "google_bigquery_table.batch_control" \
             "projects/$PROJECT_ID/datasets/data_control/tables/batch_control" 2>/dev/null || true
+          tofu import "google_bigquery_table.coaching_log" \
+            "projects/$PROJECT_ID/datasets/garmin/tables/coaching_log" 2>/dev/null || true
           tofu import "google_secret_manager_secret.oauth_client_id" \
             "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-id" 2>/dev/null || true
           tofu import "google_secret_manager_secret.oauth_client_secret" \

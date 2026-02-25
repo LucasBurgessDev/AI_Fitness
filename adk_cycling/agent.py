@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
@@ -283,7 +284,7 @@ def _build_instruction(p: dict) -> str:
 _NOT_CONNECTED = "Calendar not connected — ask the user to sign out and sign back in to grant calendar access."
 
 
-def _make_runner(instruction: str, user_email: str = "") -> Runner:
+def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -> Runner:
     # --- Google Calendar tools (closures capturing user_email) ---
 
     def list_calendar_events(days_ahead: int = 14) -> str:
@@ -398,6 +399,53 @@ def _make_runner(instruction: str, user_email: str = "") -> Runner:
             LOGGER.error("delete_calendar_event error: %s", exc)
             return f"Error deleting calendar event: {exc}"
 
+    # --- Coaching log tools (closures capturing session_id + user_email) ---
+
+    def save_coaching_insight(category: str, content: str, context: str = "") -> str:
+        """Save a coaching insight to the persistent coaching log.
+
+        Call proactively when you identify a PR, make a recommendation, observe a notable
+        trend, or track goal progress. This ensures continuity across sessions.
+
+        Args:
+            category: One of "PR", "recommendation", "observation", "goal_progress".
+            content: The insight text (concise, self-contained, 1–3 sentences).
+            context: Optional supporting data or context snippet.
+
+        Returns:
+            "Insight saved." or an error string.
+        """
+        import coaching_log
+        return coaching_log.save_insight(
+            project_id=PROJECT_ID,
+            session_id=session_id,
+            email=user_email,
+            category=category,
+            content=content,
+            context=context,
+        )
+
+    def get_coaching_log(weeks: int = 52, category: str = "") -> str:
+        """Retrieve past coaching insights from the persistent coaching log.
+
+        Call at the start of a new conversation, when the user asks about past advice or
+        progress, or before repeating a recommendation. Use the log for continuity.
+
+        Args:
+            weeks: How many weeks back to look (default 52 = one year).
+            category: Optional filter — "PR", "recommendation", "observation", "goal_progress".
+
+        Returns:
+            Formatted log entries or "No coaching log entries found."
+        """
+        import coaching_log
+        return coaching_log.get_insights(
+            project_id=PROJECT_ID,
+            email=user_email,
+            weeks=weeks,
+            category=category,
+        )
+
     agent = LlmAgent(
         model="gemini-2.0-flash",
         name="cycling_expert",
@@ -412,6 +460,8 @@ def _make_runner(instruction: str, user_email: str = "") -> Runner:
             FunctionTool(func=list_calendar_events),
             FunctionTool(func=create_training_event),
             FunctionTool(func=delete_calendar_event),
+            FunctionTool(func=save_coaching_insight),
+            FunctionTool(func=get_coaching_log),
         ],
     )
     return Runner(agent=agent, app_name=_APP_NAME, session_service=_session_service)
@@ -427,7 +477,7 @@ def _get_runner(session_id: str, user_email: str = "") -> Runner:
             return runner
 
     instruction = _build_instruction(current_profile)
-    runner = _make_runner(instruction, user_email=user_email)
+    runner = _make_runner(instruction, user_email=user_email, session_id=session_id)
     _runners[session_id] = (runner, dict(current_profile))
     return runner
 
@@ -439,7 +489,16 @@ def invalidate_sessions() -> None:
     LOGGER.info("All agent sessions invalidated; will rebuild on next request")
 
 
-async def run_agent(message: str, session_id: str = "default", user_email: str = "") -> str:
+def evict_session(session_id: str) -> None:
+    """Evict a single runner from the cache (e.g. after session deletion)."""
+    _runners.pop(session_id, None)
+
+
+async def run_agent(
+    message: str,
+    session_id: str = "default",
+    user_email: str = "",
+) -> str:
     """Run the cycling agent for a single user message and return the response text."""
     runner = _get_runner(session_id, user_email=user_email)
 
@@ -447,12 +506,21 @@ async def run_agent(message: str, session_id: str = "default", user_email: str =
     session = await _session_service.get_session(
         app_name=_APP_NAME, user_id="user", session_id=session_id
     )
-    if session is None:
+    is_new_session = session is None
+    if is_new_session:
         await _session_service.create_session(
             app_name=_APP_NAME, user_id="user", session_id=session_id
         )
 
-    content = Content(parts=[Part(text=message)])
+    # Cold-start context restore: prepend prior conversation history
+    actual_message = message
+    if is_new_session and user_email:
+        import session_store
+        restore_ctx = session_store.get_restore_context(user_email, session_id)
+        if restore_ctx:
+            actual_message = f"{restore_ctx}\n\n{message}"
+
+    content = Content(parts=[Part(text=actual_message)])
     response_parts: list[str] = []
 
     async for event in runner.run_async(
@@ -466,4 +534,14 @@ async def run_agent(message: str, session_id: str = "default", user_email: str =
                     if hasattr(part, "text") and part.text:
                         response_parts.append(part.text)
 
-    return "".join(response_parts) or "I was unable to generate a response. Please try again."
+    response_text = "".join(response_parts) or "I was unable to generate a response. Please try again."
+
+    # Background GCS persist: append user message then assistant response
+    if user_email:
+        def _persist() -> None:
+            import session_store
+            session_store.append_message(user_email, session_id, "user", message)
+            session_store.append_message(user_email, session_id, "assistant", response_text)
+        threading.Thread(target=_persist, daemon=True).start()
+
+    return response_text

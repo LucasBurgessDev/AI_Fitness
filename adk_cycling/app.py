@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Optional
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -77,10 +78,6 @@ def _require_session(request: Request) -> dict:
     return session
 
 
-def _session_id_for(email: str) -> str:
-    return email.replace("@", "_").replace(".", "_")
-
-
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -148,12 +145,14 @@ async def chat(request: Request):
 
     body = await request.json()
     message = body.get("message", "").strip()
+    session_id = body.get("session_id", "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
 
     from agent import run_agent
 
-    session_id = _session_id_for(session["email"])
     try:
         response_text = await run_agent(message, session_id=session_id, user_email=session["email"])
     except Exception as e:
@@ -161,6 +160,37 @@ async def chat(request: Request):
         raise HTTPException(status_code=500, detail="Agent error — please try again")
 
     return JSONResponse({"response": response_text})
+
+
+# ---------------------------------------------------------------------------
+# Session routes
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions")
+async def list_sessions(request: Request):
+    session = _require_session(request)
+    import session_store
+    sessions = session_store.list_sessions(session["email"])
+    return JSONResponse(sessions)
+
+
+@app.post("/sessions")
+async def create_session(request: Request):
+    session = _require_session(request)
+    import session_store
+    new_id = str(uuid4())
+    sess = session_store.create_session(session["email"], new_id)
+    return JSONResponse({"session_id": sess["session_id"], "title": sess["title"]})
+
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(request: Request, session_id: str):
+    session = _require_session(request)
+    import session_store
+    from agent import evict_session
+    session_store.delete_session(session["email"], session_id)
+    evict_session(session_id)
+    return JSONResponse({"deleted": session_id})
 
 
 # ---------------------------------------------------------------------------
