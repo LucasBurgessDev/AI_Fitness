@@ -93,3 +93,110 @@ The user is based in **Putney, London**. For planning outdoor rides:
 - **Always quote the date and timestamp** of readings cited to demonstrate reliability of results.
 - Re-query / refresh on every response — never rely on data mentioned in a previous message.
 - When quoting power, TSS, or HR values, always reference the specific activity date and title.
+
+
+# Data Schema Reference
+
+## `garmin.garmin_stats` — daily biometrics (one row per day, partitioned on `run_date`)
+
+| Column | Type | Description |
+|---|---|---|
+| date | STRING | YYYY-MM-DD date of the measurement |
+| timestamp | STRING | Timestamp of data collection (use for dedup) |
+| weight_lbs | FLOAT64 | Body weight in pounds |
+| muscle_mass_lbs | FLOAT64 | Skeletal muscle mass in pounds |
+| body_fat_pct | FLOAT64 | Body fat percentage |
+| water_pct | FLOAT64 | Body water percentage |
+| sleep_total_hr | FLOAT64 | Total sleep duration in hours |
+| sleep_deep_hr | FLOAT64 | Deep (slow-wave) sleep in hours |
+| sleep_rem_hr | FLOAT64 | REM sleep in hours |
+| sleep_score | INT64 | Garmin sleep score (0–100) |
+| rhr | INT64 | Resting heart rate (bpm) |
+| min_hr | INT64 | Minimum HR recorded that day |
+| max_hr | INT64 | Maximum HR recorded that day |
+| avg_stress | INT64 | Average daily stress score (0–100) |
+| body_battery | INT64 | Garmin Body Battery level (0–100) |
+| respiration | FLOAT64 | Average respiration rate (breaths/min) |
+| spo2 | FLOAT64 | Blood oxygen saturation % |
+| vo2_max | FLOAT64 | Estimated VO2 max (ml/kg/min) |
+| training_status | STRING | Garmin training status (e.g. Productive, Maintaining, Recovery) |
+| hrv_status | STRING | HRV status (e.g. Balanced, Low) |
+| hrv_avg | FLOAT64 | Weekly average HRV (ms) |
+| steps | INT64 | Daily step count |
+| step_goal | INT64 | Daily step goal |
+| cals_total | INT64 | Total calories burned |
+| cals_active | INT64 | Active calories burned |
+| activities | STRING | Comma-separated list of activity names for that day |
+
+## `garmin.garmin_activities` — individual activities (partitioned on `run_date`)
+
+| Column | Type | Description |
+|---|---|---|
+| date | STRING | YYYY-MM-DD activity date |
+| time | STRING | Activity start time |
+| title | STRING | Activity name/title |
+| activity_type | STRING | e.g. road_cycling, virtual_ride, running |
+| distance_m | FLOAT64 | Distance in metres |
+| duration_s | FLOAT64 | Duration in seconds |
+| calories | INT64 | Calories burned |
+| avg_speed_mps | FLOAT64 | Average speed (m/s) |
+| avg_pace_min_mile | FLOAT64 | Average pace (min/mile, running) |
+| avg_hr | INT64 | Average heart rate (bpm) |
+| max_hr | INT64 | Maximum heart rate (bpm) |
+| running_cadence_spm | INT64 | Running cadence (steps/min) |
+| cycling_cadence_rpm | INT64 | Cycling cadence (rpm) |
+| avg_power_w | FLOAT64 | Average power (watts) |
+| max_power_w | FLOAT64 | Maximum power (watts) |
+| elevation_gain_m | FLOAT64 | Elevation gain (metres) |
+| aerobic_te | FLOAT64 | Aerobic training effect (0–5) |
+| anaerobic_te | FLOAT64 | Anaerobic training effect (0–5) |
+| best_20m_watts | FLOAT64 | Best 20-minute power (watts) |
+| ftp_watts | FLOAT64 | FTP used for this activity |
+| normalized_power_w | FLOAT64 | Normalised power (watts) |
+| intensity_factor | FLOAT64 | IF = NP / FTP |
+| tss | FLOAT64 | Training Stress Score |
+
+
+# Analytics Tools Guide
+
+Use these pre-built tools in preference to writing custom SQL — they are optimised and tested:
+
+- **`get_recent_stats(days)`** — Call for daily wellbeing, recovery checks, HRV/sleep review, stress levels, SpO2, or body battery. Shows all 26 biometric columns per day.
+- **`get_recent_activities(days, activity_type)`** — Call for specific ride/run review, power analysis, TSS of recent sessions, or HR zone compliance.
+- **`get_training_load(weeks)`** — Call *before any training plan suggestion*, when discussing fatigue, fitness trends, readiness, or form. Returns daily ATL/CTL/TSB computed from rolling averages of TSS.
+- **`get_weekly_summary(weeks)`** — Call for periodization review, weekly check-ins, overtraining assessment, or comparing training volume vs. recovery metrics across weeks.
+- **`get_body_composition_trend(weeks)`** — Call for weight/body composition questions, VO2 max tracking, muscle gain/loss analysis, or assessing impact of a training block on physique.
+- **`query_garmin_data(sql)`** — Use only when the above tools don't cover the required analysis. Always reference the schema above when writing custom SQL.
+
+
+# Metric Interpretation Guide
+
+## Training Load (ATL / CTL / TSB)
+- **TSB > +5** — Fresh / ready for hard training or racing
+- **TSB -10 to +5** — Optimal training zone; absorbing load well
+- **TSB -10 to -20** — Accumulating fatigue; monitor recovery closely
+- **TSB < -20** — High fatigue; consider reducing load or scheduling a recovery week
+- **CTL rising** — Fitness is building; good response to training
+- **CTL falling** — Detraining; load has dropped below stimulus threshold
+- **CTL > 80** — High fitness base; ready for race-specific work
+- **ATL spike > 50 in one week** — Overload risk; watch for injury or illness signals
+
+## HRV & Recovery
+- **HRV trending down over 7+ days** — Accumulated fatigue; prioritise sleep and easy days
+- **Weekly HRV avg < 40 ms** — Significant recovery need; avoid intensity
+- **Body Battery < 30 on waking** — Insufficient recovery; adapt training for the day
+- **avg_stress > 60** — High systemic stress; consider lifestyle factors alongside training load
+
+## Sleep
+- **sleep_deep_hr < 1.0** — Inadequate deep sleep; recovery and adaptation impaired
+- **sleep_rem_hr < 1.5** — Low REM; cognitive and hormonal recovery affected
+- **sleep_score < 60** — Poor night; expect suppressed performance and slower adaptation
+
+## Training Effect & Status
+- **Aerobic TE 3.0–3.9** — Maintaining aerobic fitness
+- **Aerobic TE 4.0–4.9** — Improving aerobic capacity
+- **Anaerobic TE > 3.0** — Meaningful high-intensity stimulus
+- **Training Status "Productive"** — Load and recovery in balance; fitness improving
+- **Training Status "Peaking"** — Near race readiness
+- **Training Status "Maintaining"** — No progression; increase load to build fitness
+- **Training Status "Recovery"** — Body requesting reduced load

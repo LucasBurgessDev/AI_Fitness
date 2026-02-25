@@ -86,17 +86,174 @@ def get_recent_stats(days: int = 30) -> str:
         days: Number of days to look back (default 30).
 
     Returns:
-        Daily stats including weight, sleep, HRV, body battery, VO2 max as a formatted string.
+        Daily stats including weight, body composition, sleep, HRV, stress, and more as a formatted string.
     """
     sql = f"""
-        SELECT date, weight_lbs, sleep_total_hr, sleep_score, rhr,
-               hrv_avg, hrv_status, body_battery, vo2_max,
-               training_status, steps, cals_total
+        SELECT date, timestamp, weight_lbs, muscle_mass_lbs, body_fat_pct, water_pct,
+               sleep_total_hr, sleep_deep_hr, sleep_rem_hr, sleep_score,
+               rhr, min_hr, max_hr, avg_stress, body_battery, respiration, spo2,
+               vo2_max, training_status, hrv_status, hrv_avg,
+               steps, step_goal, cals_total, cals_active, activities
         FROM `{PROJECT_ID}.garmin.garmin_stats`
         WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
         QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1
         ORDER BY date DESC
         LIMIT 60
+    """
+    return query_garmin_data(sql)
+
+
+def get_training_load(weeks: int = 8) -> str:
+    """Compute daily ATL, CTL, and TSB (training load metrics) from activity TSS data.
+
+    ATL (Acute Training Load) = 7-day rolling average TSS — represents short-term fatigue.
+    CTL (Chronic Training Load) = 42-day rolling average TSS — represents long-term fitness base.
+    TSB (Training Stress Balance) = CTL − ATL — positive means fresh, negative means fatigued.
+
+    Args:
+        weeks: Number of weeks of results to return (default 8). An extra 42-day buffer is
+               fetched automatically to seed the CTL window accurately.
+
+    Returns:
+        Daily training load table (date, tss, atl, ctl, tsb) as a formatted string.
+    """
+    lookback_days = weeks * 7 + 42
+    sql = f"""
+        WITH date_spine AS (
+            SELECT d AS date
+            FROM UNNEST(GENERATE_DATE_ARRAY(
+                DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY),
+                CURRENT_DATE()
+            )) AS d
+        ),
+        daily_tss AS (
+            SELECT
+                DATE(date) AS date,
+                SUM(COALESCE(tss, 0)) AS total_tss
+            FROM `{PROJECT_ID}.garmin.garmin_activities`
+            WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY))
+            GROUP BY 1
+        ),
+        filled AS (
+            SELECT
+                ds.date,
+                COALESCE(dt.total_tss, 0) AS tss
+            FROM date_spine ds
+            LEFT JOIN daily_tss dt ON ds.date = dt.date
+        ),
+        with_load AS (
+            SELECT
+                date,
+                tss,
+                AVG(tss) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS atl,
+                AVG(tss) OVER (ORDER BY date ROWS BETWEEN 41 PRECEDING AND CURRENT ROW) AS ctl
+            FROM filled
+        )
+        SELECT
+            date,
+            ROUND(tss, 1) AS tss,
+            ROUND(atl, 1) AS atl,
+            ROUND(ctl, 1) AS ctl,
+            ROUND(ctl - atl, 1) AS tsb
+        FROM with_load
+        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {weeks * 7} DAY)
+        ORDER BY date DESC
+    """
+    return query_garmin_data(sql)
+
+
+def get_weekly_summary(weeks: int = 8) -> str:
+    """Fetch a week-by-week training and recovery summary.
+
+    Per week shows: number of activities, total TSS, total hours, total km, dominant
+    activity type, plus average RHR, HRV, sleep, sleep score, and body battery from
+    garmin_stats.
+
+    Args:
+        weeks: Number of weeks to return (default 8).
+
+    Returns:
+        Weekly summary table as a formatted string, newest week first.
+    """
+    lookback_days = weeks * 7
+    sql = f"""
+        WITH deduped_stats AS (
+            SELECT date, rhr, hrv_avg, sleep_total_hr, sleep_score, body_battery
+            FROM `{PROJECT_ID}.garmin.garmin_stats`
+            WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY)
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1
+        ),
+        weekly_stats AS (
+            SELECT
+                DATE_TRUNC(date, WEEK(MONDAY)) AS week_start,
+                ROUND(AVG(rhr), 1) AS avg_rhr,
+                ROUND(AVG(hrv_avg), 1) AS avg_hrv,
+                ROUND(AVG(sleep_total_hr), 2) AS avg_sleep_hr,
+                ROUND(AVG(sleep_score), 1) AS avg_sleep_score,
+                ROUND(AVG(body_battery), 1) AS avg_body_battery
+            FROM deduped_stats
+            GROUP BY 1
+        ),
+        weekly_activities AS (
+            SELECT
+                DATE_TRUNC(DATE(date), WEEK(MONDAY)) AS week_start,
+                COUNT(*) AS num_activities,
+                ROUND(SUM(COALESCE(tss, 0)), 1) AS total_tss,
+                ROUND(SUM(duration_s) / 3600.0, 1) AS total_hours,
+                ROUND(SUM(COALESCE(distance_m, 0)) / 1000.0, 1) AS total_km,
+                APPROX_TOP_COUNT(activity_type, 1)[OFFSET(0)].value AS dominant_type
+            FROM `{PROJECT_ID}.garmin.garmin_activities`
+            WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY))
+            GROUP BY 1
+        )
+        SELECT
+            wa.week_start,
+            wa.num_activities,
+            wa.total_tss,
+            wa.total_hours,
+            wa.total_km,
+            wa.dominant_type,
+            ws.avg_rhr,
+            ws.avg_hrv,
+            ws.avg_sleep_hr,
+            ws.avg_sleep_score,
+            ws.avg_body_battery
+        FROM weekly_activities wa
+        LEFT JOIN weekly_stats ws ON wa.week_start = ws.week_start
+        ORDER BY wa.week_start DESC
+    """
+    return query_garmin_data(sql)
+
+
+def get_body_composition_trend(weeks: int = 12) -> str:
+    """Fetch body composition trend over time from garmin_stats.
+
+    Returns one row per day (latest reading) including weight, body fat %, muscle mass,
+    water %, VO2 max, and training status. Useful for tracking changes in physique and
+    aerobic fitness over a training block.
+
+    Args:
+        weeks: Number of weeks to look back (default 12).
+
+    Returns:
+        Body composition trend table as a formatted string, newest first.
+    """
+    sql = f"""
+        SELECT
+            date,
+            weight_lbs,
+            ROUND(weight_lbs / 2.20462, 1) AS weight_kg,
+            body_fat_pct,
+            muscle_mass_lbs,
+            ROUND(muscle_mass_lbs / 2.20462, 1) AS muscle_mass_kg,
+            water_pct,
+            vo2_max,
+            training_status
+        FROM `{PROJECT_ID}.garmin.garmin_stats`
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {weeks * 7} DAY))
+          AND (weight_lbs IS NOT NULL OR body_fat_pct IS NOT NULL)
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1
+        ORDER BY date DESC
     """
     return query_garmin_data(sql)
 
@@ -249,6 +406,9 @@ def _make_runner(instruction: str, user_email: str = "") -> Runner:
             FunctionTool(func=query_garmin_data),
             FunctionTool(func=get_recent_activities),
             FunctionTool(func=get_recent_stats),
+            FunctionTool(func=get_training_load),
+            FunctionTool(func=get_weekly_summary),
+            FunctionTool(func=get_body_composition_trend),
             FunctionTool(func=list_calendar_events),
             FunctionTool(func=create_training_event),
             FunctionTool(func=delete_calendar_event),
