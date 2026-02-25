@@ -104,20 +104,48 @@ def get_recent_stats(days: int = 30) -> str:
     return query_garmin_data(sql)
 
 
-def get_training_load(weeks: int = 8) -> str:
+def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
     """Compute daily ATL, CTL, and TSB (training load metrics) from activity TSS data.
 
     ATL (Acute Training Load) = 7-day rolling average TSS — represents short-term fatigue.
     CTL (Chronic Training Load) = 42-day rolling average TSS — represents long-term fitness base.
     TSB (Training Stress Balance) = CTL − ATL — positive means fresh, negative means fatigued.
 
+    Always pass ftp_watts from the athlete's current profile so that TSS can be computed on
+    the fly for any activities where it was not pre-calculated by the pipeline.
+
     Args:
         weeks: Number of weeks of results to return (default 8). An extra 42-day buffer is
                fetched automatically to seed the CTL window accurately.
+        ftp_watts: Athlete's current FTP in watts (e.g. 191). When provided, activities that
+                   have stored power data but a NULL tss column will have TSS computed as
+                   (duration_s × (NP or avg_power / FTP)²) / 3600 × 100. Pass 0 to disable.
 
     Returns:
         Daily training load table (date, tss, atl, ctl, tsb) as a formatted string.
     """
+    lookback_days = weeks * 7 + 42
+    ftp_safe = max(float(ftp_watts), 0.0)
+
+    # When FTP is known, compute TSS from stored power for activities the pipeline missed
+    if ftp_safe > 0:
+        tss_expr = (
+            f"COALESCE(\n"
+            f"                tss,\n"
+            f"                CASE\n"
+            f"                    WHEN COALESCE(normalized_power_w, avg_power_w) > 0\n"
+            f"                         AND duration_s > 0\n"
+            f"                    THEN ROUND(\n"
+            f"                        (duration_s * POWER(COALESCE(normalized_power_w, avg_power_w) / {ftp_safe}, 2))\n"
+            f"                        / 3600.0 * 100.0, 1)\n"
+            f"                    ELSE NULL\n"
+            f"                END,\n"
+            f"                0\n"
+            f"            )"
+        )
+    else:
+        tss_expr = "COALESCE(tss, 0)"
+
     lookback_days = weeks * 7 + 42
     sql = f"""
         WITH date_spine AS (
@@ -130,7 +158,7 @@ def get_training_load(weeks: int = 8) -> str:
         daily_tss AS (
             SELECT
                 DATE(date) AS date,
-                SUM(COALESCE(tss, 0)) AS total_tss
+                SUM({tss_expr}) AS total_tss
             FROM `{PROJECT_ID}.garmin.garmin_activities`
             WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY))
             GROUP BY 1

@@ -163,7 +163,7 @@ Use these pre-built tools in preference to writing custom SQL — they are optim
 
 - **`get_recent_stats(days)`** — Call for daily wellbeing, recovery checks, HRV/sleep review, stress levels, SpO2, or body battery. Shows all 26 biometric columns per day.
 - **`get_recent_activities(days, activity_type)`** — Call for specific ride/run review, power analysis, TSS of recent sessions, or HR zone compliance.
-- **`get_training_load(weeks)`** — Call *before any training plan suggestion*, when discussing fatigue, fitness trends, readiness, or form. Returns daily ATL/CTL/TSB computed from rolling averages of TSS.
+- **`get_training_load(weeks, ftp_watts)`** — Call *before any training plan suggestion*, when discussing fatigue, fitness trends, readiness, or form. Returns daily ATL/CTL/TSB computed from rolling averages of TSS. **Always pass `ftp_watts` from the athlete's current profile** (e.g. `ftp_watts=191`) so TSS is computed on the fly for any activities where the pipeline did not pre-calculate it.
 - **`get_weekly_summary(weeks)`** — Call for periodization review, weekly check-ins, overtraining assessment, or comparing training volume vs. recovery metrics across weeks.
 - **`get_body_composition_trend(weeks)`** — Call for weight/body composition questions, VO2 max tracking, muscle gain/loss analysis, or assessing impact of a training block on physique.
 - **`query_garmin_data(sql)`** — Use only when the above tools don't cover the required analysis. Always reference the schema above when writing custom SQL.
