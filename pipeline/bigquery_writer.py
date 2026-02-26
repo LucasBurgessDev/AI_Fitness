@@ -54,6 +54,14 @@ _STATS_SCHEMA = [
     bigquery.SchemaField("race_10k_secs", "INT64"),
     bigquery.SchemaField("race_half_secs", "INT64"),
     bigquery.SchemaField("race_full_secs", "INT64"),
+    # Training load (ATL/CTL/TSB)
+    bigquery.SchemaField("atl", "FLOAT64"),
+    bigquery.SchemaField("ctl", "FLOAT64"),
+    bigquery.SchemaField("tsb", "FLOAT64"),
+    bigquery.SchemaField("tl_aerobic_pct", "FLOAT64"),
+    # Lactate threshold
+    bigquery.SchemaField("lactate_threshold_hr", "INT64"),
+    bigquery.SchemaField("lactate_threshold_pace", "FLOAT64"),
     bigquery.SchemaField("activities", "STRING"),
 ]
 
@@ -105,6 +113,17 @@ _ACTIVITIES_SCHEMA = [
     # Environment
     bigquery.SchemaField("avg_temp_c", "FLOAT64"),
     bigquery.SchemaField("humidity_pct", "FLOAT64"),
+    # Training effect labels
+    bigquery.SchemaField("aerobic_te_label", "STRING"),
+    bigquery.SchemaField("anaerobic_te_label", "STRING"),
+    # Cardiac efficiency
+    bigquery.SchemaField("aerobic_decoupling_pct", "FLOAT64"),
+    # Power zones (cycling)
+    bigquery.SchemaField("power_zone_1_secs", "FLOAT64"),
+    bigquery.SchemaField("power_zone_2_secs", "FLOAT64"),
+    bigquery.SchemaField("power_zone_3_secs", "FLOAT64"),
+    bigquery.SchemaField("power_zone_4_secs", "FLOAT64"),
+    bigquery.SchemaField("power_zone_5_secs", "FLOAT64"),
 ]
 
 # Mapping from garmin_stats CSV headers (human-readable) → BQ column names
@@ -147,6 +166,12 @@ _CSV_TO_STATS_COLS = {
     "Race 10K Secs": "race_10k_secs",
     "Race Half Secs": "race_half_secs",
     "Race Full Secs": "race_full_secs",
+    "ATL": "atl",
+    "CTL": "ctl",
+    "TSB": "tsb",
+    "Training Load Focus Aerobic %": "tl_aerobic_pct",
+    "Lactate Threshold HR": "lactate_threshold_hr",
+    "Lactate Threshold Pace": "lactate_threshold_pace",
     "Activities": "activities",
 }
 
@@ -262,11 +287,14 @@ def write_stats_range(
                                   "steps", "step_goal", "floors_climbed",
                                   "cals_total", "cals_active",
                                   "intensity_moderate_mins", "intensity_vigorous_mins",
-                                  "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs"})
+                                  "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs",
+                                  "lactate_threshold_hr"})
     out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
                                     "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
                                     "sleep_light_hr", "sleep_awake_hr",
-                                    "respiration", "spo2", "vo2_max", "hrv_avg"})
+                                    "respiration", "spo2", "vo2_max", "hrv_avg",
+                                    "atl", "ctl", "tsb", "tl_aerobic_pct",
+                                    "lactate_threshold_pace"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
@@ -333,7 +361,10 @@ def write_activities_range(
                                     "hr_zone_4_secs", "hr_zone_5_secs",
                                     "ground_contact_time_ms", "vertical_oscillation_mm",
                                     "stride_length_m", "vertical_ratio_pct",
-                                    "avg_temp_c", "humidity_pct"})
+                                    "avg_temp_c", "humidity_pct",
+                                    "aerobic_decoupling_pct",
+                                    "power_zone_1_secs", "power_zone_2_secs", "power_zone_3_secs",
+                                    "power_zone_4_secs", "power_zone_5_secs"})
     out = _ensure_schema_cols(out, _ACTIVITIES_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
@@ -381,11 +412,14 @@ def write_stats(
                                   "steps", "step_goal", "floors_climbed",
                                   "cals_total", "cals_active",
                                   "intensity_moderate_mins", "intensity_vigorous_mins",
-                                  "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs"})
+                                  "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs",
+                                  "lactate_threshold_hr"})
     out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
                                     "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
                                     "sleep_light_hr", "sleep_awake_hr",
-                                    "respiration", "spo2", "vo2_max", "hrv_avg"})
+                                    "respiration", "spo2", "vo2_max", "hrv_avg",
+                                    "atl", "ctl", "tsb", "tl_aerobic_pct",
+                                    "lactate_threshold_pace"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
@@ -443,7 +477,10 @@ def write_activities(
                                     "hr_zone_4_secs", "hr_zone_5_secs",
                                     "ground_contact_time_ms", "vertical_oscillation_mm",
                                     "stride_length_m", "vertical_ratio_pct",
-                                    "avg_temp_c", "humidity_pct"})
+                                    "avg_temp_c", "humidity_pct",
+                                    "aerobic_decoupling_pct",
+                                    "power_zone_1_secs", "power_zone_2_secs", "power_zone_3_secs",
+                                    "power_zone_4_secs", "power_zone_5_secs"})
     out = _ensure_schema_cols(out, _ACTIVITIES_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(

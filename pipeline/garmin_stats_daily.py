@@ -34,6 +34,8 @@ HEADERS = [
     "Cals Total", "Cals Active",
     "Intensity Moderate Mins", "Intensity Vigorous Mins",
     "Race 5K Secs", "Race 10K Secs", "Race Half Secs", "Race Full Secs",
+    "ATL", "CTL", "TSB", "Training Load Focus Aerobic %",
+    "Lactate Threshold HR", "Lactate Threshold Pace",
     "Activities",
 ]
 
@@ -331,7 +333,76 @@ def main():
         except Exception:
             pass
 
-        # 11) Activities (filtered)
+        # 11) Training Load (ATL / CTL / TSB + Focus)
+        atl = ctl = tsb = tl_aerobic_pct = None
+        try:
+            fn = getattr(api, "get_training_load", None)
+            if callable(fn):
+                tl_data = fn(today, today)
+            else:
+                tl_data = garth.connectapi(
+                    f"metrics-service/metrics/trainingload/user/{today}",
+                    params={},
+                )
+            # Normalise: API may return list or single dict
+            if isinstance(tl_data, list) and tl_data:
+                tl_data = tl_data[-1]
+            if isinstance(tl_data, dict):
+                atl = (get_safe(tl_data, "acuteTrainingLoad")
+                       or get_safe(tl_data, "acuteLoad")
+                       or get_safe(tl_data, "shortTermLoad"))
+                ctl = (get_safe(tl_data, "chronicTrainingLoad")
+                       or get_safe(tl_data, "chronicLoad")
+                       or get_safe(tl_data, "longTermLoad"))
+                tsb = get_safe(tl_data, "trainingStressBalance")
+                if tsb is None and atl is not None and ctl is not None:
+                    try:
+                        tsb = round(float(ctl) - float(atl), 1)
+                    except Exception:
+                        pass
+                aerobic_raw = (get_safe(tl_data, "aerobicLoadFraction")
+                               or get_safe(tl_data, "aerobicContribution")
+                               or get_safe(tl_data, "aerobicLoadPercent")
+                               or get_safe(tl_data, "loadFocusAerobic"))
+                if aerobic_raw is not None:
+                    v = float(aerobic_raw)
+                    tl_aerobic_pct = round(v * 100, 1) if v <= 1 else round(v, 1)
+        except Exception:
+            pass
+
+        # 12) Lactate Threshold (HR + Pace)
+        lt_hr = lt_pace = None
+        try:
+            fn = getattr(api, "get_max_metrics", None)
+            mx = fn(today) if callable(fn) else garth.connectapi(
+                f"metrics-service/metrics/maxMetrics/{today}",
+                params={},
+            )
+            # Response can be a dict with "values" key or a list of dicts
+            vals = {}
+            if isinstance(mx, dict):
+                vals = mx.get("values") or mx
+            elif isinstance(mx, list):
+                for item in mx:
+                    if isinstance(item, dict):
+                        cd = item.get("calendarDate") or item.get("date", "")
+                        if cd == today:
+                            vals = item.get("values") or item
+                            break
+                if not vals and mx:
+                    vals = mx[-1].get("values") or mx[-1] if isinstance(mx[-1], dict) else {}
+            if isinstance(vals, dict):
+                lt_hr_raw = vals.get("lactateThresholdHeartRate")
+                if lt_hr_raw is not None:
+                    lt_hr = int(float(lt_hr_raw))
+                lt_speed_mps = vals.get("lactateThresholdSpeed")
+                if lt_speed_mps and float(lt_speed_mps) > 0:
+                    mins_per_km = 1000.0 / (float(lt_speed_mps) * 60.0)
+                    lt_pace = round(mins_per_km, 2)
+        except Exception:
+            pass
+
+        # 13) Activities (filtered)
         activity_str = build_activity_str(api, today, flt)
 
         new_row = [
@@ -347,6 +418,8 @@ def main():
             cals_total, cals_active,
             intensity_moderate, intensity_vigorous,
             race_5k, race_10k, race_half, race_full,
+            atl, ctl, tsb, tl_aerobic_pct,
+            lt_hr, lt_pace,
             activity_str,
         ]
 

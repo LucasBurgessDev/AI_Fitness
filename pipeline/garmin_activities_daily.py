@@ -91,6 +91,17 @@ DESIRED_FIELDS = [
     # Environment
     "avg_temp_c",
     "humidity_pct",
+    # Training effect labels
+    "aerobic_te_label",
+    "anaerobic_te_label",
+    # Cardiac efficiency
+    "aerobic_decoupling_pct",
+    # Power zones (cycling)
+    "power_zone_1_secs",
+    "power_zone_2_secs",
+    "power_zone_3_secs",
+    "power_zone_4_secs",
+    "power_zone_5_secs",
 ]
 
 
@@ -545,6 +556,55 @@ def fetch_activity_weather(api: Garmin, activity_id: str) -> Tuple[Optional[floa
         return None, None
 
 
+def extract_te_labels(act: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Aerobic and anaerobic Training Effect labels (e.g. 'Base', 'Tempo', 'Threshold')."""
+    aero = (act.get("aerobicTrainingEffectMessage")
+            or act.get("aerobicTrainingEffectLabel")
+            or act.get("trainingEffectLabel"))
+    ana = (act.get("anaerobicTrainingEffectMessage")
+           or act.get("anaerobicTrainingEffectLabel"))
+    aero_s = str(aero).strip() if aero else None
+    ana_s = str(ana).strip() if ana else None
+    return aero_s or None, ana_s or None
+
+
+def extract_aerobic_decoupling(act: Dict[str, Any], detail: Dict[str, Any]) -> Optional[float]:
+    """
+    Aerobic decoupling (Pa:Hr or Pace:Hr ratio) — cardiac drift over the activity.
+    Positive = HR drifted up relative to pace/power (aerobic base weakness).
+    Negative = HR dropped (good efficiency or easy effort).
+    Garmin stores this as a percentage, e.g. 3.5 means 3.5%.
+    """
+    summary = detail.get("summaryDTO") or {}
+    v = safe_float(
+        summary.get("paceDecoupling")
+        or summary.get("aerobicDecoupling")
+        or act.get("aerobicDecoupling")
+        or scan_for_keys(detail, ("pacedecoupling", "aerobicdecoupling", "decoupling"))
+    )
+    if v is not None and -50 <= v <= 50:
+        return round(v, 2)
+    return None
+
+
+def extract_power_zones(detail: Dict[str, Any]) -> list:
+    """Extract seconds in power zones 1-5 from activity detail (cycling)."""
+    zones = [None] * 5
+    if not isinstance(detail, dict):
+        return zones
+    summary = detail.get("summaryDTO") or {}
+    zone_arr = summary.get("powerTimeInZone", [])
+    if isinstance(zone_arr, list) and zone_arr:
+        for i, v in enumerate(zone_arr[:5]):
+            zones[i] = safe_float(v)
+        return zones
+    for i in range(1, 6):
+        v = summary.get(f"powerTimeInZone_{i}")
+        if v is not None:
+            zones[i - 1] = safe_float(v)
+    return zones
+
+
 def resolve_ftp(api: Garmin) -> Tuple[Optional[float], str, Optional[float]]:
     """
     Returns: ftp_watts, ftp_source, best_20m_watts_used
@@ -709,6 +769,9 @@ def to_row(
     hz = hr_zones if hr_zones is not None else extract_hr_zones(detail)
     rd = extract_running_dynamics(detail)
     temp_c, hum_pct = weather if weather is not None else (None, None)
+    aero_label, ana_label = extract_te_labels(act)
+    decoupling = extract_aerobic_decoupling(act, detail)
+    pz = extract_power_zones(detail)
 
     row = {
         "activity_id": activity_id,
@@ -752,6 +815,14 @@ def to_row(
         "vertical_ratio_pct": rd["vr_pct"],
         "avg_temp_c": temp_c,
         "humidity_pct": hum_pct,
+        "aerobic_te_label": aero_label,
+        "anaerobic_te_label": ana_label,
+        "aerobic_decoupling_pct": decoupling,
+        "power_zone_1_secs": pz[0],
+        "power_zone_2_secs": pz[1],
+        "power_zone_3_secs": pz[2],
+        "power_zone_4_secs": pz[3],
+        "power_zone_5_secs": pz[4],
     }
 
     # Ensure stable field order and presence
