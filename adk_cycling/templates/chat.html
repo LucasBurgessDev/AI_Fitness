@@ -113,6 +113,24 @@
     }
     #theme-toggle:hover { background: rgba(255,255,255,0.2); }
 
+    /* Install App button (shown only when beforeinstallprompt fires) */
+    #install-btn {
+      display: none;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.35);
+      color: var(--header-text);
+      border-radius: 6px;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+    #install-btn:hover { background: rgba(255,255,255,0.28); }
+    #install-btn.visible { display: block; }
+
     /* ---- Main layout ---- */
     .main-layout {
       display: flex;
@@ -505,6 +523,7 @@
       <a href="/">Chat</a>
       <a href="/settings">Settings</a>
       <span class="email">{{ email }}</span>
+      <button id="install-btn" onclick="installApp()" title="Add to Home Screen">⬇ Install</button>
       <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
       <a href="/logout">Sign out</a>
     </div>
@@ -554,9 +573,35 @@
   </div>
 
   <script>
-    // ---- PWA service worker ----
+    // ---- PWA service worker + install prompt ----
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js');
+    }
+
+    let _deferredInstallPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      _deferredInstallPrompt = e;
+      const btn = document.getElementById('install-btn');
+      if (btn) btn.classList.add('visible');
+    });
+
+    window.addEventListener('appinstalled', () => {
+      _deferredInstallPrompt = null;
+      const btn = document.getElementById('install-btn');
+      if (btn) btn.classList.remove('visible');
+    });
+
+    async function installApp() {
+      if (!_deferredInstallPrompt) return;
+      _deferredInstallPrompt.prompt();
+      const { outcome } = await _deferredInstallPrompt.userChoice;
+      if (outcome === 'accepted') {
+        _deferredInstallPrompt = null;
+        const btn = document.getElementById('install-btn');
+        if (btn) btn.classList.remove('visible');
+      }
     }
 
     // ---- Theme ----

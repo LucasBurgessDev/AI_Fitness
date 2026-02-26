@@ -331,15 +331,17 @@ async def manifest():
         "name": "Cycling Coach AI",
         "short_name": "CycleCoach",
         "description": "Your personal data-driven cycling coach",
+        "id": "/",
         "start_url": "/",
+        "scope": "/",
         "display": "standalone",
-        "background_color": "#1a73e8",
-        "theme_color": "#1a73e8",
+        "background_color": "#1e40af",
+        "theme_color": "#2563eb",
         "orientation": "portrait-primary",
         "icons": [
-            {"src": "/icon.svg",     "sizes": "any",     "type": "image/svg+xml", "purpose": "any maskable"},
-            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png",     "purpose": "any"},
-            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png",     "purpose": "any maskable"},
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
         ],
     }
     return JSONResponse(data, headers={"Cache-Control": "public, max-age=86400"})
