@@ -569,13 +569,31 @@ async def run_agent(
             app_name=_APP_NAME, user_id="user", session_id=session_id
         )
 
-    # Cold-start context restore: prepend prior conversation history
+    # Cold-start context restore: prepend prior conversation history + coaching log
     actual_message = message
     if is_new_session and user_email:
         import session_store
+        import coaching_log as coaching_log_mod
+
+        preamble_parts: list[str] = []
+
+        # 1. Prior conversation history for this session
         restore_ctx = session_store.get_restore_context(user_email, session_id)
         if restore_ctx:
-            actual_message = f"{restore_ctx}\n\n{message}"
+            preamble_parts.append(restore_ctx)
+
+        # 2. Coaching log — inject long-term memory so the model has it without a tool call
+        try:
+            log_ctx = coaching_log_mod.get_insights(
+                project_id=PROJECT_ID, email=user_email, weeks=52
+            )
+            if log_ctx and "No coaching log entries found" not in log_ctx and "Error" not in log_ctx:
+                preamble_parts.append(log_ctx)
+        except Exception as exc:
+            LOGGER.warning("Could not fetch coaching log for preamble: %s", exc)
+
+        if preamble_parts:
+            actual_message = "\n\n".join(preamble_parts) + "\n\n" + message
 
     content = Content(parts=[Part(text=actual_message)])
     response_parts: list[str] = []

@@ -141,18 +141,31 @@ def list_sessions(email: str) -> list[dict]:
     try:
         prefix = f"{_SESSION_PREFIX}/{_email_safe(email)}/"
         blobs = list(client.list_blobs(_GCS_BUCKET, prefix=prefix))
-        sessions = []
-        for blob in blobs:
+        if not blobs:
+            return []
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _read_blob(blob):
             try:
                 data = json.loads(blob.download_as_text())
-                sessions.append({
+                return {
                     "session_id": data.get("session_id", ""),
                     "title": data.get("title", "New conversation"),
                     "created_at": data.get("created_at", ""),
                     "updated_at": data.get("updated_at", ""),
-                })
+                }
             except Exception:
-                pass
+                return None
+
+        sessions = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(_read_blob, blob) for blob in blobs]
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    sessions.append(result)
+
         sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
         return sessions[:_MAX_SESSIONS]
     except Exception as exc:
