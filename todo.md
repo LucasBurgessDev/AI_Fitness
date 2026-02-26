@@ -13,3 +13,5 @@
 ~~11. Look at if HRV data can be used to provide insights on recovery and training readiness from our Garmin integration~~
 ~~12. Look at any other ways to get richer data out of the Garmin integration to provide better insights and suggestions~~
 ~~13. Using the goals part of the UI give better KPI tracking towards this. Make it a clear aim of the chatbot~~
+~~14. Add the ability to add as an app on pixel when opened in Chrome, so I can have it more easily accessible on my phone and use it throughout the day to track my training and recovery.~~
+15. Add a feature to allow users to set reminders for their training and recovery activities, which can be sent as notifications to their phone or email.

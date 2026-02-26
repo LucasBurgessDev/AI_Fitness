@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from google_auth_oauthlib.flow import Flow
 from itsdangerous import BadSignature, URLSafeSerializer
@@ -264,3 +264,60 @@ async def settings_post(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# PWA assets
+# ---------------------------------------------------------------------------
+
+@app.get("/manifest.json")
+async def manifest():
+    data = {
+        "name": "Cycling Coach AI",
+        "short_name": "CycleCoach",
+        "description": "Your personal data-driven cycling coach",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#1a73e8",
+        "theme_color": "#1a73e8",
+        "orientation": "portrait-primary",
+        "icons": [
+            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+        ],
+    }
+    return JSONResponse(data, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/icon.svg")
+async def icon():
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#1a73e8"/>
+  <circle cx="160" cy="320" r="80" fill="none" stroke="white" stroke-width="28"/>
+  <circle cx="160" cy="320" r="14" fill="white"/>
+  <circle cx="352" cy="320" r="80" fill="none" stroke="white" stroke-width="28"/>
+  <circle cx="352" cy="320" r="14" fill="white"/>
+  <polyline points="160,320 230,180 352,320" fill="none" stroke="white" stroke-width="28" stroke-linejoin="round" stroke-linecap="round"/>
+  <line x1="230" y1="180" x2="210" y2="320" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <line x1="230" y1="180" x2="290" y2="168" stroke="white" stroke-width="22" stroke-linecap="round"/>
+  <line x1="280" y1="168" x2="310" y2="185" stroke="white" stroke-width="18" stroke-linecap="round"/>
+  <line x1="190" y1="200" x2="165" y2="192" stroke="white" stroke-width="18" stroke-linecap="round"/>
+  <line x1="155" y1="192" x2="210" y2="192" stroke="white" stroke-width="18" stroke-linecap="round"/>
+</svg>"""
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/sw.js")
+async def service_worker():
+    js = """
+const CACHE = 'cycling-coach-v1';
+
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+
+self.addEventListener('fetch', e => {
+  // Only cache GET requests for the app shell; pass everything else through
+  if (e.request.method !== 'GET') return;
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+});
+"""
+    return Response(js, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
