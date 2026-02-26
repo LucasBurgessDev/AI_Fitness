@@ -113,9 +113,8 @@
     }
     #theme-toggle:hover { background: rgba(255,255,255,0.2); }
 
-    /* Install App button (shown only when beforeinstallprompt fires) */
+    /* Install App button */
     #install-btn {
-      display: none;
       background: rgba(255,255,255,0.15);
       border: 1px solid rgba(255,255,255,0.35);
       color: var(--header-text);
@@ -129,7 +128,27 @@
       line-height: 1.4;
     }
     #install-btn:hover { background: rgba(255,255,255,0.28); }
-    #install-btn.visible { display: block; }
+    #install-btn.hidden { display: none; }
+
+    /* Install instructions toast */
+    #install-toast {
+      display: none;
+      position: fixed;
+      bottom: 1.2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      color: #f1f5f9;
+      border-radius: 10px;
+      padding: 0.8rem 1.2rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      max-width: 320px;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      z-index: 9999;
+    }
+    #install-toast.show { display: block; }
 
     /* ---- Main layout ---- */
     .main-layout {
@@ -580,27 +599,35 @@
 
     let _deferredInstallPrompt = null;
 
+    // Hide install button if already running as installed PWA
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      document.getElementById('install-btn').classList.add('hidden');
+    }
+
     window.addEventListener('beforeinstallprompt', e => {
       e.preventDefault();
       _deferredInstallPrompt = e;
-      const btn = document.getElementById('install-btn');
-      if (btn) btn.classList.add('visible');
     });
 
     window.addEventListener('appinstalled', () => {
       _deferredInstallPrompt = null;
-      const btn = document.getElementById('install-btn');
-      if (btn) btn.classList.remove('visible');
+      document.getElementById('install-btn').classList.add('hidden');
     });
 
     async function installApp() {
-      if (!_deferredInstallPrompt) return;
-      _deferredInstallPrompt.prompt();
-      const { outcome } = await _deferredInstallPrompt.userChoice;
-      if (outcome === 'accepted') {
-        _deferredInstallPrompt = null;
-        const btn = document.getElementById('install-btn');
-        if (btn) btn.classList.remove('visible');
+      if (_deferredInstallPrompt) {
+        // Native Chrome install sheet
+        _deferredInstallPrompt.prompt();
+        const { outcome } = await _deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          _deferredInstallPrompt = null;
+          document.getElementById('install-btn').classList.add('hidden');
+        }
+      } else {
+        // Fallback: show manual instructions toast
+        const toast = document.getElementById('install-toast');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 7000);
       }
     }
 
@@ -904,5 +931,10 @@
       }
     }
   </script>
+
+  <div id="install-toast" onclick="this.classList.remove('show')">
+    📲 Tap the browser menu (⋮) then <strong>"Add to Home Screen"</strong> to install this app on your device.
+    <br><small style="opacity:0.6">(Tap to dismiss)</small>
+  </div>
 </body>
 </html>
