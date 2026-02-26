@@ -477,7 +477,7 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
         )
 
     agent = LlmAgent(
-        model="gemini-2.5-pro",
+        model="gemini-3.1-pro-preview",
         name="cycling_expert",
         instruction=instruction,
         tools=[
