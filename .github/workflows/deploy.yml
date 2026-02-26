@@ -76,6 +76,8 @@ jobs:
             "projects/$PROJECT_ID/secrets/cycling-coach-secret-key" >/dev/null 2>&1
           tofu import "google_secret_manager_secret_version.secret_key" \
             "projects/$PROJECT_ID/secrets/cycling-coach-secret-key/versions/1" >/dev/null 2>&1
+          tofu import "google_cloud_scheduler_job.reminders" \
+            "projects/$PROJECT_ID/locations/$REGION/jobs/cycling-coach-reminders" >/dev/null 2>&1
           exit 0
 
       - name: OpenTofu Apply
@@ -164,21 +166,15 @@ jobs:
 
       - name: Create/update reminder Cloud Scheduler job
         run: |
-          gcloud services enable cloudscheduler.googleapis.com --project "$PROJECT_ID" || true
-          if gcloud scheduler jobs describe cycling-coach-reminders --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
-            gcloud scheduler jobs update http cycling-coach-reminders \
-              --location="$REGION" \
-              --project="$PROJECT_ID" \
-              --schedule="*/30 * * * *" \
-              --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
-              --http-method=POST \
-              --time-zone="Europe/London"
-          else
-            gcloud scheduler jobs create http cycling-coach-reminders \
-              --location="$REGION" \
-              --project="$PROJECT_ID" \
-              --schedule="*/30 * * * *" \
-              --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
-              --http-method=POST \
-              --time-zone="Europe/London"
-          fi
+          # Managed by Terraform (provision-infra); this is a fallback only.
+          set +e
+          gcloud scheduler jobs describe cycling-coach-reminders \
+            --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1 || \
+          gcloud scheduler jobs create http cycling-coach-reminders \
+            --location="$REGION" \
+            --project="$PROJECT_ID" \
+            --schedule="*/30 * * * *" \
+            --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
+            --http-method=POST \
+            --time-zone="Europe/London" >/dev/null 2>&1
+          exit 0

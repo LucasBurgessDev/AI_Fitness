@@ -182,7 +182,7 @@
       white-space: nowrap;
       min-width: 0;
     }
-    .session-del {
+    .session-rename, .session-del {
       background: none;
       border: none;
       color: var(--text-muted);
@@ -194,8 +194,22 @@
       transition: opacity 0.12s, color 0.12s;
       flex-shrink: 0;
     }
+    .session-item:hover .session-rename,
     .session-item:hover .session-del { opacity: 1; }
     .session-del:hover { color: #c5221f; }
+    .session-rename:hover { color: var(--accent); }
+    .session-rename-input {
+      flex: 1;
+      font-size: 0.82rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 0.1rem 0.3rem;
+      min-width: 0;
+      outline: none;
+    }
 
     /* ---- Chat column ---- */
     .chat-column {
@@ -521,10 +535,50 @@
         item.dataset.id = s.session_id;
         item.innerHTML = `
           <span class="session-title" title="${escHtml(s.title)}">${escHtml(s.title)}</span>
+          <button class="session-rename" onclick="startRename(event, '${escHtml(s.session_id)}')" title="Rename">✏</button>
           <button class="session-del" onclick="deleteSession(event, '${escHtml(s.session_id)}')" title="Delete">✕</button>`;
         item.addEventListener('click', () => switchSession(s.session_id));
         list.appendChild(item);
       });
+    }
+
+    function startRename(evt, id) {
+      evt.stopPropagation();
+      const item = document.querySelector(`.session-item[data-id="${CSS.escape(id)}"]`);
+      if (!item) return;
+      const titleEl = item.querySelector('.session-title');
+      const current = titleEl.textContent;
+      // Replace title span with an input
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = current;
+      input.maxLength = 80;
+      input.className = 'session-rename-input';
+      input.onclick = e => e.stopPropagation();
+      input.onkeydown = e => {
+        if (e.key === 'Enter') { e.preventDefault(); commitRename(id, input.value.trim() || current, item, input); }
+        if (e.key === 'Escape') { input.replaceWith(titleEl); }
+      };
+      input.onblur = () => commitRename(id, input.value.trim() || current, item, input);
+      titleEl.replaceWith(input);
+      input.focus();
+      input.select();
+    }
+
+    async function commitRename(id, newTitle, item, input) {
+      // Restore span immediately to avoid double-commit on blur after Enter
+      const span = document.createElement('span');
+      span.className = 'session-title';
+      span.title = newTitle;
+      span.textContent = newTitle;
+      if (input.parentNode) input.replaceWith(span);
+      try {
+        await fetch(`/sessions/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newTitle }),
+        });
+      } catch (e) { console.error('rename error', e); }
     }
 
     async function loadSessionList() {

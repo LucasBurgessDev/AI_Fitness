@@ -199,6 +199,18 @@ async def get_session(request: Request, session_id: str):
     })
 
 
+@app.patch("/sessions/{session_id}")
+async def rename_session(request: Request, session_id: str):
+    session = _require_session(request)
+    body = await request.json()
+    new_title = body.get("title", "").strip()
+    if not new_title:
+        raise HTTPException(status_code=400, detail="title is required")
+    import session_store
+    session_store.rename_session(session["email"], session_id, new_title)
+    return JSONResponse({"session_id": session_id, "title": new_title[:80]})
+
+
 @app.delete("/sessions/{session_id}")
 async def delete_session(request: Request, session_id: str):
     session = _require_session(request)

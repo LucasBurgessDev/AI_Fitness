@@ -173,6 +173,26 @@ def list_sessions(email: str) -> list[dict]:
         return []
 
 
+def rename_session(email: str, session_id: str, new_title: str) -> None:
+    """Update the title of a session in GCS."""
+    _, bucket = _get_client()
+    if bucket is None:
+        return
+    try:
+        blob = bucket.blob(_blob_path(email, session_id))
+        if not blob.exists():
+            return
+        session = json.loads(blob.download_as_text())
+        session["title"] = new_title[:80]
+        session["updated_at"] = _now_iso()
+        blob.upload_from_string(
+            json.dumps(session, indent=2, ensure_ascii=False),
+            content_type="application/json",
+        )
+    except Exception as exc:
+        LOGGER.error("session_store.rename_session error: %s", exc)
+
+
 def delete_session(email: str, session_id: str) -> None:
     """Delete the GCS blob for a session."""
     _, bucket = _get_client()
