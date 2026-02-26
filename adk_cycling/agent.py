@@ -340,6 +340,76 @@ def _build_instruction(p: dict) -> str:
 _NOT_CONNECTED = "Calendar not connected — ask the user to sign out and sign back in to grant calendar access."
 
 
+def _auto_save_insights(
+    user_message: str,
+    response_text: str,
+    user_email: str,
+    session_id: str,
+) -> None:
+    """Background: use Gemini Flash to extract coaching insights from the exchange and save them.
+
+    Runs after every response so insights are captured reliably without depending on
+    the main model remembering to call a tool.
+    """
+    try:
+        import json
+        from google import genai
+
+        prompt = (
+            "Review this cycling coach AI conversation and extract any insights worth saving "
+            "to a long-term coaching log. Return JSON only — no markdown, no explanation.\n\n"
+            f"USER: {user_message[:600]}\n\n"
+            f"COACH: {response_text[:2500]}\n\n"
+            'If nothing save-worthy, return: {"insights": []}\n\n'
+            'Format: {"insights": [{"category": "PR|recommendation|observation|goal_progress", '
+            '"content": "1-2 sentence self-contained insight", "context": "optional data snippet or empty string"}]}\n\n'
+            "SAVE when the coach:\n"
+            "- Identified a new power PR, best effort, or FTP update\n"
+            "- Made a specific training recommendation the user agreed to act on\n"
+            "- Created or confirmed a training plan (summarise it in 1-2 sentences)\n"
+            "- Spotted a significant trend (weight direction, CTL ramp, HRV pattern, RHR shift)\n"
+            "- Noted a goal milestone (longest ride, target CTL hit, event completed)\n"
+            "- Recorded illness, injury, or a major life event affecting training\n\n"
+            "DO NOT save: routine Q&A, data lookups with no new finding, general cycling advice, "
+            "or any response that doesn't contain a specific memorable insight about this athlete."
+        )
+
+        client = genai.Client()
+        resp = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        text = resp.text.strip()
+
+        # Strip markdown code fences if the model wraps the JSON
+        if "```" in text:
+            parts = text.split("```")
+            text = parts[1] if len(parts) > 1 else text
+            if text.startswith("json\n"):
+                text = text[5:]
+        text = text.strip()
+
+        data = json.loads(text)
+        insights = data.get("insights", [])
+        if not insights:
+            return
+
+        import coaching_log as cl
+        for item in insights:
+            category = item.get("category", "observation")
+            content = item.get("content", "").strip()
+            context = item.get("context", "").strip()
+            if content:
+                result = cl.save_insight(
+                    project_id=PROJECT_ID,
+                    session_id=session_id,
+                    email=user_email,
+                    category=category,
+                    content=content,
+                    context=context,
+                )
+                LOGGER.info("Auto-insight [%s]: %.80s → %s", category, content, result)
+    except Exception as exc:
+        LOGGER.warning("_auto_save_insights error: %s", exc)
+
+
 def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -> Runner:
     # --- Google Calendar tools (closures capturing user_email) ---
 
@@ -455,31 +525,10 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             LOGGER.error("delete_calendar_event error: %s", exc)
             return f"Error deleting calendar event: {exc}"
 
-    # --- Coaching log tools (closures capturing session_id + user_email) ---
-
-    def save_coaching_insight(category: str, content: str, context: str = "") -> str:
-        """Save a coaching insight to the persistent coaching log.
-
-        Call proactively when you identify a PR, make a recommendation, observe a notable
-        trend, or track goal progress. This ensures continuity across sessions.
-
-        Args:
-            category: One of "PR", "recommendation", "observation", "goal_progress".
-            content: The insight text (concise, self-contained, 1–3 sentences).
-            context: Optional supporting data or context snippet.
-
-        Returns:
-            "Insight saved." or an error string.
-        """
-        import coaching_log
-        return coaching_log.save_insight(
-            project_id=PROJECT_ID,
-            session_id=session_id,
-            email=user_email,
-            category=category,
-            content=content,
-            context=context,
-        )
+    # --- Coaching log tool (closure capturing user_email) ---
+    # Insights are saved automatically after every response via _auto_save_insights.
+    # get_coaching_log is kept as a tool so the model can query the log on demand
+    # (e.g. "what did you recommend last month?").
 
     def get_coaching_log(weeks: int = 52, category: str = "") -> str:
         """Retrieve past coaching insights from the persistent coaching log.
@@ -517,7 +566,6 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             FunctionTool(func=list_calendar_events),
             FunctionTool(func=create_training_event),
             FunctionTool(func=delete_calendar_event),
-            FunctionTool(func=save_coaching_insight),
             FunctionTool(func=get_coaching_log),
         ],
     )
@@ -611,12 +659,13 @@ async def run_agent(
 
     response_text = "".join(response_parts) or "I was unable to generate a response. Please try again."
 
-    # Background GCS persist: append user message then assistant response
+    # Background: persist messages to GCS + auto-extract coaching insights
     if user_email:
         def _persist() -> None:
             import session_store
             session_store.append_message(user_email, session_id, "user", message)
             session_store.append_message(user_email, session_id, "assistant", response_text)
+            _auto_save_insights(message, response_text, user_email, session_id)
         threading.Thread(target=_persist, daemon=True).start()
 
     return response_text
