@@ -60,3 +60,25 @@ resource "google_project_iam_member" "sa_bq_job_user" {
   member  = "serviceAccount:${var.sa_email}"
 }
 
+resource "google_project_iam_member" "sa_cloudscheduler_admin" {
+  project = var.project_id
+  role    = "roles/cloudscheduler.admin"
+  member  = "serviceAccount:${var.sa_email}"
+}
+
+resource "google_cloud_scheduler_job" "reminders" {
+  name      = "cycling-coach-reminders"
+  region    = var.region
+  schedule  = "*/30 * * * *"
+  time_zone = "Europe/London"
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders"
+  }
+
+  depends_on = [
+    google_project_service.apis["cloudscheduler.googleapis.com"],
+    google_project_iam_member.sa_cloudscheduler_admin,
+  ]
+}

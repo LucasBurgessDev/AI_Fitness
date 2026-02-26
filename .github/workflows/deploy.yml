@@ -76,6 +76,8 @@ jobs:
             "projects/$PROJECT_ID/secrets/cycling-coach-secret-key" >/dev/null 2>&1
           tofu import "google_secret_manager_secret_version.secret_key" \
             "projects/$PROJECT_ID/secrets/cycling-coach-secret-key/versions/1" >/dev/null 2>&1
+          tofu import "google_cloud_scheduler_job.reminders" \
+            "projects/$PROJECT_ID/locations/$REGION/jobs/cycling-coach-reminders" >/dev/null 2>&1
           exit 0
 
       - name: OpenTofu Apply
