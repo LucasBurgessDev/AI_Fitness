@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import struct
+import zlib
 from typing import Optional
 from uuid import uuid4
 
@@ -233,6 +235,10 @@ async def settings_post(
     stats_date: str = Form(...),
     goals: str = Form(...),
     equipment: str = Form(...),
+    morning_checkin_enabled: bool = Form(default=False),
+    morning_checkin_time: str = Form(default="07:30"),
+    training_reminder_enabled: bool = Form(default=False),
+    training_reminder_time: str = Form(default="17:00"),
 ):
     session = _get_session(request)
     if not session:
@@ -246,6 +252,12 @@ async def settings_post(
         "stats_date": stats_date,
         "goals": goals.strip(),
         "equipment": equipment.strip(),
+        "reminders": {
+            "morning_checkin_enabled": morning_checkin_enabled,
+            "morning_checkin_time": morning_checkin_time,
+            "training_reminder_enabled": training_reminder_enabled,
+            "training_reminder_time": training_reminder_time,
+        },
     }
 
     error = None
@@ -284,6 +296,23 @@ async def health():
 # PWA assets
 # ---------------------------------------------------------------------------
 
+def _make_png(size: int) -> bytes:
+    """Generate a solid #1a73e8 PNG at the given square size (stdlib only)."""
+    r, g, b = 26, 115, 232
+    raw = b"".join(b"\x00" + bytes([r, g, b] * size) for _ in range(size))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        c = tag + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
 @app.get("/manifest.json")
 async def manifest():
     data = {
@@ -296,10 +325,24 @@ async def manifest():
         "theme_color": "#1a73e8",
         "orientation": "portrait-primary",
         "icons": [
-            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+            {"src": "/icon.svg",     "sizes": "any",     "type": "image/svg+xml", "purpose": "any maskable"},
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png",     "purpose": "any"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png",     "purpose": "any maskable"},
         ],
     }
     return JSONResponse(data, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/icon-192.png")
+async def icon_192():
+    return Response(_make_png(192), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/icon-512.png")
+async def icon_512():
+    return Response(_make_png(512), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/icon.svg")
@@ -329,9 +372,160 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(clients.claim()));
 
 self.addEventListener('fetch', e => {
-  // Only cache GET requests for the app shell; pass everything else through
   if (e.request.method !== 'GET') return;
   e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });
+
+self.addEventListener('push', e => {
+  let payload = { title: 'Cycling Coach AI', body: 'Tap to open your coaching dashboard.', url: '/' };
+  try { payload = { ...payload, ...e.data.json() }; } catch (_) {}
+  e.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data: { url: payload.url },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.openWindow(e.notification.data?.url || '/'));
+});
 """
     return Response(js, media_type="application/javascript", headers={"Cache-Control": "no-cache"})
+
+
+# ---------------------------------------------------------------------------
+# Push notification routes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/push/vapid-key")
+async def push_vapid_key(request: Request):
+    _require_session(request)
+    import vapid_store
+    public_key, _ = vapid_store.get_keys()
+    return JSONResponse({"publicKey": public_key})
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(request: Request):
+    session = _require_session(request)
+    body = await request.json()
+    import push_store
+    push_store.save_subscription(session["email"], body)
+    return JSONResponse({"status": "subscribed"})
+
+
+@app.post("/api/push/unsubscribe")
+async def push_unsubscribe(request: Request):
+    session = _require_session(request)
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    import push_store
+    push_store.remove_subscription(session["email"], endpoint)
+    return JSONResponse({"status": "unsubscribed"})
+
+
+@app.post("/api/push/test")
+async def push_test(request: Request):
+    """Send a test notification to all subscriptions for the logged-in user."""
+    session = _require_session(request)
+    import push_store, vapid_store
+    _, private_key = vapid_store.get_keys()
+    subs = push_store.get_subscriptions(session["email"])
+    if not subs:
+        return JSONResponse({"sent": 0, "message": "No push subscriptions found. Enable notifications first."})
+    sent = _send_push_to_subs(
+        subs, session["email"],
+        "Test notification",
+        "Push notifications are working for Cycling Coach AI!",
+        private_key,
+    )
+    return JSONResponse({"sent": sent})
+
+
+@app.post("/api/send-reminders")
+async def send_reminders():
+    """Called by Cloud Scheduler every 30 min. Sends due reminder notifications."""
+    import push_store, vapid_store
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Europe/London"))
+    except Exception:
+        now = datetime.utcnow()
+
+    current_hhmm = now.strftime("%H:%M")
+    _, private_key = vapid_store.get_keys()
+    total_sent = 0
+
+    for email in push_store.list_all_emails():
+        p = profile_store.load()
+        reminders = p.get("reminders", {})
+        subs = push_store.get_subscriptions(email)
+        if not subs:
+            continue
+
+        if reminders.get("morning_checkin_enabled") and \
+                current_hhmm == reminders.get("morning_checkin_time", "07:30"):
+            total_sent += _send_push_to_subs(
+                subs, email,
+                "Morning Recovery Check",
+                "Check your HRV, sleep score, and body battery to plan today's training.",
+                private_key,
+            )
+
+        if reminders.get("training_reminder_enabled") and \
+                current_hhmm == reminders.get("training_reminder_time", "17:00"):
+            total_sent += _send_push_to_subs(
+                subs, email,
+                "Training Reminder",
+                "Time to train! Open your coaching dashboard to see today's plan.",
+                private_key,
+            )
+
+    LOGGER.info("send-reminders: sent %d notifications at %s", total_sent, current_hhmm)
+    return JSONResponse({"sent": total_sent, "time": current_hhmm})
+
+
+def _send_push_to_subs(
+    subs: list,
+    email: str,
+    title: str,
+    body: str,
+    private_key_pem: str,
+) -> int:
+    """Send a push notification to all subscriptions. Returns count of successful sends."""
+    import json as _json
+    import push_store
+
+    sent = 0
+    expired = []
+    for sub in subs:
+        try:
+            from pywebpush import webpush, WebPushException
+            webpush(
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": {"p256dh": sub["keys"]["p256dh"], "auth": sub["keys"]["auth"]},
+                },
+                data=_json.dumps({"title": title, "body": body, "url": "/"}),
+                vapid_private_key=private_key_pem,
+                vapid_claims={"sub": "mailto:coach@cycling-coach.app"},
+            )
+            sent += 1
+        except Exception as exc:
+            # 404/410 = subscription expired; remove it
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in (404, 410):
+                expired.append(sub.get("endpoint", ""))
+            else:
+                LOGGER.error("Push send error for %s: %s", email, exc)
+
+    for endpoint in expired:
+        push_store.remove_subscription(email, endpoint)
+        LOGGER.info("Removed expired subscription for %s", email)
+
+    return sent

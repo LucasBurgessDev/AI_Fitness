@@ -14,4 +14,5 @@
 ~~12. Look at any other ways to get richer data out of the Garmin integration to provide better insights and suggestions~~
 ~~13. Using the goals part of the UI give better KPI tracking towards this. Make it a clear aim of the chatbot~~
 ~~14. Add the ability to add as an app on pixel when opened in Chrome, so I can have it more easily accessible on my phone and use it throughout the day to track my training and recovery.~~
-15. Add a feature to allow users to set reminders for their training and recovery activities, which can be sent as notifications to their phone or email.
+15. Add option to rename the sessions in the agent, so I can easily identify them and keep track of different conversations and topics related to my training and recovery. This will help me stay organized and quickly find relevant information when I need it.
+~~16. Add a feature to allow users to set reminders for their training and recovery activities, which can be sent as notifications to their phone or email.~~

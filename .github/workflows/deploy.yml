@@ -161,3 +161,24 @@ jobs:
             --memory 1Gi \
             --cpu 1 \
             --port 8080
+
+      - name: Create/update reminder Cloud Scheduler job
+        run: |
+          gcloud services enable cloudscheduler.googleapis.com --project "$PROJECT_ID" || true
+          if gcloud scheduler jobs describe cycling-coach-reminders --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+            gcloud scheduler jobs update http cycling-coach-reminders \
+              --location="$REGION" \
+              --project="$PROJECT_ID" \
+              --schedule="*/30 * * * *" \
+              --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
+              --http-method=POST \
+              --time-zone="Europe/London"
+          else
+            gcloud scheduler jobs create http cycling-coach-reminders \
+              --location="$REGION" \
+              --project="$PROJECT_ID" \
+              --schedule="*/30 * * * *" \
+              --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
+              --http-method=POST \
+              --time-zone="Europe/London"
+          fi

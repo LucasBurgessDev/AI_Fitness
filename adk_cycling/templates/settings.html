@@ -248,12 +248,52 @@
         </div>
       </div>
 
+      <div class="card">
+        <h3>Reminders</h3>
+        <div class="field-row">
+          <div class="field">
+            <label>
+              <input type="checkbox" name="morning_checkin_enabled" value="true"
+                     {% if profile.reminders and profile.reminders.morning_checkin_enabled %}checked{% endif %} />
+              Morning recovery check-in
+            </label>
+            <input type="time" name="morning_checkin_time" step="1800"
+                   value="{{ (profile.reminders or {}).get('morning_checkin_time', '07:30') }}" />
+          </div>
+          <div class="field">
+            <label>
+              <input type="checkbox" name="training_reminder_enabled" value="true"
+                     {% if profile.reminders and profile.reminders.training_reminder_enabled %}checked{% endif %} />
+              Daily training reminder
+            </label>
+            <input type="time" name="training_reminder_time" step="1800"
+                   value="{{ (profile.reminders or {}).get('training_reminder_time', '17:00') }}" />
+          </div>
+        </div>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.5rem;">
+          Times are in Europe/London. Use 30-minute intervals (e.g. 07:00, 07:30).
+        </p>
+      </div>
+
       <div class="actions">
         <button type="submit" class="btn-save">Save changes</button>
         <a href="/" class="btn-cancel">Cancel</a>
       </div>
 
     </form>
+
+    <div class="card" style="margin-top:1.25rem;">
+      <h3>Push Notifications</h3>
+      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1rem;">
+        Enable push notifications to receive reminders on this device even when the app isn't open.
+      </p>
+      <div class="actions" style="flex-wrap:wrap;gap:0.6rem;">
+        <button class="btn-save" id="notif-btn" onclick="toggleNotifications()">Enable notifications</button>
+        <button class="btn-save" id="test-btn" onclick="sendTestNotification()"
+                style="background:var(--text-muted);" disabled>Send test notification</button>
+      </div>
+      <p id="notif-status" style="font-size:0.82rem;color:var(--text-muted);margin-top:0.6rem;"></p>
+    </div>
   </main>
 
   <script>
@@ -276,6 +316,103 @@
         `W/kg: <span>${w > 0 ? (ftp/w).toFixed(2) : 'N/A'}</span>`;
     }
     updateWpkg();
+
+    // ---- Push notifications ----
+    const notifBtn  = document.getElementById('notif-btn');
+    const testBtn   = document.getElementById('test-btn');
+    const notifStatus = document.getElementById('notif-status');
+
+    function setStatus(msg, ok) {
+      notifStatus.textContent = msg;
+      notifStatus.style.color = ok ? 'var(--accent)' : 'var(--text-muted)';
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(base64);
+      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+    }
+
+    async function initNotifState() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setStatus('Push notifications are not supported in this browser.', false);
+        notifBtn.disabled = true;
+        return;
+      }
+      const perm = Notification.permission;
+      if (perm === 'denied') {
+        setStatus('Notifications blocked. Please allow them in browser settings.', false);
+        notifBtn.textContent = 'Notifications blocked';
+        notifBtn.disabled = true;
+        return;
+      }
+      if (perm === 'granted') {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          notifBtn.textContent = 'Disable notifications';
+          testBtn.disabled = false;
+          setStatus('Push notifications are active on this device.', true);
+          return;
+        }
+      }
+      notifBtn.textContent = 'Enable notifications';
+    }
+
+    async function toggleNotifications() {
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        await existing.unsubscribe();
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({endpoint: existing.endpoint}),
+        });
+        notifBtn.textContent = 'Enable notifications';
+        testBtn.disabled = true;
+        setStatus('Notifications disabled on this device.', false);
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        setStatus('Permission denied. Please allow notifications in browser settings.', false);
+        return;
+      }
+      const resp = await fetch('/api/push/vapid-key');
+      const { publicKey } = await resp.json();
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+      await fetch('/api/push/subscribe', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(sub.toJSON()),
+      });
+      notifBtn.textContent = 'Disable notifications';
+      testBtn.disabled = false;
+      setStatus('Push notifications enabled! Save your reminder times above.', true);
+    }
+
+    async function sendTestNotification() {
+      testBtn.disabled = true;
+      setStatus('Sending test notification…', true);
+      try {
+        const resp = await fetch('/api/push/test', { method: 'POST' });
+        const data = await resp.json();
+        setStatus(data.message || `Test sent to ${data.sent} subscription(s).`, true);
+      } catch (e) {
+        setStatus('Error sending test notification.', false);
+      } finally {
+        testBtn.disabled = false;
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(initNotifState);
+    } else {
+      initNotifState();
+    }
   </script>
 </body>
 </html>

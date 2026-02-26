@@ -34,6 +34,12 @@ DEFAULTS: dict[str, Any] = {
         "Zwift, Zwift Cog, Wahoo Kickr Core, Trek Domane, Triban RC500, "
         "Garmin Vivoactive 4, Ant+ Receiver"
     ),
+    "reminders": {
+        "morning_checkin_enabled": False,
+        "morning_checkin_time": "07:30",
+        "training_reminder_enabled": False,
+        "training_reminder_time": "17:00",
+    },
 }
 
 _cache: dict[str, Any] | None = None

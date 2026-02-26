@@ -10,3 +10,4 @@ google-api-python-client
 itsdangerous
 httpx
 jinja2
+pywebpush
