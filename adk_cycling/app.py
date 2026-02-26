@@ -183,6 +183,20 @@ async def create_session(request: Request):
     return JSONResponse({"session_id": sess["session_id"], "title": sess["title"]})
 
 
+@app.get("/sessions/{session_id}")
+async def get_session(request: Request, session_id: str):
+    session = _require_session(request)
+    import session_store
+    data = session_store.load_session(session["email"], session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return JSONResponse({
+        "session_id": data.get("session_id"),
+        "title": data.get("title"),
+        "messages": data.get("messages", []),
+    })
+
+
 @app.delete("/sessions/{session_id}")
 async def delete_session(request: Request, session_id: str):
     session = _require_session(request)

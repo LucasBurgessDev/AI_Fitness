@@ -493,19 +493,15 @@
     async function initSessions() {
       const sessions = await fetchSessions();
       if (sessions.length === 0) {
-        // No sessions exist — create the first one
         await newChat();
         return;
       }
-      // Verify the stored active session still exists
-      if (activeSessionId && sessions.some(s => s.session_id === activeSessionId)) {
-        renderSessionList(sessions);
-      } else {
-        // Active session gone — switch to most recent
+      if (!activeSessionId || !sessions.some(s => s.session_id === activeSessionId)) {
         activeSessionId = sessions[0].session_id;
         localStorage.setItem('cc-session-id', activeSessionId);
-        renderSessionList(sessions);
       }
+      renderSessionList(sessions);
+      await loadMessages(activeSessionId);
     }
 
     async function fetchSessions() {
@@ -548,16 +544,15 @@
       } catch (e) { console.error('newChat error', e); }
     }
 
-    function switchSession(id) {
+    async function switchSession(id) {
       if (id === activeSessionId) return;
       activeSessionId = id;
       localStorage.setItem('cc-session-id', id);
-      clearChat();
-      // Update active class without reloading
       document.querySelectorAll('.session-item').forEach(el => {
         el.classList.toggle('active', el.dataset.id === id);
         el.querySelector('.session-title').style.color = el.dataset.id === id ? 'var(--accent)' : '';
       });
+      await loadMessages(id);
     }
 
     async function deleteSession(evt, id) {
@@ -570,6 +565,32 @@
           await loadSessionList();
         }
       } catch (e) { console.error('deleteSession error', e); }
+    }
+
+    async function loadMessages(sessionId) {
+      const chatEl = document.getElementById('chat-container');
+      // Show loading state
+      chatEl.innerHTML = '<div style="padding:1.5rem;color:var(--text-muted);font-size:0.9rem;">Loading conversation…</div>';
+      document.getElementById('suggestions').style.display = 'none';
+      try {
+        const resp = await fetch(`/sessions/${encodeURIComponent(sessionId)}`);
+        if (!resp.ok) { clearChat(); return; }
+        const data = await resp.json();
+        const messages = data.messages || [];
+        if (messages.length === 0) { clearChat(); return; }
+        chatEl.innerHTML = '';
+        for (const msg of messages) {
+          if (msg.role === 'user') {
+            appendUser(msg.content);
+          } else if (msg.role === 'assistant') {
+            appendAssistant(marked.parse(msg.content || ''));
+          }
+        }
+        chatEl.scrollTop = chatEl.scrollHeight;
+      } catch (e) {
+        console.error('loadMessages error', e);
+        clearChat();
+      }
     }
 
     function clearChat() {
