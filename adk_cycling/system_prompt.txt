@@ -182,6 +182,7 @@ The user is based in **Putney, London**. For planning outdoor rides:
 Use these pre-built tools in preference to writing custom SQL — they are optimised and tested:
 
 - **`get_recent_stats(days)`** — Call for daily wellbeing, recovery checks, HRV/sleep review, stress levels, SpO2, or body battery. Shows all 26 biometric columns per day (auto-deduped to latest reading per day).
+- **`get_intraday_stats(date)`** — Call when the user wants to understand how a metric evolved *through* the day: body battery drain curve, stress spikes, step accumulation, or post-workout recovery. Returns every pipeline reading (~30-min intervals) in chronological order for the given date (default: today). Use this instead of `get_recent_stats` for any intra-day or "how am I doing right now" questions.
 - **`get_recent_activities(days, activity_type)`** — Call for specific ride/run review, power analysis, TSS of recent sessions, or HR zone compliance.
 - **`get_training_load(weeks, ftp_watts)`** — Call *before any training plan suggestion*, when discussing fatigue, fitness trends, readiness, or form. Returns daily ATL/CTL/TSB computed from rolling averages of TSS. **Always pass `ftp_watts` from the athlete's current profile** (e.g. `ftp_watts={ftp}`) so TSS is computed on the fly for activities where the pipeline did not pre-calculate it.
 - **`get_weekly_summary(weeks)`** — Call for periodization review, weekly check-ins, overtraining assessment, or comparing training volume vs. recovery metrics across weeks.

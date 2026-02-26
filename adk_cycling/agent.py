@@ -104,6 +104,32 @@ def get_recent_stats(days: int = 30) -> str:
     return query_garmin_data(sql)
 
 
+def get_intraday_stats(date: str = "") -> str:
+    """Fetch all intra-day readings for a specific date to track how metrics evolved through the day.
+
+    The pipeline runs every 30 minutes, so there can be up to ~35 rows per day. This tool
+    returns every row in timestamp order — useful for seeing body battery drain through the day,
+    stress spikes after specific events, step accumulation, or how HRV/respiration changed.
+
+    Args:
+        date: Date in YYYY-MM-DD format. Defaults to today if empty.
+
+    Returns:
+        All intra-day readings ordered by time, showing progression of body battery, stress,
+        steps, HRV, and other metrics through the day.
+    """
+    date_expr = f"'{date}'" if date else "FORMAT_DATE('%Y-%m-%d', CURRENT_DATE())"
+    sql = f"""
+        SELECT timestamp, avg_stress, body_battery, steps, cals_total, cals_active,
+               rhr, min_hr, max_hr, respiration, spo2, hrv_status, hrv_avg,
+               sleep_total_hr, sleep_score, weight_lbs, activities
+        FROM `{PROJECT_ID}.garmin.garmin_stats`
+        WHERE date = {date_expr}
+        ORDER BY timestamp ASC
+    """
+    return query_garmin_data(sql)
+
+
 def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
     """Compute daily ATL, CTL, and TSB (training load metrics) from activity TSS data.
 
@@ -484,6 +510,7 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             FunctionTool(func=query_garmin_data),
             FunctionTool(func=get_recent_activities),
             FunctionTool(func=get_recent_stats),
+            FunctionTool(func=get_intraday_stats),
             FunctionTool(func=get_training_load),
             FunctionTool(func=get_weekly_summary),
             FunctionTool(func=get_body_composition_trend),
