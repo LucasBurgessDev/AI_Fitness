@@ -372,8 +372,19 @@ def fetch_activity_detail(api: Garmin, activity_id: str) -> Dict[str, Any]:
         return {}
 
 
+_POWER_MIN_W = 30.0    # below this is noise / sensor error
+_POWER_MAX_W = 3000.0  # above this is a timestamp/ID masquerading as watts
+
+
+def _bounded_power(val: Optional[float]) -> Optional[float]:
+    """Return val only if it falls within plausible cycling power bounds."""
+    if val is None:
+        return None
+    return val if _POWER_MIN_W <= val <= _POWER_MAX_W else None
+
+
 def extract_best_20m_power_w(detail: Dict[str, Any]) -> Optional[float]:
-    return scan_for_keys(
+    return _bounded_power(scan_for_keys(
         detail,
         (
             "20min",
@@ -385,18 +396,18 @@ def extract_best_20m_power_w(detail: Dict[str, Any]) -> Optional[float]:
             "best20",
             "best_20",
         ),
-    )
+    ))
 
 
 def extract_normalized_power_w(detail: Dict[str, Any]) -> Optional[float]:
-    return scan_for_keys(
+    return _bounded_power(scan_for_keys(
         detail,
         (
             "normalizedpower",
             "weightedmeanpower",
             "weighted_power",
         ),
-    )
+    ))
 
 
 def resolve_ftp(api: Garmin) -> Tuple[Optional[float], str, Optional[float]]:

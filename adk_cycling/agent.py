@@ -127,13 +127,15 @@ def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
     lookback_days = weeks * 7 + 42
     ftp_safe = max(float(ftp_watts), 0.0)
 
-    # When FTP is known, compute TSS from stored power for activities the pipeline missed
+    # When FTP is known, compute TSS from stored power for activities the pipeline missed.
+    # The BETWEEN 30 AND 3000 guard rejects corrupt rows where a timestamp/ID was
+    # mistakenly stored as watts (values like 21983723521).
     if ftp_safe > 0:
         tss_expr = (
             f"COALESCE(\n"
             f"                tss,\n"
             f"                CASE\n"
-            f"                    WHEN COALESCE(normalized_power_w, avg_power_w) > 0\n"
+            f"                    WHEN COALESCE(normalized_power_w, avg_power_w) BETWEEN 30 AND 3000\n"
             f"                         AND duration_s > 0\n"
             f"                    THEN ROUND(\n"
             f"                        (duration_s * POWER(COALESCE(normalized_power_w, avg_power_w) / {ftp_safe}, 2))\n"
