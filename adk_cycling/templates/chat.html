@@ -415,15 +415,56 @@
     #send-btn:hover:not(:disabled) { background: var(--accent-dark); }
     #send-btn:disabled { background: var(--text-muted); cursor: default; opacity: 0.6; }
 
-    /* Mobile: hide sidebar */
+    /* ---- Burger button (mobile only) ---- */
+    #burger-btn {
+      display: none;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--header-text);
+      border-radius: 6px;
+      padding: 0.3rem 0.55rem;
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+      transition: background 0.15s;
+    }
+    #burger-btn:hover { background: rgba(255,255,255,0.2); }
+
+    /* Overlay to dismiss sidebar on mobile */
+    #sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 99;
+    }
+
     @media (max-width: 600px) {
-      #sidebar { display: none; }
+      #burger-btn { display: block; }
+      #sidebar {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.22s ease;
+        box-shadow: 2px 0 12px rgba(0,0,0,0.18);
+      }
+      #sidebar.open {
+        transform: translateX(0);
+      }
+      #sidebar-overlay.open {
+        display: block;
+      }
     }
   </style>
 </head>
 <body>
   <header>
     <div class="header-left">
+      <button id="burger-btn" onclick="toggleSidebar()" title="Conversations">☰</button>
       <span class="icon">🚴</span>
       <h1>Cycling Coach AI</h1>
     </div>
@@ -436,6 +477,7 @@
     </div>
   </header>
 
+  <div id="sidebar-overlay" onclick="closeSidebar()"></div>
   <div class="main-layout">
     <!-- Session sidebar -->
     <div id="sidebar">
@@ -489,6 +531,18 @@
     const savedTheme = localStorage.getItem('cc-theme') || 'light';
     root.setAttribute('data-theme', savedTheme);
     updateThemeBtn(savedTheme);
+
+    // ---- Sidebar toggle (mobile) ----
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const open = sidebar.classList.toggle('open');
+      overlay.classList.toggle('open', open);
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('open');
+    }
 
     function toggleTheme() {
       const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -587,6 +641,7 @@
     }
 
     async function newChat() {
+      closeSidebar();
       try {
         const resp = await fetch('/sessions', { method: 'POST' });
         if (!resp.ok) return;
@@ -599,13 +654,14 @@
     }
 
     async function switchSession(id) {
-      if (id === activeSessionId) return;
+      if (id === activeSessionId) { closeSidebar(); return; }
       activeSessionId = id;
       localStorage.setItem('cc-session-id', id);
       document.querySelectorAll('.session-item').forEach(el => {
         el.classList.toggle('active', el.dataset.id === id);
         el.querySelector('.session-title').style.color = el.dataset.id === id ? 'var(--accent)' : '';
       });
+      closeSidebar();
       await loadMessages(id);
     }
 
