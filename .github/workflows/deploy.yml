@@ -52,27 +52,31 @@ jobs:
       - name: Import existing resources
         working-directory: terraform
         run: |
-          tofu import google_storage_bucket.pipeline_bucket "$BUCKET" 2>/dev/null || true
+          # set +e so intermediate non-zero exits don't generate GitHub annotations.
+          # All output suppressed — these are idempotent; failure = resource already managed.
+          set +e
+          tofu import google_storage_bucket.pipeline_bucket "$BUCKET" >/dev/null 2>&1
           tofu import "google_artifact_registry_repository.health_jobs" \
-            "projects/$PROJECT_ID/locations/$REGION/repositories/health-jobs" 2>/dev/null || true
+            "projects/$PROJECT_ID/locations/$REGION/repositories/health-jobs" >/dev/null 2>&1
           tofu import "google_bigquery_dataset.garmin" \
-            "projects/$PROJECT_ID/datasets/garmin" 2>/dev/null || true
+            "projects/$PROJECT_ID/datasets/garmin" >/dev/null 2>&1
           tofu import "google_bigquery_dataset.data_control" \
-            "projects/$PROJECT_ID/datasets/data_control" 2>/dev/null || true
+            "projects/$PROJECT_ID/datasets/data_control" >/dev/null 2>&1
           tofu import "google_bigquery_table.batch_control" \
-            "projects/$PROJECT_ID/datasets/data_control/tables/batch_control" 2>/dev/null || true
+            "projects/$PROJECT_ID/datasets/data_control/tables/batch_control" >/dev/null 2>&1
           tofu import "google_bigquery_table.coaching_log" \
-            "projects/$PROJECT_ID/datasets/garmin/tables/coaching_log" 2>/dev/null || true
+            "projects/$PROJECT_ID/datasets/garmin/tables/coaching_log" >/dev/null 2>&1
           tofu import "google_secret_manager_secret.oauth_client_id" \
-            "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-id" 2>/dev/null || true
+            "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-id" >/dev/null 2>&1
           tofu import "google_secret_manager_secret.oauth_client_secret" \
-            "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-secret" 2>/dev/null || true
+            "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-secret" >/dev/null 2>&1
           tofu import "google_secret_manager_secret.allowed_email" \
-            "projects/$PROJECT_ID/secrets/cycling-coach-allowed-email" 2>/dev/null || true
+            "projects/$PROJECT_ID/secrets/cycling-coach-allowed-email" >/dev/null 2>&1
           tofu import "google_secret_manager_secret.secret_key" \
-            "projects/$PROJECT_ID/secrets/cycling-coach-secret-key" 2>/dev/null || true
+            "projects/$PROJECT_ID/secrets/cycling-coach-secret-key" >/dev/null 2>&1
           tofu import "google_secret_manager_secret_version.secret_key" \
-            "projects/$PROJECT_ID/secrets/cycling-coach-secret-key/versions/1" 2>/dev/null || true
+            "projects/$PROJECT_ID/secrets/cycling-coach-secret-key/versions/1" >/dev/null 2>&1
+          exit 0
 
       - name: OpenTofu Apply
         run: tofu -chdir=terraform apply -auto-approve
