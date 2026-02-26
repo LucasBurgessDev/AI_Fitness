@@ -73,6 +73,24 @@ DESIRED_FIELDS = [
     "normalized_power_w",
     "intensity_factor",
     "tss",
+    # Recovery & readiness
+    "recovery_time_s",
+    "vo2max_activity",
+    "performance_condition",
+    # Heart rate zones (seconds in each zone)
+    "hr_zone_1_secs",
+    "hr_zone_2_secs",
+    "hr_zone_3_secs",
+    "hr_zone_4_secs",
+    "hr_zone_5_secs",
+    # Running dynamics
+    "ground_contact_time_ms",
+    "vertical_oscillation_mm",
+    "stride_length_m",
+    "vertical_ratio_pct",
+    # Environment
+    "avg_temp_c",
+    "humidity_pct",
 ]
 
 
@@ -410,6 +428,123 @@ def extract_normalized_power_w(detail: Dict[str, Any]) -> Optional[float]:
     ))
 
 
+def extract_recovery_time_s(act: Dict[str, Any]) -> Optional[float]:
+    """Post-activity recovery time in seconds (Garmin stores as seconds)."""
+    v = safe_float(act.get("recoveryTime"))
+    return v if v and v > 0 else None
+
+
+def extract_vo2max_activity(act: Dict[str, Any], detail: Dict[str, Any]) -> Optional[float]:
+    """Per-activity estimated VO2 max."""
+    v = safe_float(act.get("vO2MaxValue"))
+    if v and 10 <= v <= 90:
+        return round(v, 1)
+    v = scan_for_keys(detail, ("vo2max", "vo2maxvalue"))
+    if v and 10 <= v <= 90:
+        return round(v, 1)
+    return None
+
+
+def extract_performance_condition(act: Dict[str, Any], detail: Dict[str, Any]) -> Optional[float]:
+    """Garmin performance condition (deviation from expected effort, -50 to +50)."""
+    v = safe_float(act.get("performanceCondition"))
+    if v is not None and -50 <= v <= 50:
+        return v
+    v = scan_for_keys(detail, ("performancecondition",))
+    if v is not None and -50 <= v <= 50:
+        return v
+    return None
+
+
+def extract_hr_zones(detail: Dict[str, Any]) -> list:
+    """Extract seconds in HR zones 1-5 from activity detail."""
+    zones = [None] * 5
+    if not isinstance(detail, dict):
+        return zones
+    summary = detail.get("summaryDTO") or {}
+    # Array form: [z1_secs, z2_secs, ...]
+    zone_arr = summary.get("hrTimeInZone", [])
+    if isinstance(zone_arr, list) and zone_arr:
+        for i, v in enumerate(zone_arr[:5]):
+            zones[i] = safe_float(v)
+        return zones
+    # Dict form: {"hrTimeInZone_1": 120, ...}
+    for i in range(1, 6):
+        v = summary.get(f"hrTimeInZone_{i}") or summary.get(f"zone{i}Time")
+        if v is not None:
+            zones[i - 1] = safe_float(v)
+    return zones
+
+
+def fetch_hr_zones_endpoint(api: Garmin, activity_id: str) -> list:
+    """Fetch HR zone breakdown via dedicated endpoint (fallback)."""
+    zones = [None] * 5
+    fn = getattr(api, "get_activity_hr_in_timezones", None)
+    if not callable(fn):
+        return zones
+    try:
+        data = fn(activity_id)
+        if not isinstance(data, dict):
+            return zones
+        for item in data.get("timeInZoneList", []):
+            z = int(item.get("zoneNumber", 0))
+            if 1 <= z <= 5:
+                zones[z - 1] = safe_float(item.get("secsInZone"))
+    except Exception:
+        pass
+    return zones
+
+
+def extract_running_dynamics(detail: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """Ground contact time (ms), vertical oscillation (mm), stride length (m), vertical ratio (%)."""
+    result: Dict[str, Optional[float]] = {
+        "gct_ms": None, "vo_mm": None, "sl_m": None, "vr_pct": None,
+    }
+    if not isinstance(detail, dict):
+        return result
+    summary = detail.get("summaryDTO") or {}
+
+    gct = safe_float(summary.get("groundContactTime") or
+                     scan_for_keys(detail, ("groundcontacttime",)))
+    vo  = safe_float(summary.get("verticalOscillation") or
+                     scan_for_keys(detail, ("verticaloscillation",)))
+    sl  = safe_float(summary.get("strideLength") or
+                     scan_for_keys(detail, ("stridelength",)))
+    vr  = safe_float(summary.get("verticalRatio") or
+                     scan_for_keys(detail, ("verticalratio",)))
+
+    if gct and 100 <= gct <= 500:
+        result["gct_ms"] = gct
+    if vo and 20 <= vo <= 200:
+        result["vo_mm"] = vo
+    if sl:
+        # Garmin may return cm; convert to m if > 5
+        result["sl_m"] = round(sl / 100, 3) if sl > 5 else sl
+    if vr and 0 < vr <= 20:
+        result["vr_pct"] = vr
+    return result
+
+
+def fetch_activity_weather(api: Garmin, activity_id: str) -> Tuple[Optional[float], Optional[float]]:
+    """Return (temperature_celsius, humidity_pct) for the activity, or (None, None)."""
+    fn = getattr(api, "get_activity_weather", None)
+    if not callable(fn):
+        return None, None
+    try:
+        data = fn(activity_id)
+        if not isinstance(data, dict):
+            return None, None
+        temp = safe_float(data.get("temperature") or data.get("temperatureCelsius"))
+        hum  = safe_float(data.get("relativeHumidity") or data.get("humidity"))
+        if temp is not None and not (-50 <= temp <= 60):
+            temp = None
+        if hum is not None and not (0 <= hum <= 100):
+            hum = None
+        return temp, hum
+    except Exception:
+        return None, None
+
+
 def resolve_ftp(api: Garmin) -> Tuple[Optional[float], str, Optional[float]]:
     """
     Returns: ftp_watts, ftp_source, best_20m_watts_used
@@ -523,6 +658,8 @@ def to_row(
     detail: Optional[Dict[str, Any]],
     ftp_watts: Optional[float],
     ftp_source: str,
+    hr_zones: Optional[list] = None,
+    weather: Optional[Tuple[Optional[float], Optional[float]]] = None,
 ) -> Dict[str, Any]:
     start_local = str(act.get("startTimeLocal", "") or "")
     date_str = start_local[:10] if len(start_local) >= 10 else ""
@@ -565,6 +702,14 @@ def to_row(
     if_val = intensity_factor(np_or_avg, ftp_watts) if ftp_watts else None
     tss_val = tss(dur_s, np_or_avg, ftp_watts) if ftp_watts else None
 
+    # New enrichment fields
+    recovery_t = extract_recovery_time_s(act)
+    vo2max_act = extract_vo2max_activity(act, detail)
+    perf_cond  = extract_performance_condition(act, detail)
+    hz = hr_zones if hr_zones is not None else extract_hr_zones(detail)
+    rd = extract_running_dynamics(detail)
+    temp_c, hum_pct = weather if weather is not None else (None, None)
+
     row = {
         "activity_id": activity_id,
         "date": date_str,
@@ -593,6 +738,20 @@ def to_row(
         "normalized_power_w": np_w,
         "intensity_factor": if_val,
         "tss": tss_val,
+        "recovery_time_s": recovery_t,
+        "vo2max_activity": vo2max_act,
+        "performance_condition": perf_cond,
+        "hr_zone_1_secs": hz[0],
+        "hr_zone_2_secs": hz[1],
+        "hr_zone_3_secs": hz[2],
+        "hr_zone_4_secs": hz[3],
+        "hr_zone_5_secs": hz[4],
+        "ground_contact_time_ms": rd["gct_ms"],
+        "vertical_oscillation_mm": rd["vo_mm"],
+        "stride_length_m": rd["sl_m"],
+        "vertical_ratio_pct": rd["vr_pct"],
+        "avg_temp_c": temp_c,
+        "humidity_pct": hum_pct,
     }
 
     # Ensure stable field order and presence
@@ -653,19 +812,28 @@ def main() -> None:
             skipped_type += 1
             continue
 
-        tkey = normalize_key(activity_type)
-        needs_detail = tkey in CYCLING_TYPE_KEYS
-
+        # Always fetch detail: enables HR zones, running dynamics, normalized power for all types
         detail = {}
-        if needs_detail:
-            try:
-                detail = fetch_activity_detail(api, act_id)
-            except Exception:
-                detail = {}
-            if DETAIL_SLEEP_S:
+        try:
+            detail = fetch_activity_detail(api, act_id)
+        except Exception:
+            detail = {}
+        if DETAIL_SLEEP_S:
+            time.sleep(DETAIL_SLEEP_S)
+
+        # HR zones: try from detail first, fall back to dedicated endpoint
+        hr_zones = extract_hr_zones(detail)
+        if not any(hr_zones):
+            hr_zones = fetch_hr_zones_endpoint(api, act_id)
+            if any(hr_zones) and DETAIL_SLEEP_S:
                 time.sleep(DETAIL_SLEEP_S)
 
-        row = to_row(act, detail, ftp_watts, ftp_source)
+        # Weather (best-effort)
+        weather = fetch_activity_weather(api, act_id)
+        if weather != (None, None) and DETAIL_SLEEP_S:
+            time.sleep(DETAIL_SLEEP_S)
+
+        row = to_row(act, detail, ftp_watts, ftp_source, hr_zones=hr_zones, weather=weather)
         new_rows.append(row)
         existing_ids.add(act_id)
 

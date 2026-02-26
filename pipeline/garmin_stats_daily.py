@@ -24,10 +24,16 @@ TOKEN_DIR = os.getenv("GARTH_DIR", ".garth")
 HEADERS = [
     "Date", "Timestamp",
     "Weight (lbs)", "Muscle Mass (lbs)", "Body Fat %", "Water %",
-    "Sleep Total (hr)", "Sleep Deep (hr)", "Sleep REM (hr)", "Sleep Score",
-    "RHR", "Min HR", "Max HR", "Avg Stress", "Body Battery", "Respiration", "SpO2",
+    "Sleep Total (hr)", "Sleep Deep (hr)", "Sleep REM (hr)", "Sleep Light (hr)", "Sleep Awake (hr)", "Sleep Score",
+    "RHR", "Min HR", "Max HR", "Avg Stress",
+    "Body Battery", "Body Battery High", "Body Battery Low",
+    "Respiration", "SpO2",
     "VO2 Max", "Training Status", "HRV Status", "HRV Avg",
-    "Steps", "Step Goal", "Cals Total", "Cals Active",
+    "Training Readiness", "Fitness Age",
+    "Steps", "Step Goal", "Floors Climbed",
+    "Cals Total", "Cals Active",
+    "Intensity Moderate Mins", "Intensity Vigorous Mins",
+    "Race 5K Secs", "Race 10K Secs", "Race Half Secs", "Race Full Secs",
     "Activities",
 ]
 
@@ -110,8 +116,9 @@ def main():
             # Body Battery
             body_battery = get_safe(user_stats, "bodyBatteryMostRecentValue")
             if body_battery is None:
-                # try charged/drained math or just leave None
-                body_battery = get_safe(user_stats, "bodyBatteryChargedValue") # fallback if needed?
+                body_battery = get_safe(user_stats, "bodyBatteryChargedValue")
+            body_battery_high = get_safe(user_stats, "bodyBatteryHighValue") or get_safe(user_stats, "bodyBatteryHighestValue")
+            body_battery_low = get_safe(user_stats, "bodyBatteryLowValue") or get_safe(user_stats, "bodyBatteryLowestValue")
             
             steps = get_safe(user_stats, "totalSteps")
             vo2_max = get_safe(user_stats, "vo2Max")
@@ -131,7 +138,7 @@ def main():
             cals_active = get_safe(user_stats, "activeKilocalories")
             step_goal = get_safe(user_stats, "dailyStepGoal")
         except Exception:
-            rhr = min_hr = max_hr = stress_avg = body_battery = steps = vo2_max = spo2_avg = respiration_avg = cals_total = cals_active = step_goal = None
+            rhr = min_hr = max_hr = stress_avg = body_battery = body_battery_high = body_battery_low = steps = vo2_max = spo2_avg = respiration_avg = cals_total = cals_active = step_goal = None
 
         # --- FALLBACKS FOR PARTIAL DAY ---
         if steps is None:
@@ -186,19 +193,23 @@ def main():
         # 2) Sleep
         try:
             sleep_data = api.get_sleep_data(today)
-            sleep_total = get_safe(sleep_data, "dailySleepDTO", "sleepTimeSeconds")
-            sleep_deep = get_safe(sleep_data, "dailySleepDTO", "deepSleepSeconds")
-            sleep_rem = get_safe(sleep_data, "dailySleepDTO", "remSleepSeconds")
+            dto = get_safe(sleep_data, "dailySleepDTO") or {}
+            sleep_total = dto.get("sleepTimeSeconds")
+            sleep_deep  = dto.get("deepSleepSeconds")
+            sleep_rem   = dto.get("remSleepSeconds")
+            sleep_light = dto.get("lightSleepSeconds")
+            sleep_awake = dto.get("awakeSleepSeconds") or dto.get("awakeSleepTime")
             sleep_score = get_safe(sleep_data, "dailySleepDTO", "sleepScores", "overall", "value")
+            if sleep_score is None:
+                sleep_score = dto.get("sleepScore") or dto.get("sleepQualityTypePK")
 
-            if sleep_total:
-                sleep_total = round(sleep_total / 3600, 2)
-            if sleep_deep:
-                sleep_deep = round(sleep_deep / 3600, 2)
-            if sleep_rem:
-                sleep_rem = round(sleep_rem / 3600, 2)
+            sleep_total = round(sleep_total / 3600, 2) if sleep_total else None
+            sleep_deep  = round(sleep_deep  / 3600, 2) if sleep_deep  else None
+            sleep_rem   = round(sleep_rem   / 3600, 2) if sleep_rem   else None
+            sleep_light = round(sleep_light / 3600, 2) if sleep_light else None
+            sleep_awake = round(sleep_awake / 3600, 2) if sleep_awake else None
         except Exception:
-            sleep_total = sleep_deep = sleep_rem = sleep_score = None
+            sleep_total = sleep_deep = sleep_rem = sleep_light = sleep_awake = sleep_score = None
 
         # 3) Training Status
         training_status = None
@@ -238,16 +249,104 @@ def main():
         except Exception:
             pass
 
-        # 6) Activities (filtered)
+        # 6) Training Readiness
+        training_readiness = None
+        try:
+            fn = getattr(api, "get_training_readiness", None)
+            tr_data = fn(today) if callable(fn) else garth.connectapi(f"training-readiness/training-readiness/{today}")
+            training_readiness = (get_safe(tr_data, "trainingReadinessScore")
+                                  or get_safe(tr_data, "score")
+                                  or get_safe(tr_data, "trainingReadiness"))
+            if training_readiness is not None:
+                training_readiness = int(training_readiness)
+        except Exception:
+            pass
+
+        # 7) Fitness Age
+        fitness_age = None
+        try:
+            fn = getattr(api, "get_fitnessage_data", None)
+            fa_data = fn() if callable(fn) else garth.connectapi("fitnessstats-service/fitness/stats/fitnessAge")
+            fitness_age = (get_safe(fa_data, "fitnessAge")
+                           or get_safe(fa_data, "biologicalAge")
+                           or get_safe(fa_data, "chronologicalAge"))
+            if fitness_age is not None:
+                fitness_age = int(fitness_age)
+        except Exception:
+            pass
+
+        # 8) Floors climbed
+        floors_climbed = None
+        try:
+            fn = getattr(api, "get_floors", None)
+            fl_data = fn(today) if callable(fn) else None
+            if fl_data:
+                floors_climbed = (get_safe(fl_data, "floorCount")
+                                  or get_safe(fl_data, "floorsAscended")
+                                  or get_safe(fl_data, "totalFloors"))
+                if floors_climbed is not None:
+                    floors_climbed = int(floors_climbed)
+        except Exception:
+            pass
+
+        # 9) Intensity Minutes
+        intensity_moderate = intensity_vigorous = None
+        try:
+            fn = getattr(api, "get_intensity_minutes_data", None)
+            im_data = fn(today) if callable(fn) else None
+            if im_data:
+                intensity_moderate = (get_safe(im_data, "moderateIntensityMinutes")
+                                      or get_safe(im_data, "moderateDuration"))
+                intensity_vigorous  = (get_safe(im_data, "vigorousIntensityMinutes")
+                                       or get_safe(im_data, "vigorousDuration"))
+                if intensity_moderate is not None:
+                    intensity_moderate = int(intensity_moderate)
+                if intensity_vigorous is not None:
+                    intensity_vigorous = int(intensity_vigorous)
+        except Exception:
+            pass
+
+        # 10) Race Predictions
+        race_5k = race_10k = race_half = race_full = None
+        try:
+            fn = getattr(api, "get_race_predictions", None)
+            rp_data = fn() if callable(fn) else None
+            if rp_data:
+                predictions = rp_data if isinstance(rp_data, list) else rp_data.get("predictions", [])
+                for pred in (predictions or []):
+                    dist = pred.get("distance") or pred.get("racingDistance") or pred.get("distanceMeters", 0)
+                    t = pred.get("racingTime") or pred.get("time") or pred.get("predictedTime")
+                    if not (dist and t):
+                        continue
+                    dist = float(dist)
+                    t = float(t)
+                    if 4900 <= dist <= 5100:
+                        race_5k = int(t)
+                    elif 9900 <= dist <= 10100:
+                        race_10k = int(t)
+                    elif 20000 <= dist <= 22000:
+                        race_half = int(t)
+                    elif 41000 <= dist <= 43000:
+                        race_full = int(t)
+        except Exception:
+            pass
+
+        # 11) Activities (filtered)
         activity_str = build_activity_str(api, today, flt)
 
         new_row = [
             today, now_str,
             weight, muscle_mass, fat_pct, water_pct,
-            sleep_total, sleep_deep, sleep_rem, sleep_score,
-            rhr, min_hr, max_hr, stress_avg, body_battery, respiration_avg, spo2_avg,
+            sleep_total, sleep_deep, sleep_rem, sleep_light, sleep_awake, sleep_score,
+            rhr, min_hr, max_hr, stress_avg,
+            body_battery, body_battery_high, body_battery_low,
+            respiration_avg, spo2_avg,
             vo2_max, training_status, hrv_status, hrv_avg,
-            steps, step_goal, cals_total, cals_active,
+            training_readiness, fitness_age,
+            steps, step_goal, floors_climbed,
+            cals_total, cals_active,
+            intensity_moderate, intensity_vigorous,
+            race_5k, race_10k, race_half, race_full,
             activity_str,
         ]
 
@@ -272,6 +371,12 @@ def main():
                             for r in existing_rows:
                                 r.insert(1, "")
                         
+                        # Pad old rows to match current header width
+                        n_cols = len(HEADERS)
+                        for r in existing_rows:
+                            while len(r) < n_cols:
+                                r.append("")
+
                         rows = existing_rows
 
             except Exception as e:

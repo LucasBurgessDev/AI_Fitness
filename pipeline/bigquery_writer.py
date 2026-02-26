@@ -25,22 +25,35 @@ _STATS_SCHEMA = [
     bigquery.SchemaField("sleep_total_hr", "FLOAT64"),
     bigquery.SchemaField("sleep_deep_hr", "FLOAT64"),
     bigquery.SchemaField("sleep_rem_hr", "FLOAT64"),
+    bigquery.SchemaField("sleep_light_hr", "FLOAT64"),
+    bigquery.SchemaField("sleep_awake_hr", "FLOAT64"),
     bigquery.SchemaField("sleep_score", "INT64"),
     bigquery.SchemaField("rhr", "INT64"),
     bigquery.SchemaField("min_hr", "INT64"),
     bigquery.SchemaField("max_hr", "INT64"),
     bigquery.SchemaField("avg_stress", "INT64"),
     bigquery.SchemaField("body_battery", "INT64"),
+    bigquery.SchemaField("body_battery_high", "INT64"),
+    bigquery.SchemaField("body_battery_low", "INT64"),
     bigquery.SchemaField("respiration", "FLOAT64"),
     bigquery.SchemaField("spo2", "FLOAT64"),
     bigquery.SchemaField("vo2_max", "FLOAT64"),
     bigquery.SchemaField("training_status", "STRING"),
     bigquery.SchemaField("hrv_status", "STRING"),
     bigquery.SchemaField("hrv_avg", "FLOAT64"),
+    bigquery.SchemaField("training_readiness", "INT64"),
+    bigquery.SchemaField("fitness_age", "INT64"),
     bigquery.SchemaField("steps", "INT64"),
     bigquery.SchemaField("step_goal", "INT64"),
+    bigquery.SchemaField("floors_climbed", "INT64"),
     bigquery.SchemaField("cals_total", "INT64"),
     bigquery.SchemaField("cals_active", "INT64"),
+    bigquery.SchemaField("intensity_moderate_mins", "INT64"),
+    bigquery.SchemaField("intensity_vigorous_mins", "INT64"),
+    bigquery.SchemaField("race_5k_secs", "INT64"),
+    bigquery.SchemaField("race_10k_secs", "INT64"),
+    bigquery.SchemaField("race_half_secs", "INT64"),
+    bigquery.SchemaField("race_full_secs", "INT64"),
     bigquery.SchemaField("activities", "STRING"),
 ]
 
@@ -74,6 +87,24 @@ _ACTIVITIES_SCHEMA = [
     bigquery.SchemaField("normalized_power_w", "FLOAT64"),
     bigquery.SchemaField("intensity_factor", "FLOAT64"),
     bigquery.SchemaField("tss", "FLOAT64"),
+    # Recovery & readiness
+    bigquery.SchemaField("recovery_time_s", "FLOAT64"),
+    bigquery.SchemaField("vo2max_activity", "FLOAT64"),
+    bigquery.SchemaField("performance_condition", "FLOAT64"),
+    # Heart rate zones
+    bigquery.SchemaField("hr_zone_1_secs", "FLOAT64"),
+    bigquery.SchemaField("hr_zone_2_secs", "FLOAT64"),
+    bigquery.SchemaField("hr_zone_3_secs", "FLOAT64"),
+    bigquery.SchemaField("hr_zone_4_secs", "FLOAT64"),
+    bigquery.SchemaField("hr_zone_5_secs", "FLOAT64"),
+    # Running dynamics
+    bigquery.SchemaField("ground_contact_time_ms", "FLOAT64"),
+    bigquery.SchemaField("vertical_oscillation_mm", "FLOAT64"),
+    bigquery.SchemaField("stride_length_m", "FLOAT64"),
+    bigquery.SchemaField("vertical_ratio_pct", "FLOAT64"),
+    # Environment
+    bigquery.SchemaField("avg_temp_c", "FLOAT64"),
+    bigquery.SchemaField("humidity_pct", "FLOAT64"),
 ]
 
 # Mapping from garmin_stats CSV headers (human-readable) → BQ column names
@@ -87,22 +118,35 @@ _CSV_TO_STATS_COLS = {
     "Sleep Total (hr)": "sleep_total_hr",
     "Sleep Deep (hr)": "sleep_deep_hr",
     "Sleep REM (hr)": "sleep_rem_hr",
+    "Sleep Light (hr)": "sleep_light_hr",
+    "Sleep Awake (hr)": "sleep_awake_hr",
     "Sleep Score": "sleep_score",
     "RHR": "rhr",
     "Min HR": "min_hr",
     "Max HR": "max_hr",
     "Avg Stress": "avg_stress",
     "Body Battery": "body_battery",
+    "Body Battery High": "body_battery_high",
+    "Body Battery Low": "body_battery_low",
     "Respiration": "respiration",
     "SpO2": "spo2",
     "VO2 Max": "vo2_max",
     "Training Status": "training_status",
     "HRV Status": "hrv_status",
     "HRV Avg": "hrv_avg",
+    "Training Readiness": "training_readiness",
+    "Fitness Age": "fitness_age",
     "Steps": "steps",
     "Step Goal": "step_goal",
+    "Floors Climbed": "floors_climbed",
     "Cals Total": "cals_total",
     "Cals Active": "cals_active",
+    "Intensity Moderate Mins": "intensity_moderate_mins",
+    "Intensity Vigorous Mins": "intensity_vigorous_mins",
+    "Race 5K Secs": "race_5k_secs",
+    "Race 10K Secs": "race_10k_secs",
+    "Race Half Secs": "race_half_secs",
+    "Race Full Secs": "race_full_secs",
     "Activities": "activities",
 }
 
@@ -213,15 +257,22 @@ def write_stats_range(
     out.insert(1, "batch_id", batch_id)
 
     out = _coerce_int_cols(out, {"sleep_score", "rhr", "min_hr", "max_hr", "avg_stress",
-                                  "body_battery", "steps", "step_goal", "cals_total", "cals_active"})
+                                  "body_battery", "body_battery_high", "body_battery_low",
+                                  "training_readiness", "fitness_age",
+                                  "steps", "step_goal", "floors_climbed",
+                                  "cals_total", "cals_active",
+                                  "intensity_moderate_mins", "intensity_vigorous_mins",
+                                  "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs"})
     out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
                                     "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
+                                    "sleep_light_hr", "sleep_awake_hr",
                                     "respiration", "spo2", "vo2_max", "hrv_avg"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
         schema=_STATS_SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
         time_partitioning=bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY,
             field="run_date",
@@ -276,12 +327,19 @@ def write_activities_range(
                                     "avg_pace_min_mile", "avg_power_w", "max_power_w",
                                     "elevation_gain_m", "aerobic_te", "anaerobic_te",
                                     "best_20m_watts", "ftp_watts", "normalized_power_w",
-                                    "intensity_factor", "tss"})
+                                    "intensity_factor", "tss",
+                                    "recovery_time_s", "vo2max_activity", "performance_condition",
+                                    "hr_zone_1_secs", "hr_zone_2_secs", "hr_zone_3_secs",
+                                    "hr_zone_4_secs", "hr_zone_5_secs",
+                                    "ground_contact_time_ms", "vertical_oscillation_mm",
+                                    "stride_length_m", "vertical_ratio_pct",
+                                    "avg_temp_c", "humidity_pct"})
     out = _ensure_schema_cols(out, _ACTIVITIES_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
         schema=_ACTIVITIES_SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
         time_partitioning=bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY,
             field="run_date",
@@ -318,15 +376,22 @@ def write_stats(
     out.insert(1, "batch_id", batch_id)
 
     out = _coerce_int_cols(out, {"sleep_score", "rhr", "min_hr", "max_hr", "avg_stress",
-                                  "body_battery", "steps", "step_goal", "cals_total", "cals_active"})
+                                  "body_battery", "body_battery_high", "body_battery_low",
+                                  "training_readiness", "fitness_age",
+                                  "steps", "step_goal", "floors_climbed",
+                                  "cals_total", "cals_active",
+                                  "intensity_moderate_mins", "intensity_vigorous_mins",
+                                  "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs"})
     out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
                                     "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
+                                    "sleep_light_hr", "sleep_awake_hr",
                                     "respiration", "spo2", "vo2_max", "hrv_avg"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
         schema=_STATS_SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
         time_partitioning=bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY,
             field="run_date",
@@ -372,12 +437,19 @@ def write_activities(
                                     "avg_pace_min_mile", "avg_power_w", "max_power_w",
                                     "elevation_gain_m", "aerobic_te", "anaerobic_te",
                                     "best_20m_watts", "ftp_watts", "normalized_power_w",
-                                    "intensity_factor", "tss"})
+                                    "intensity_factor", "tss",
+                                    "recovery_time_s", "vo2max_activity", "performance_condition",
+                                    "hr_zone_1_secs", "hr_zone_2_secs", "hr_zone_3_secs",
+                                    "hr_zone_4_secs", "hr_zone_5_secs",
+                                    "ground_contact_time_ms", "vertical_oscillation_mm",
+                                    "stride_length_m", "vertical_ratio_pct",
+                                    "avg_temp_c", "humidity_pct"})
     out = _ensure_schema_cols(out, _ACTIVITIES_SCHEMA)
 
     job_config = bigquery.LoadJobConfig(
         schema=_ACTIVITIES_SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
         time_partitioning=bigquery.TimePartitioning(
             type_=bigquery.TimePartitioningType.DAY,
             field="run_date",
