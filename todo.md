@@ -16,3 +16,7 @@
 ~~14. Add the ability to add as an app on pixel when opened in Chrome, so I can have it more easily accessible on my phone and use it throughout the day to track my training and recovery.~~
 ~~15. Add option to rename the sessions in the agent, so I can easily identify them and keep track of different conversations and topics related to my training and recovery. This will help me stay organized and quickly find relevant information when I need it.~~
 ~~16. Add a feature to allow users to set reminders for their training and recovery activities, which can be sent as notifications to their phone or email.~~
+~~17. Getting error failed to fetch~~ (fixed: added --timeout 3600 to Cloud Run service deploy)
+~~18. Add a feature to execture the garmin data pull. Ensure concurrany is set to 1 only.~~ (added POST /api/garmin/sync with running-execution guard)
+~~19. Improve the UI to make it more app like. Less scroll in window. More like the Gemini app interface.~~ (100dvh, Gemini-style welcome view, suggestion cards in center, iOS safe area)
+20. Add response caching to speed up repeated/similar queries (future optimisation).

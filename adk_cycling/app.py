@@ -28,6 +28,8 @@ ALLOWED_EMAILS = {e.strip().lower() for e in os.environ["ALLOWED_EMAIL"].split("
 SECRET_KEY = os.environ["SECRET_KEY"]
 PROJECT_ID = os.environ.get("PROJECT_ID", "health-data-482722")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8080/auth/callback")
+GARMIN_JOB_NAME = os.getenv("GARMIN_JOB_NAME", "garmin-fitness-daily")
+GARMIN_JOB_REGION = os.getenv("GARMIN_JOB_REGION", "europe-west2")
 
 SCOPES = [
     "openid",
@@ -293,6 +295,59 @@ async def settings_post(
             "error": error,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Garmin sync
+# ---------------------------------------------------------------------------
+
+def _cloud_run_token() -> str:
+    """Return a short-lived access token for the Cloud Run API using ADC."""
+    import google.auth
+    import google.auth.transport.requests
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    creds.refresh(google.auth.transport.requests.Request())
+    return creds.token
+
+
+@app.post("/api/garmin/sync")
+async def garmin_sync(request: Request):
+    """Trigger the Garmin data-pull Cloud Run Job (max 1 concurrent execution)."""
+    _require_session(request)
+
+    base = (
+        f"https://run.googleapis.com/v2/projects/{PROJECT_ID}"
+        f"/locations/{GARMIN_JOB_REGION}/jobs/{GARMIN_JOB_NAME}"
+    )
+    try:
+        token = _cloud_run_token()
+    except Exception as exc:
+        LOGGER.error("Could not obtain Cloud Run token: %s", exc)
+        return JSONResponse({"status": "error", "message": "Auth error — check service account permissions."}, status_code=500)
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        # Check for an already-running execution
+        list_resp = await client.get(f"{base}/executions", headers=headers, params={"pageSize": 10})
+        if list_resp.status_code == 200:
+            executions = list_resp.json().get("executions", [])
+            for ex in executions:
+                if ex.get("completionTime") is None and ex.get("runningCount", 0) > 0:
+                    return JSONResponse({"status": "running", "message": "A sync is already in progress. Check back in a few minutes."})
+        elif list_resp.status_code != 404:
+            LOGGER.warning("Could not list executions: %s %s", list_resp.status_code, list_resp.text)
+
+        # Trigger a new execution
+        run_resp = await client.post(f"{base}:run", headers=headers, json={})
+        if run_resp.status_code in (200, 202):
+            return JSONResponse({"status": "triggered", "message": "Garmin data sync started. This usually takes 1–2 minutes."})
+        else:
+            LOGGER.error("Cloud Run job trigger failed: %s %s", run_resp.status_code, run_resp.text)
+            return JSONResponse(
+                {"status": "error", "message": f"Failed to start job ({run_resp.status_code}). Check Cloud Run permissions."},
+                status_code=500,
+            )
 
 
 # ---------------------------------------------------------------------------

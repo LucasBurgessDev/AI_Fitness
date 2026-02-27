@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Cycling Coach AI</title>
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a73e8" />
@@ -33,6 +33,7 @@
       --header-text:      #ffffff;
       --sidebar-bg:       #f9fafb;
       --sidebar-w:        245px;
+      --input-radius:     20px;
     }
     [data-theme="dark"] {
       --bg:               #0d0f14;
@@ -57,6 +58,7 @@
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html { height: 100%; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
@@ -64,6 +66,7 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       transition: background 0.2s, color 0.2s;
     }
@@ -72,7 +75,7 @@
     header {
       background: linear-gradient(160deg, var(--header-grad-from) 0%, var(--header-grad-to) 100%);
       color: var(--header-text);
-      padding: 0.75rem 1.25rem;
+      padding: 0.6rem 1rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -81,9 +84,9 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.12);
     }
     .header-left { display: flex; align-items: center; gap: 0.5rem; }
-    .header-left span.icon { font-size: 1.3rem; }
-    .header-left h1 { font-size: 1.05rem; font-weight: 600; color: var(--header-text); }
-    .header-right { display: flex; align-items: center; gap: 0.85rem; font-size: 0.83rem; }
+    .header-left span.icon { font-size: 1.2rem; }
+    .header-left h1 { font-size: 1rem; font-weight: 600; color: var(--header-text); }
+    .header-right { display: flex; align-items: center; gap: 0.65rem; font-size: 0.82rem; }
     .header-right a {
       color: var(--header-text);
       text-decoration: none;
@@ -92,20 +95,23 @@
     }
     .header-right a:hover { opacity: 1; }
     .header-right .email {
-      opacity: 0.6;
-      max-width: 160px;
+      opacity: 0.55;
+      max-width: 140px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    @media (max-width: 500px) {
+      .header-right .email { display: none; }
+      .header-right a[href="/logout"] { display: none; }
+    }
 
-    /* Dark mode toggle */
     #theme-toggle {
       background: rgba(255,255,255,0.12);
       border: 1px solid rgba(255,255,255,0.2);
       color: var(--header-text);
       border-radius: 6px;
-      padding: 0.3rem 0.55rem;
+      padding: 0.28rem 0.5rem;
       font-size: 0.85rem;
       cursor: pointer;
       transition: background 0.15s;
@@ -113,14 +119,13 @@
     }
     #theme-toggle:hover { background: rgba(255,255,255,0.2); }
 
-    /* Install App button */
     #install-btn {
       background: rgba(255,255,255,0.15);
       border: 1px solid rgba(255,255,255,0.35);
       color: var(--header-text);
       border-radius: 6px;
-      padding: 0.3rem 0.65rem;
-      font-size: 0.78rem;
+      padding: 0.28rem 0.6rem;
+      font-size: 0.76rem;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s;
@@ -130,31 +135,26 @@
     #install-btn:hover { background: rgba(255,255,255,0.28); }
     #install-btn.hidden { display: none; }
 
-    /* Install instructions toast */
-    #install-toast {
+    #burger-btn {
       display: none;
-      position: fixed;
-      bottom: 1.2rem;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #1e293b;
-      color: #f1f5f9;
-      border-radius: 10px;
-      padding: 0.8rem 1.2rem;
-      font-size: 0.88rem;
-      line-height: 1.5;
-      max-width: 320px;
-      text-align: center;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-      z-index: 9999;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--header-text);
+      border-radius: 6px;
+      padding: 0.28rem 0.5rem;
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+      transition: background 0.15s;
     }
-    #install-toast.show { display: block; }
+    #burger-btn:hover { background: rgba(255,255,255,0.2); }
 
     /* ---- Main layout ---- */
     .main-layout {
       display: flex;
       flex: 1;
       overflow: hidden;
+      min-height: 0;
     }
 
     /* ---- Sidebar ---- */
@@ -171,12 +171,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.75rem 0.85rem;
+      padding: 0.7rem 0.85rem;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
     .sidebar-title {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
@@ -187,7 +187,7 @@
       color: #fff;
       border: none;
       border-radius: 8px;
-      padding: 0.28rem 0.65rem;
+      padding: 0.26rem 0.6rem;
       font-size: 0.78rem;
       font-weight: 600;
       cursor: pointer;
@@ -211,7 +211,7 @@
       display: flex;
       align-items: center;
       gap: 0.3rem;
-      padding: 0.5rem 0.85rem;
+      padding: 0.48rem 0.85rem;
       cursor: pointer;
       border-radius: 6px;
       margin: 0 0.4rem;
@@ -266,22 +266,87 @@
       flex-direction: column;
       overflow: hidden;
       min-width: 0;
+      min-height: 0;
     }
 
-    /* ---- Chat area ---- */
+    /* ---- Welcome view (empty state, Gemini-style) ---- */
+    #welcome-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.5rem;
+      gap: 1.5rem;
+      min-height: 0;
+    }
+    #welcome-view.hidden { display: none; }
+    .welcome-hero {
+      text-align: center;
+    }
+    .welcome-hero .hero-icon {
+      font-size: 2.6rem;
+      margin-bottom: 0.5rem;
+    }
+    .welcome-hero h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+    .welcome-hero p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      max-width: 340px;
+      line-height: 1.5;
+    }
+    .suggestions-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
+      width: 100%;
+      max-width: 560px;
+    }
+    @media (max-width: 420px) {
+      .suggestions-grid { grid-template-columns: 1fr; }
+    }
+    .suggestion-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      font-size: 0.83rem;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.14s, border-color 0.14s, transform 0.1s;
+      text-align: left;
+      line-height: 1.4;
+      box-shadow: var(--shadow);
+    }
+    .suggestion-card:hover {
+      background: var(--accent-bg);
+      border-color: var(--accent-border);
+      color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    /* ---- Chat messages area ---- */
     #chat-container {
       flex: 1;
       overflow-y: auto;
-      padding: 1.5rem 1.25rem;
+      padding: 1.25rem 1rem 0.5rem;
       display: flex;
       flex-direction: column;
-      gap: 1.1rem;
+      gap: 1rem;
       max-width: 860px;
       width: 100%;
       margin: 0 auto;
+      min-height: 0;
       scrollbar-width: thin;
       scrollbar-color: var(--border) transparent;
     }
+    #chat-container.hidden { display: none; }
     #chat-container::-webkit-scrollbar { width: 4px; }
     #chat-container::-webkit-scrollbar-track { background: transparent; }
     #chat-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -292,37 +357,36 @@
     .message.assistant { justify-content: flex-start; }
 
     .avatar {
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
       flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
       color: #fff;
       font-weight: 700;
-      box-shadow: 0 2px 6px rgba(37,99,235,0.3);
-      letter-spacing: 0.02em;
+      box-shadow: 0 2px 6px rgba(37,99,235,0.25);
     }
     .message.user .avatar {
       background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-      box-shadow: 0 2px 6px rgba(99,102,241,0.3);
+      box-shadow: 0 2px 6px rgba(99,102,241,0.25);
     }
 
     .bubble {
-      padding: 0.8rem 1.1rem;
+      padding: 0.75rem 1rem;
       border-radius: 18px;
       max-width: 78%;
       line-height: 1.65;
-      font-size: 0.93rem;
+      font-size: 0.92rem;
     }
     .user .bubble {
       background: linear-gradient(135deg, var(--user-bubble) 0%, var(--accent-dark) 100%);
       color: var(--user-text);
       border-bottom-right-radius: 5px;
-      box-shadow: 0 2px 10px rgba(37,99,235,0.25);
+      box-shadow: 0 2px 10px rgba(37,99,235,0.22);
     }
     .assistant .bubble {
       background: var(--surface);
@@ -332,23 +396,22 @@
       border: 1px solid var(--border);
     }
 
-    /* Markdown styles inside assistant bubble */
+    /* Markdown inside assistant bubble */
     .assistant .bubble h1,
     .assistant .bubble h2,
     .assistant .bubble h3 {
-      font-size: 1rem;
+      font-size: 0.98rem;
       font-weight: 600;
-      margin: 0.75rem 0 0.35rem;
+      margin: 0.7rem 0 0.3rem;
       color: var(--text);
     }
-    .assistant .bubble h1 { font-size: 1.05rem; }
-    .assistant .bubble h2 { font-size: 0.98rem; }
-    .assistant .bubble p { margin: 0.4rem 0; }
+    .assistant .bubble h1 { font-size: 1.02rem; }
+    .assistant .bubble p { margin: 0.35rem 0; }
     .assistant .bubble p:first-child { margin-top: 0; }
     .assistant .bubble p:last-child { margin-bottom: 0; }
     .assistant .bubble ul, .assistant .bubble ol {
       padding-left: 1.4rem;
-      margin: 0.4rem 0;
+      margin: 0.35rem 0;
     }
     .assistant .bubble li { margin: 0.2rem 0; }
     .assistant .bubble strong { font-weight: 600; }
@@ -357,8 +420,8 @@
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 0.1em 0.35em;
-      font-size: 0.87em;
+      padding: 0.1em 0.32em;
+      font-size: 0.86em;
       font-family: "Fira Code", "Cascadia Code", monospace;
     }
     .assistant .bubble pre {
@@ -373,18 +436,20 @@
     .assistant .bubble table {
       border-collapse: collapse;
       width: 100%;
-      font-size: 0.87rem;
+      font-size: 0.86rem;
       margin: 0.5rem 0;
     }
     .assistant .bubble th, .assistant .bubble td {
       border: 1px solid var(--border);
-      padding: 0.35rem 0.65rem;
+      padding: 0.32rem 0.6rem;
       text-align: left;
     }
     .assistant .bubble th { background: var(--surface-2); font-weight: 600; }
-    .assistant .bubble hr { border: none; border-top: 1px solid var(--border); margin: 0.75rem 0; }
+    .assistant .bubble hr { border: none; border-top: 1px solid var(--border); margin: 0.7rem 0; }
 
-    /* Thinking indicator */
+    .message-wrapper { display: flex; flex-direction: column; max-width: 78%; }
+
+    /* Thinking dots */
     .thinking-dots {
       display: inline-flex;
       gap: 4px;
@@ -404,43 +469,18 @@
       30% { transform: translateY(-5px); opacity: 1; }
     }
 
-    .message-wrapper { display: flex; flex-direction: column; max-width: 78%; }
-
     /* ---- Input area ---- */
     #input-area {
       background: var(--surface);
       border-top: 1px solid var(--border);
-      padding: 0.85rem 1.25rem;
+      padding: 0.75rem 1rem;
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
       flex-shrink: 0;
       box-shadow: 0 -2px 12px rgba(0,0,0,0.04);
     }
-    #suggestions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.45rem;
-      max-width: 860px;
-      margin: 0 auto 0.7rem;
-    }
-    .suggestion {
-      background: var(--surface-2);
-      color: var(--text-muted);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 0.32rem 0.85rem;
-      font-size: 0.79rem;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
-      white-space: nowrap;
-    }
-    .suggestion:hover {
-      background: var(--accent-bg);
-      color: var(--accent);
-      border-color: var(--accent-border);
-      transform: translateY(-1px);
-    }
     #input-row {
       display: flex;
-      gap: 0.55rem;
+      gap: 0.5rem;
       max-width: 860px;
       margin: 0 auto;
       align-items: flex-end;
@@ -449,7 +489,7 @@
       flex: 1;
       padding: 0.7rem 1.1rem;
       border: 1.5px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--input-radius);
       font-size: 0.93rem;
       font-family: inherit;
       resize: none;
@@ -463,7 +503,7 @@
     }
     #message-input:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
     }
     #message-input::placeholder { color: var(--text-muted); }
     #send-btn {
@@ -479,28 +519,13 @@
       cursor: pointer;
       transition: opacity 0.15s, transform 0.1s;
       flex-shrink: 0;
-      box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+      box-shadow: 0 2px 8px rgba(37,99,235,0.28);
     }
     #send-btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
     #send-btn:active:not(:disabled) { transform: translateY(0); }
-    #send-btn:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+    #send-btn:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
 
-    /* ---- Burger button (mobile only) ---- */
-    #burger-btn {
-      display: none;
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.2);
-      color: var(--header-text);
-      border-radius: 6px;
-      padding: 0.3rem 0.55rem;
-      font-size: 1.1rem;
-      cursor: pointer;
-      line-height: 1;
-      transition: background 0.15s;
-    }
-    #burger-btn:hover { background: rgba(255,255,255,0.2); }
-
-    /* Overlay to dismiss sidebar on mobile */
+    /* ---- Overlay / mobile sidebar ---- */
     #sidebar-overlay {
       display: none;
       position: fixed;
@@ -522,13 +547,29 @@
         transition: transform 0.22s ease;
         box-shadow: 2px 0 12px rgba(0,0,0,0.18);
       }
-      #sidebar.open {
-        transform: translateX(0);
-      }
-      #sidebar-overlay.open {
-        display: block;
-      }
+      #sidebar.open { transform: translateX(0); }
+      #sidebar-overlay.open { display: block; }
     }
+
+    /* ---- Install toast ---- */
+    #install-toast {
+      display: none;
+      position: fixed;
+      bottom: 1.2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      color: #f1f5f9;
+      border-radius: 10px;
+      padding: 0.8rem 1.2rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      max-width: 320px;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      z-index: 9999;
+    }
+    #install-toast.show { display: block; }
   </style>
 </head>
 <body>
@@ -561,24 +602,29 @@
 
     <!-- Chat column -->
     <div class="chat-column">
-      <div id="chat-container">
-        <div class="message assistant" id="greeting-msg">
-          <div class="avatar">AI</div>
-          <div class="message-wrapper">
-            <div class="bubble">Hello! I'm your personal cycling coach with access to your Garmin data. I can analyse your recent rides, power trends, TSS, recovery, and tailor training advice to your actual fitness. What would you like to explore today?</div>
-          </div>
+
+      <!-- Empty / welcome state -->
+      <div id="welcome-view">
+        <div class="welcome-hero">
+          <div class="hero-icon">🚴</div>
+          <h2>Your Cycling Coach</h2>
+          <p>Ask me about your rides, training load, FTP, recovery, and more — powered by your live Garmin data.</p>
+        </div>
+        <div class="suggestions-grid">
+          <div class="suggestion-card" onclick="fillInput(this)">How was my most recent activity?</div>
+          <div class="suggestion-card" onclick="fillInput(this)">How is my training going?</div>
+          <div class="suggestion-card" onclick="fillInput(this)">How is my recovery today?</div>
+          <div class="suggestion-card" onclick="fillInput(this)">What should I do to improve my training?</div>
+          <div class="suggestion-card" onclick="fillInput(this)">What's my current fitness trend?</div>
+          <div class="suggestion-card" onclick="fillInput(this)">Build me a training plan for next week</div>
         </div>
       </div>
 
+      <!-- Messages (hidden until first message) -->
+      <div id="chat-container" class="hidden"></div>
+
+      <!-- Input -->
       <div id="input-area">
-        <div id="suggestions">
-          <span class="suggestion" onclick="fillInput(this)">How was my most recent activity?</span>
-          <span class="suggestion" onclick="fillInput(this)">How is my training going?</span>
-          <span class="suggestion" onclick="fillInput(this)">How is my recovery today?</span>
-          <span class="suggestion" onclick="fillInput(this)">What should I do to improve my training?</span>
-          <span class="suggestion" onclick="fillInput(this)">What's my current fitness trend?</span>
-          <span class="suggestion" onclick="fillInput(this)">Build me a training plan for next week</span>
-        </div>
         <div id="input-row">
           <textarea
             id="message-input"
@@ -599,7 +645,6 @@
 
     let _deferredInstallPrompt = null;
 
-    // Hide install button if already running as installed PWA
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
       document.getElementById('install-btn').classList.add('hidden');
     }
@@ -616,7 +661,6 @@
 
     async function installApp() {
       if (_deferredInstallPrompt) {
-        // Native Chrome install sheet
         _deferredInstallPrompt.prompt();
         const { outcome } = await _deferredInstallPrompt.userChoice;
         if (outcome === 'accepted') {
@@ -624,7 +668,6 @@
           document.getElementById('install-btn').classList.add('hidden');
         }
       } else {
-        // Fallback: show manual instructions toast
         const toast = document.getElementById('install-toast');
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), 7000);
@@ -637,18 +680,6 @@
     root.setAttribute('data-theme', savedTheme);
     updateThemeBtn(savedTheme);
 
-    // ---- Sidebar toggle (mobile) ----
-    function toggleSidebar() {
-      const sidebar = document.getElementById('sidebar');
-      const overlay = document.getElementById('sidebar-overlay');
-      const open = sidebar.classList.toggle('open');
-      overlay.classList.toggle('open', open);
-    }
-    function closeSidebar() {
-      document.getElementById('sidebar').classList.remove('open');
-      document.getElementById('sidebar-overlay').classList.remove('open');
-    }
-
     function toggleTheme() {
       const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       root.setAttribute('data-theme', next);
@@ -658,6 +689,18 @@
     function updateThemeBtn(theme) {
       const btn = document.getElementById('theme-toggle');
       if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+
+    // ---- Sidebar (mobile) ----
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      const open = sidebar.classList.toggle('open');
+      overlay.classList.toggle('open', open);
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('open');
     }
 
     // ---- Session management ----
@@ -707,7 +750,6 @@
       if (!item) return;
       const titleEl = item.querySelector('.session-title');
       const current = titleEl.textContent;
-      // Replace title span with an input
       const input = document.createElement('input');
       input.type = 'text';
       input.value = current;
@@ -725,7 +767,6 @@
     }
 
     async function commitRename(id, newTitle, item, input) {
-      // Restore span immediately to avoid double-commit on blur after Enter
       const span = document.createElement('span');
       span.className = 'session-title';
       span.title = newTitle;
@@ -753,7 +794,7 @@
         const data = await resp.json();
         activeSessionId = data.session_id;
         localStorage.setItem('cc-session-id', activeSessionId);
-        clearChat();
+        showWelcome();
         await loadSessionList();
       } catch (e) { console.error('newChat error', e); }
     }
@@ -784,15 +825,15 @@
 
     async function loadMessages(sessionId) {
       const chatEl = document.getElementById('chat-container');
-      // Show loading state
-      chatEl.innerHTML = '<div style="padding:1.5rem;color:var(--text-muted);font-size:0.9rem;">Loading conversation…</div>';
-      document.getElementById('suggestions').style.display = 'none';
+      // Show loading state in chat area
+      showChat();
+      chatEl.innerHTML = '<div style="padding:1rem;color:var(--text-muted);font-size:0.88rem;">Loading conversation…</div>';
       try {
         const resp = await fetch(`/sessions/${encodeURIComponent(sessionId)}`);
-        if (!resp.ok) { clearChat(); return; }
+        if (!resp.ok) { showWelcome(); return; }
         const data = await resp.json();
         const messages = data.messages || [];
-        if (messages.length === 0) { clearChat(); return; }
+        if (messages.length === 0) { showWelcome(); return; }
         chatEl.innerHTML = '';
         for (const msg of messages) {
           if (msg.role === 'user') {
@@ -804,20 +845,19 @@
         chatEl.scrollTop = chatEl.scrollHeight;
       } catch (e) {
         console.error('loadMessages error', e);
-        clearChat();
+        showWelcome();
       }
     }
 
-    function clearChat() {
-      const chatEl = document.getElementById('chat-container');
-      chatEl.innerHTML = `
-        <div class="message assistant">
-          <div class="avatar">AI</div>
-          <div class="message-wrapper">
-            <div class="bubble">Hello! I'm your personal cycling coach with access to your Garmin data. I can analyse your recent rides, power trends, TSS, recovery, and tailor training advice to your actual fitness. What would you like to explore today?</div>
-          </div>
-        </div>`;
-      document.getElementById('suggestions').style.display = 'flex';
+    function showWelcome() {
+      document.getElementById('welcome-view').classList.remove('hidden');
+      document.getElementById('chat-container').classList.add('hidden');
+      document.getElementById('chat-container').innerHTML = '';
+    }
+
+    function showChat() {
+      document.getElementById('welcome-view').classList.add('hidden');
+      document.getElementById('chat-container').classList.remove('hidden');
     }
 
     function escHtml(str) {
@@ -832,7 +872,6 @@
     const inputEl = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
 
-    // marked config: allow GitHub-flavoured markdown, sanitize disabled (trusted source)
     marked.setOptions({ breaks: true, gfm: true });
 
     inputEl.addEventListener('input', () => {
@@ -846,10 +885,10 @@
     function fillInput(el) {
       inputEl.value = el.textContent;
       inputEl.focus();
-      document.getElementById('suggestions').style.display = 'none';
     }
 
     function appendUser(text) {
+      showChat();
       const wrapper = document.createElement('div');
       wrapper.className = 'message user';
       wrapper.innerHTML = `
@@ -863,6 +902,7 @@
     }
 
     function appendThinking() {
+      showChat();
       const wrapper = document.createElement('div');
       wrapper.className = 'message assistant';
       wrapper.innerHTML = `
@@ -878,6 +918,7 @@
     }
 
     function appendAssistant(html) {
+      showChat();
       const wrapper = document.createElement('div');
       wrapper.className = 'message assistant';
       wrapper.innerHTML = `
@@ -901,7 +942,6 @@
       inputEl.value = '';
       inputEl.style.height = 'auto';
       sendBtn.disabled = true;
-      document.getElementById('suggestions').style.display = 'none';
 
       appendUser(text);
       const thinkingEl = appendThinking();
@@ -920,7 +960,6 @@
         thinkingEl.remove();
         const html = marked.parse(data.response || '(no response)');
         appendAssistant(html);
-        // Refresh session list so title updates after first message
         loadSessionList();
       } catch (err) {
         thinkingEl.remove();

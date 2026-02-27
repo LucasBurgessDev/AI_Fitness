@@ -162,6 +162,7 @@ jobs:
             --allow-unauthenticated \
             --memory 1Gi \
             --cpu 1 \
+            --timeout 3600 \
             --port 8080
 
       - name: Create/update reminder Cloud Scheduler job

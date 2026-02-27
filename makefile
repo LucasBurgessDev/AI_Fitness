@@ -128,6 +128,7 @@ deploy-adk:
 	  --allow-unauthenticated \
 	  --memory 1Gi \
 	  --cpu 1 \
+	  --timeout 3600 \
 	  --port 8080
 
 oauth-setup:

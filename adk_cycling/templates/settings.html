@@ -283,6 +283,17 @@
     </form>
 
     <div class="card" style="margin-top:1.25rem;">
+      <h3>Garmin Data Sync</h3>
+      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1rem;">
+        Manually trigger a Garmin data pull. Only one sync can run at a time — if one is already in progress this will report back immediately.
+      </p>
+      <div class="actions">
+        <button class="btn-save" id="sync-btn" onclick="syncGarminData()">Sync now</button>
+      </div>
+      <p id="sync-status" style="font-size:0.82rem;margin-top:0.6rem;"></p>
+    </div>
+
+    <div class="card" style="margin-top:1.25rem;">
       <h3>Push Notifications</h3>
       <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1rem;">
         Enable push notifications to receive reminders on this device even when the app isn't open.
@@ -412,6 +423,30 @@
       navigator.serviceWorker.register('/sw.js').then(initNotifState);
     } else {
       initNotifState();
+    }
+
+    // ---- Garmin sync ----
+    const syncBtn    = document.getElementById('sync-btn');
+    const syncStatus = document.getElementById('sync-status');
+
+    function setSyncStatus(msg, ok) {
+      syncStatus.textContent = msg;
+      syncStatus.style.color = ok ? 'var(--accent)' : 'var(--text-muted)';
+    }
+
+    async function syncGarminData() {
+      syncBtn.disabled = true;
+      setSyncStatus('Requesting sync…', true);
+      try {
+        const resp = await fetch('/api/garmin/sync', { method: 'POST' });
+        const data = await resp.json();
+        const ok = data.status === 'triggered' || data.status === 'running';
+        setSyncStatus(data.message || 'Unknown response.', ok);
+      } catch (e) {
+        setSyncStatus('Error: could not reach the server.', false);
+      } finally {
+        syncBtn.disabled = false;
+      }
     }
   </script>
 </body>
