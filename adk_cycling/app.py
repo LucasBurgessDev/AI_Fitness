@@ -341,6 +341,12 @@ async def garmin_sync(request: Request):
         # Trigger a new execution
         run_resp = await client.post(f"{base}:run", headers=headers, json={})
         if run_resp.status_code in (200, 202):
+            import threading
+            import bq_cache
+            from agent import warm_bq_cache
+            bq_cache.clear()
+            # Re-warm the cache ~3 minutes later, once the pipeline has finished
+            threading.Thread(target=warm_bq_cache, kwargs={"delay_seconds": 180}, daemon=True).start()
             return JSONResponse({"status": "triggered", "message": "Garmin data sync started. This usually takes 1–2 minutes."})
         else:
             LOGGER.error("Cloud Run job trigger failed: %s %s", run_resp.status_code, run_resp.text)
@@ -353,6 +359,14 @@ async def garmin_sync(request: Request):
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+async def startup_event():
+    """Pre-warm the BQ cache in the background so the first query is fast."""
+    import threading
+    from agent import warm_bq_cache
+    threading.Thread(target=warm_bq_cache, daemon=True).start()
+
 
 @app.get("/health")
 async def health():

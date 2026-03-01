@@ -47,6 +47,24 @@ The project has two components:
 
 **GCP stack:** Cloud Run · BigQuery · Cloud Storage · Secret Manager · Cloud Scheduler · Artifact Registry · OpenTofu (infrastructure as code) · GitHub Actions (CI/CD)
 
+### BigQuery Response Cache
+
+All BigQuery query results are cached in-process inside the `cycling-coach` Cloud Run service. The cache lives in **`adk_cycling/bq_cache.py`** as a thread-safe Python dict — no external dependencies, no network hop.
+
+| Property | Detail |
+|---|---|
+| **Location** | In-process memory of the Cloud Run instance (`adk_cycling/bq_cache.py`) |
+| **Cache key** | MD5 of the SQL string |
+| **TTL** | 4 hours (override via `BQ_CACHE_TTL` env var, in seconds) |
+| **Scope** | Per Cloud Run instance — not shared if multiple instances are running |
+| **Errors** | Never cached; only successful query results are stored |
+
+**Lifecycle:**
+1. On the first query for a given SQL string, BigQuery is hit (~1–3 s) and the result is stored in the cache.
+2. Subsequent identical queries within the TTL return instantly from memory.
+3. When the user triggers **Garmin Sync** from the Settings page, the cache is cleared immediately, then a background thread waits ~3 minutes (enough for the pipeline to finish) and pre-warms the cache by fetching `get_recent_stats(30)`, `get_recent_activities(30)`, `get_weekly_summary(8)`, and `get_training_load(8, ftp)`.
+4. The 4-hour TTL acts as a safety net if a sync fails or the Cloud Run instance restarts.
+
 ---
 
 ## Repository Layout
@@ -70,6 +88,7 @@ The project has two components:
 ├── adk_cycling/                # Cloud Run Service — Cycling Coach web app
 │   ├── app.py                      # FastAPI routes + OAuth2
 │   ├── agent.py                    # ADK LlmAgent with BigQuery + Calendar tools
+│   ├── bq_cache.py                 # In-process TTL cache for BigQuery results (4 hr default)
 │   ├── profile.py                  # GCS-backed coach profile store
 │   ├── session_store.py            # GCS-backed conversation history
 │   ├── coaching_log.py             # BQ-backed insight persistence

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
@@ -11,6 +12,7 @@ from google.adk.tools import FunctionTool
 from google.cloud import bigquery
 from google.genai.types import Content, Part
 
+import bq_cache
 import profile as profile_store
 
 LOGGER = logging.getLogger(__name__)
@@ -42,14 +44,22 @@ def query_garmin_data(sql: str) -> str:
     Returns:
         Query results as a formatted string, or an error message.
     """
+    cached = bq_cache.get(sql)
+    if cached is not None:
+        LOGGER.debug("BQ cache hit")
+        return cached
+
     try:
         client = bigquery.Client(project=PROJECT_ID)
         results = client.query(sql).result()
         rows = [dict(row) for row in results]
         if not rows:
-            return "Query returned no results."
-        # Format as a readable table summary
-        return "\n".join(str(row) for row in rows)
+            result = "Query returned no results."
+        else:
+            # Format as a readable table summary
+            result = "\n".join(str(row) for row in rows)
+        bq_cache.put(sql, result)
+        return result
     except Exception as e:
         LOGGER.error("BigQuery query error: %s | SQL: %s", e, sql)
         return f"Query error: {e}"
@@ -552,7 +562,7 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
         )
 
     agent = LlmAgent(
-        model="gemini-3.1-pro-preview",
+        model="gemini-2.5-flash",
         name="cycling_expert",
         instruction=instruction,
         tools=[
@@ -585,6 +595,28 @@ def _get_runner(session_id: str, user_email: str = "") -> Runner:
     runner = _make_runner(instruction, user_email=user_email, session_id=session_id)
     _runners[session_id] = (runner, dict(current_profile))
     return runner
+
+
+def warm_bq_cache(delay_seconds: int = 0) -> None:
+    """Pre-populate the BQ cache with the most commonly used queries.
+
+    Intended to be called in a background thread after a Garmin sync completes.
+    Pass delay_seconds to wait for the pipeline to finish before fetching.
+    """
+    if delay_seconds:
+        time.sleep(delay_seconds)
+    LOGGER.info("Warming BQ cache...")
+    p = profile_store.load()
+    ftp = float(p.get("ftp") or 0)
+    try:
+        get_recent_stats(30)
+        get_recent_activities(30)
+        get_weekly_summary(8)
+        if ftp > 0:
+            get_training_load(8, ftp)
+        LOGGER.info("BQ cache warm complete")
+    except Exception as exc:
+        LOGGER.warning("BQ cache warm error: %s", exc)
 
 
 def invalidate_sessions() -> None:
