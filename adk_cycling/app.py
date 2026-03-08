@@ -93,15 +93,51 @@ async def login_page(request: Request):
 
 @app.get("/auth/start")
 async def auth_start():
+    import hashlib
+    import secrets
+
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = (
+        __import__("base64")
+        .urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+
     flow = _get_flow()
-    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-    return RedirectResponse(auth_url)
+    auth_url, _ = flow.authorization_url(
+        prompt="consent",
+        access_type="offline",
+        code_challenge=code_challenge,
+        code_challenge_method="S256",
+    )
+
+    redirect = RedirectResponse(auth_url)
+    redirect.set_cookie(
+        "pkce_cv",
+        signer.dumps(code_verifier),
+        httponly=True,
+        samesite="lax",
+        max_age=600,
+    )
+    return redirect
 
 
 @app.get("/auth/callback")
 async def auth_callback(request: Request, code: str):
+    code_verifier: str | None = None
+    signed_cv = request.cookies.get("pkce_cv")
+    if signed_cv:
+        try:
+            code_verifier = signer.loads(signed_cv)
+        except BadSignature:
+            pass
+
     flow = _get_flow()
-    flow.fetch_token(code=code)
+    fetch_kwargs: dict = {"code": code}
+    if code_verifier:
+        fetch_kwargs["code_verifier"] = code_verifier
+    flow.fetch_token(**fetch_kwargs)
     credentials = flow.credentials
 
     async with httpx.AsyncClient() as client:
@@ -121,6 +157,7 @@ async def auth_callback(request: Request, code: str):
     session_cookie = signer.dumps({"email": email})
     response = RedirectResponse("/")
     response.set_cookie("session", session_cookie, httponly=True, samesite="lax", max_age=86400 * 7)
+    response.delete_cookie("pkce_cv")
     return response
 
 
