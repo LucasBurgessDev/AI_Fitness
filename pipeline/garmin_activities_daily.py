@@ -753,6 +753,17 @@ def to_row(
     avg_pace = format_pace_min_mile(avg_speed_mps) if avg_speed_mps else None
 
     detail = detail or {}
+    summary_dto = detail.get("summaryDTO") or {}
+
+    # Garmin often omits averagePower/maxPower from the list API for virtual rides;
+    # fall back to the detail summaryDTO before giving up.
+    if avg_power is None:
+        avg_power = _bounded_power(safe_float(
+            summary_dto.get("averagePower") or summary_dto.get("avgPower")
+        ))
+    if max_power is None:
+        max_power = _bounded_power(safe_float(summary_dto.get("maxPower")))
+
     best_20m = extract_best_20m_power_w(detail) if detail else None
     np_w = extract_normalized_power_w(detail) if detail else None
 
