@@ -335,6 +335,188 @@ async def settings_post(
 
 
 # ---------------------------------------------------------------------------
+# Analytics routes
+# ---------------------------------------------------------------------------
+
+@app.get("/health", response_class=HTMLResponse)
+async def health_analytics_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("health_analytics.html", {"request": request, "email": session["email"]})
+
+
+@app.get("/training", response_class=HTMLResponse)
+async def training_analytics_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("training_analytics.html", {"request": request, "email": session["email"]})
+
+
+@app.get("/api/analytics/health")
+async def api_health_analytics(request: Request, days: int = 90):
+    _require_session(request)
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT_ID)
+    sql = f"""
+    SELECT date, weight_lbs, body_fat_pct, muscle_mass_lbs,
+           sleep_total_hr, sleep_deep_hr, sleep_rem_hr, sleep_light_hr, sleep_score,
+           rhr, hrv_avg, avg_stress, body_battery, body_battery_high, body_battery_low,
+           vo2_max, steps, step_goal, cals_total
+    FROM `{PROJECT_ID}.garmin.garmin_stats`
+    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ORDER BY date
+    """
+    try:
+        rows = list(client.query(sql).result())
+    except Exception as exc:
+        LOGGER.exception("Health analytics BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    fields = [
+        "weight_lbs", "body_fat_pct", "muscle_mass_lbs",
+        "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr", "sleep_light_hr", "sleep_score",
+        "rhr", "hrv_avg", "avg_stress", "body_battery", "body_battery_high", "body_battery_low",
+        "vo2_max", "steps", "step_goal", "cals_total",
+    ]
+    data: dict = {"dates": []}
+    for f in fields:
+        data[f] = []
+
+    for row in rows:
+        data["dates"].append(str(row["date"]))
+        for f in fields:
+            v = row[f]
+            data[f].append(float(v) if v is not None else None)
+
+    # Latest non-null value for each field (for stat cards)
+    latest: dict = {}
+    remaining = set(fields)
+    for row in reversed(rows):
+        for f in list(remaining):
+            if row[f] is not None:
+                latest[f] = float(row[f])
+                remaining.discard(f)
+        if not remaining:
+            break
+    data["latest"] = latest
+    return JSONResponse(data)
+
+
+@app.get("/api/analytics/training")
+async def api_training_analytics(request: Request, days: int = 90):
+    _require_session(request)
+    from google.cloud import bigquery
+    from collections import Counter
+    from datetime import timedelta
+
+    client = bigquery.Client(project=PROJECT_ID)
+
+    stats_sql = f"""
+    SELECT date, atl, ctl, tsb
+    FROM `{PROJECT_ID}.garmin.garmin_stats`
+    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ORDER BY date
+    """
+    acts_sql = f"""
+    SELECT date, activity_type, title, tss, duration_s, distance_m,
+           normalized_power_w, ftp_watts, avg_hr,
+           hr_zone_1_secs, hr_zone_2_secs, hr_zone_3_secs, hr_zone_4_secs, hr_zone_5_secs,
+           power_zone_1_secs, power_zone_2_secs, power_zone_3_secs, power_zone_4_secs, power_zone_5_secs
+    FROM `{PROJECT_ID}.garmin.garmin_activities`
+    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    ORDER BY date
+    """
+    try:
+        stats_rows = list(client.query(stats_sql).result())
+        act_rows = list(client.query(acts_sql).result())
+    except Exception as exc:
+        LOGGER.exception("Training analytics BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    pmc = {
+        "dates": [str(r["date"]) for r in stats_rows],
+        "atl": [float(r["atl"]) if r["atl"] is not None else None for r in stats_rows],
+        "ctl": [float(r["ctl"]) if r["ctl"] is not None else None for r in stats_rows],
+        "tsb": [float(r["tsb"]) if r["tsb"] is not None else None for r in stats_rows],
+    }
+
+    cycling_types = {
+        "cycling", "road_cycling", "gravel_cycling", "mountain_biking",
+        "indoor_cycling", "virtual_ride", "spinning",
+    }
+
+    activities = []
+    hr_zones = [0.0] * 5
+    power_zones = [0.0] * 5
+    type_counts: Counter = Counter()
+    ftp_by_date: dict = {}
+    weekly: dict = {}
+
+    for r in act_rows:
+        d_str = str(r["date"])
+        atype = (r["activity_type"] or "unknown").lower()
+        type_counts[atype] += 1
+
+        activities.append({
+            "date": d_str,
+            "activity_type": atype,
+            "title": r["title"] or "",
+            "tss": float(r["tss"]) if r["tss"] is not None else None,
+            "duration_s": float(r["duration_s"]) if r["duration_s"] is not None else None,
+            "distance_m": float(r["distance_m"]) if r["distance_m"] is not None else None,
+            "normalized_power_w": float(r["normalized_power_w"]) if r["normalized_power_w"] is not None else None,
+            "ftp_watts": float(r["ftp_watts"]) if r["ftp_watts"] is not None else None,
+            "avg_hr": float(r["avg_hr"]) if r["avg_hr"] is not None else None,
+        })
+
+        for i, col in enumerate(["hr_zone_1_secs", "hr_zone_2_secs", "hr_zone_3_secs", "hr_zone_4_secs", "hr_zone_5_secs"]):
+            v = r[col]
+            if v is not None:
+                hr_zones[i] += float(v)
+
+        if atype in cycling_types:
+            for i, col in enumerate(["power_zone_1_secs", "power_zone_2_secs", "power_zone_3_secs", "power_zone_4_secs", "power_zone_5_secs"]):
+                v = r[col]
+                if v is not None:
+                    power_zones[i] += float(v)
+
+        if r["ftp_watts"] is not None:
+            ftp_by_date[d_str] = float(r["ftp_watts"])
+
+        d_obj = r["date"]
+        week_start = str(d_obj - timedelta(days=d_obj.weekday())) if hasattr(d_obj, "weekday") else d_str[:10]
+        if week_start not in weekly:
+            weekly[week_start] = {"week_start": week_start, "tss": 0.0, "hours": 0.0, "count": 0}
+        weekly[week_start]["tss"] += float(r["tss"]) if r["tss"] is not None else 0.0
+        weekly[week_start]["hours"] += (float(r["duration_s"]) / 3600.0) if r["duration_s"] is not None else 0.0
+        weekly[week_start]["count"] += 1
+
+    ftp_sorted = sorted(ftp_by_date.items())
+
+    return JSONResponse({
+        "pmc": pmc,
+        "activities": list(reversed(activities)),  # most recent first for the table
+        "hr_zones": hr_zones,
+        "power_zones": power_zones,
+        "activity_type_counts": dict(type_counts),
+        "ftp_trend": {
+            "dates": [p[0] for p in ftp_sorted],
+            "values": [p[1] for p in ftp_sorted],
+        },
+        "weekly": sorted(weekly.values(), key=lambda x: x["week_start"]),
+        "latest_ctl": pmc["ctl"][-1] if pmc["ctl"] else None,
+        "latest_atl": pmc["atl"][-1] if pmc["atl"] else None,
+        "latest_tsb": pmc["tsb"][-1] if pmc["tsb"] else None,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Garmin sync
 # ---------------------------------------------------------------------------
 

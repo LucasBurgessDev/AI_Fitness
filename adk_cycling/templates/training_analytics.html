@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Training Analytics · Cycling Coach AI</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#1a73e8" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:               #eef2f7;
+      --surface:          #ffffff;
+      --surface-2:        #f5f7fa;
+      --border:           #dde3ec;
+      --text:             #1a1a2e;
+      --text-muted:       #6b7280;
+      --accent:           #2563eb;
+      --accent-dark:      #1d4ed8;
+      --accent-bg:        #eff6ff;
+      --shadow:           0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:        0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
+      --header-grad-from: #2563eb;
+      --header-grad-to:   #1e40af;
+      --header-text:      #ffffff;
+    }
+    [data-theme="dark"] {
+      --bg:               #0d0f14;
+      --surface:          #171a22;
+      --surface-2:        #12151c;
+      --border:           #252b38;
+      --text:             #e2e8f0;
+      --text-muted:       #8892a4;
+      --accent:           #3b82f6;
+      --accent-dark:      #2563eb;
+      --accent-bg:        #172040;
+      --shadow:           0 1px 4px rgba(0,0,0,0.4);
+      --shadow-md:        0 4px 20px rgba(0,0,0,0.35);
+      --header-grad-from: #151820;
+      --header-grad-to:   #0d0f14;
+      --header-text:      #e2e8f0;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    /* Header */
+    header {
+      background: linear-gradient(160deg, var(--header-grad-from) 0%, var(--header-grad-to) 100%);
+      color: var(--header-text);
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      border-bottom: 1px solid rgba(0,0,0,0.15);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 0.5rem; }
+    .header-left h1 { font-size: 1rem; font-weight: 600; color: var(--header-text); }
+    .header-right { display: flex; align-items: center; gap: 0.65rem; font-size: 0.82rem; }
+    .header-right a {
+      color: var(--header-text); text-decoration: none;
+      opacity: 0.75; transition: opacity 0.15s;
+    }
+    .header-right a:hover, .header-right a.active { opacity: 1; font-weight: 600; }
+    .header-right .email { opacity: 0.55; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #theme-toggle {
+      background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+      color: var(--header-text); border-radius: 6px; padding: 0.28rem 0.5rem;
+      font-size: 0.85rem; cursor: pointer; transition: background 0.15s; line-height: 1;
+    }
+    #theme-toggle:hover { background: rgba(255,255,255,0.2); }
+    @media (max-width: 500px) {
+      .header-right .email { display: none; }
+      .header-right a[href="/logout"] { display: none; }
+    }
+
+    /* Main */
+    .analytics-main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 1280px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;
+    }
+    .toolbar h2 { font-size: 1.2rem; font-weight: 600; }
+    .days-select {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 0.4rem 0.75rem;
+      font-size: 0.85rem; cursor: pointer; outline: none;
+    }
+    .days-select:focus { border-color: var(--accent); }
+
+    /* Stat cards */
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card {
+      background: var(--surface); border-radius: 12px; padding: 1rem 1.1rem;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+    }
+    .stat-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.35rem; }
+    .stat-value { font-size: 1.6rem; font-weight: 700; color: var(--text); line-height: 1; }
+    .stat-unit { font-size: 0.8rem; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
+    .stat-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; }
+    .stat-positive { color: #10b981; }
+    .stat-negative { color: #ef4444; }
+    .stat-neutral { color: #f59e0b; }
+
+    /* Chart grid */
+    .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; margin-bottom: 1.25rem; }
+    .chart-card {
+      background: var(--surface); border-radius: 12px; padding: 1.1rem 1.25rem;
+      box-shadow: var(--shadow-md); border: 1px solid var(--border);
+    }
+    .chart-card.full-width { grid-column: 1 / -1; }
+    .chart-title { font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 0.85rem; }
+    .chart-wrap { position: relative; height: 220px; }
+    .chart-wrap.tall { height: 280px; }
+
+    /* Loading / error */
+    .loading-state {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--text-muted); font-size: 0.875rem; gap: 0.5rem;
+    }
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-msg { color: #ef4444; font-size: 0.85rem; padding: 1rem; }
+    .no-data { color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 2rem 1rem; }
+
+    /* Activity table */
+    .table-card {
+      background: var(--surface); border-radius: 12px;
+      box-shadow: var(--shadow-md); border: 1px solid var(--border);
+      overflow: hidden; margin-bottom: 1.25rem;
+    }
+    .table-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th {
+      background: var(--surface-2); padding: 0.55rem 0.85rem;
+      text-align: left; font-size: 0.72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted);
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    td { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-2); }
+    .badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .badge-cycling { background: rgba(37,99,235,0.12); color: #2563eb; }
+    .badge-running { background: rgba(16,185,129,0.12); color: #10b981; }
+    .badge-other { background: rgba(107,114,128,0.12); color: #6b7280; }
+    .show-more-btn {
+      width: 100%; padding: 0.65rem; background: var(--surface-2); border: none; border-top: 1px solid var(--border);
+      color: var(--accent); font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: background 0.15s;
+    }
+    .show-more-btn:hover { background: var(--accent-bg); }
+
+    @media (max-width: 900px) {
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+      .chart-grid { grid-template-columns: 1fr; }
+      .chart-card.full-width { grid-column: 1; }
+    }
+    @media (max-width: 480px) {
+      .analytics-main { padding: 1rem; }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span>🚴</span>
+      <h1>Cycling Coach AI</h1>
+    </div>
+    <div class="header-right">
+      <a href="/">Chat</a>
+      <a href="/health">Health</a>
+      <a href="/training" class="active">Training</a>
+      <a href="/settings">Settings</a>
+      <span class="email">{{ email }}</span>
+      <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+      <a href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <div class="analytics-main">
+    <div class="toolbar">
+      <h2>Training Analytics</h2>
+      <select class="days-select" id="days-select" onchange="reload()">
+        <option value="30">Last 30 days</option>
+        <option value="60">Last 60 days</option>
+        <option value="90" selected>Last 90 days</option>
+        <option value="180">Last 180 days</option>
+        <option value="365">Last year</option>
+      </select>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Fitness (CTL)</div>
+        <div class="stat-value" id="sv-ctl">—</div>
+        <div class="stat-sub">Chronic Training Load</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Fatigue (ATL)</div>
+        <div class="stat-value" id="sv-atl">—</div>
+        <div class="stat-sub">Acute Training Load</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Form (TSB)</div>
+        <div class="stat-value" id="sv-tsb">—</div>
+        <div class="stat-sub" id="sv-tsb-sub">Training Stress Balance</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Weekly TSS</div>
+        <div class="stat-value" id="sv-wtss">—</div>
+        <div class="stat-sub" id="sv-wtss-sub">This week</div>
+      </div>
+    </div>
+
+    <!-- PMC Chart - full width -->
+    <div class="chart-grid">
+      <div class="chart-card full-width">
+        <div class="chart-title">Performance Management Chart — Fitness, Fatigue &amp; Form</div>
+        <div class="chart-wrap tall"><div class="loading-state" id="load-pmc"><div class="spinner"></div> Loading…</div><canvas id="chart-pmc"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Weekly + FTP row -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Weekly Training Load</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-weekly"><div class="spinner"></div> Loading…</div><canvas id="chart-weekly"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">FTP Trend</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-ftp"><div class="spinner"></div> Loading…</div><canvas id="chart-ftp"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Zone charts + activity type -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">HR Zone Distribution</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-hrz"><div class="spinner"></div> Loading…</div><canvas id="chart-hrz"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Power Zone Distribution <span style="font-weight:400;color:var(--text-muted)">(cycling)</span></div>
+        <div class="chart-wrap"><div class="loading-state" id="load-pwz"><div class="spinner"></div> Loading…</div><canvas id="chart-pwz"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Activity Type Breakdown</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-types"><div class="spinner"></div> Loading…</div><canvas id="chart-types"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">TSS Distribution</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-tss"><div class="spinner"></div> Loading…</div><canvas id="chart-tss"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Activity table -->
+    <div class="table-card">
+      <div class="table-header">Recent Activities</div>
+      <div class="table-wrap">
+        <table id="act-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Activity</th>
+              <th>Type</th>
+              <th>Duration</th>
+              <th>Distance</th>
+              <th>NP</th>
+              <th>TSS</th>
+              <th>Avg HR</th>
+            </tr>
+          </thead>
+          <tbody id="act-tbody">
+            <tr><td colspan="8"><div class="loading-state"><div class="spinner"></div> Loading…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <button class="show-more-btn" id="show-more-btn" style="display:none" onclick="showMoreActivities()">Show more</button>
+    </div>
+  </div>
+
+  <script>
+    // ── Theme ──────────────────────────────────────────────────────────────
+    (function () {
+      const t = localStorage.getItem('cc-theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+      document.getElementById('theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
+    })();
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('cc-theme', next);
+      document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+      reloadCharts();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    const charts = {};
+    let allActivities = [];
+    let shownCount = 20;
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+    function isDark() {
+      return document.documentElement.getAttribute('data-theme') === 'dark';
+    }
+    function fmt(n, dec = 1) { return n == null ? '—' : Number(n).toFixed(dec); }
+    function fmtDur(s) {
+      if (!s) return '—';
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+    function fmtDist(m) { return m == null ? '—' : (m / 1000).toFixed(1) + ' km'; }
+
+    function chartDefaults() {
+      const textColor = cssVar('--text');
+      const mutedColor = cssVar('--text-muted');
+      const gridColor = isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor, font: { size: 11 }, boxWidth: 12, padding: 12 } },
+          tooltip: { mode: 'index', intersect: false },
+        },
+        scales: {
+          x: {
+            ticks: { color: mutedColor, maxTicksLimit: 10, maxRotation: 0, font: { size: 10 } },
+            grid: { color: gridColor },
+          },
+          y: {
+            ticks: { color: mutedColor, font: { size: 10 } },
+            grid: { color: gridColor },
+          },
+        },
+      };
+    }
+
+    function makeChart(id, config) {
+      if (charts[id]) { charts[id].destroy(); }
+      const canvas = document.getElementById(id);
+      if (!canvas) return;
+      charts[id] = new Chart(canvas, config);
+    }
+
+    function hideLoader(id) {
+      const el = document.getElementById('load-' + id);
+      if (el) el.style.display = 'none';
+    }
+
+    function showError(id, msg) {
+      const wrap = document.querySelector(`#chart-${id}`)?.parentElement;
+      if (wrap) wrap.innerHTML = `<div class="error-msg">⚠ ${msg}</div>`;
+    }
+
+    function setStatVal(id, val, unit = '', dec = 1, subId = null, subHtml = null) {
+      const el = document.getElementById('sv-' + id);
+      if (!el) return;
+      if (val == null) { el.innerHTML = '—'; return; }
+      const n = typeof val === 'number' ? val.toFixed(dec) : val;
+      el.innerHTML = `${n}<span class="stat-unit">${unit}</span>`;
+      if (subId && subHtml) {
+        const sub = document.getElementById(subId);
+        if (sub) sub.innerHTML = subHtml;
+      }
+    }
+
+    // ── Stat cards ─────────────────────────────────────────────────────────
+    function updateStatCards(d) {
+      const ctl = d.latest_ctl;
+      const atl = d.latest_atl;
+      const tsb = d.latest_tsb;
+      setStatVal('ctl', ctl, '', 1);
+      setStatVal('atl', atl, '', 1);
+      if (tsb != null) {
+        const el = document.getElementById('sv-tsb');
+        const cls = tsb > 5 ? 'stat-positive' : tsb < -10 ? 'stat-negative' : 'stat-neutral';
+        const arrow = tsb > 5 ? '↑ Fresh' : tsb < -10 ? '↓ Fatigued' : '≈ Neutral';
+        el.innerHTML = `<span class="${cls}">${tsb.toFixed(1)}</span>`;
+        const sub = document.getElementById('sv-tsb-sub');
+        if (sub) sub.innerHTML = `<span class="${cls}">${arrow}</span>`;
+      }
+      // This week's TSS
+      const weekly = d.weekly || [];
+      if (weekly.length > 0) {
+        const last = weekly[weekly.length - 1];
+        setStatVal('wtss', last.tss, '', 0, 'sv-wtss-sub', `${last.count} activit${last.count === 1 ? 'y' : 'ies'} · ${last.hours.toFixed(1)}h`);
+      }
+    }
+
+    // ── PMC ────────────────────────────────────────────────────────────────
+    function renderPmc(d) {
+      hideLoader('pmc');
+      const pmc = d.pmc;
+      if (!pmc || !pmc.dates.length) {
+        showError('pmc', 'No training load data available for this period.');
+        return;
+      }
+      const def = chartDefaults();
+      // Zero line
+      const zeroLine = {
+        id: 'zeroLine',
+        beforeDraw(chart) {
+          const yScale = chart.scales.y;
+          if (!yScale) return;
+          const y = yScale.getPixelForValue(0);
+          const ctx = chart.ctx;
+          ctx.save();
+          ctx.strokeStyle = isDark() ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.moveTo(chart.chartArea.left, y);
+          ctx.lineTo(chart.chartArea.right, y);
+          ctx.stroke();
+          ctx.restore();
+        },
+      };
+      makeChart('chart-pmc', {
+        type: 'line',
+        data: {
+          labels: pmc.dates,
+          datasets: [
+            { label: 'CTL (Fitness)', data: pmc.ctl, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.07)', fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, borderWidth: 2 },
+            { label: 'ATL (Fatigue)', data: pmc.atl, borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.07)', fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, borderWidth: 2 },
+            { label: 'TSB (Form)', data: pmc.tsb, borderColor: '#10b981', backgroundColor: 'transparent', tension: 0.35, pointRadius: 0, pointHoverRadius: 4, spanGaps: true, borderWidth: 2, borderDash: [], yAxisID: 'y2' },
+          ],
+        },
+        options: {
+          ...def,
+          plugins: { ...def.plugins, tooltip: { mode: 'index', intersect: false } },
+          scales: {
+            x: def.scales.x,
+            y: { ...def.scales.y, title: { display: true, text: 'CTL / ATL', color: cssVar('--text-muted'), font: { size: 10 } } },
+            y2: {
+              ...def.scales.y, position: 'right', grid: { drawOnChartArea: false },
+              title: { display: true, text: 'TSB (Form)', color: '#10b981', font: { size: 10 } },
+            },
+          },
+          plugins: {
+            ...def.plugins,
+            zeroLine,
+          },
+        },
+        plugins: [zeroLine],
+      });
+    }
+
+    // ── Weekly load ────────────────────────────────────────────────────────
+    function renderWeekly(d) {
+      hideLoader('weekly');
+      const weekly = d.weekly || [];
+      if (!weekly.length) { showError('weekly', 'No weekly data.'); return; }
+      const labels = weekly.map(w => w.week_start.slice(5)); // MM-DD
+      const def = chartDefaults();
+      makeChart('chart-weekly', {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'TSS', data: weekly.map(w => w.tss.toFixed(0)), backgroundColor: 'rgba(37,99,235,0.65)', yAxisID: 'y', barPercentage: 0.75 },
+            { label: 'Hours', data: weekly.map(w => w.hours.toFixed(1)), type: 'line', borderColor: '#f59e0b', backgroundColor: 'transparent', tension: 0.3, pointRadius: 3, pointHoverRadius: 5, yAxisID: 'y2', spanGaps: true },
+          ],
+        },
+        options: {
+          ...def,
+          scales: {
+            x: def.scales.x,
+            y: { ...def.scales.y, title: { display: true, text: 'TSS', color: cssVar('--text-muted'), font: { size: 10 } } },
+            y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Hours', color: '#f59e0b', font: { size: 10 } } },
+          },
+        },
+      });
+    }
+
+    // ── FTP trend ──────────────────────────────────────────────────────────
+    function renderFtp(d) {
+      hideLoader('ftp');
+      const ftp = d.ftp_trend;
+      if (!ftp || !ftp.dates.length) {
+        document.querySelector('#chart-ftp').parentElement.innerHTML = '<div class="no-data">No FTP data in this period</div>';
+        return;
+      }
+      const def = chartDefaults();
+      makeChart('chart-ftp', {
+        type: 'line',
+        data: {
+          labels: ftp.dates,
+          datasets: [{
+            label: 'FTP (W)',
+            data: ftp.values,
+            borderColor: '#8b5cf6',
+            backgroundColor: 'rgba(139,92,246,0.1)',
+            fill: true, tension: 0.2, pointRadius: 4, pointHoverRadius: 6, spanGaps: false,
+          }],
+        },
+        options: {
+          ...def,
+          plugins: { ...def.plugins, legend: { display: false } },
+          scales: { ...def.scales, y: { ...def.scales.y, title: { display: true, text: 'Watts', color: cssVar('--text-muted'), font: { size: 10 } } } },
+        },
+      });
+    }
+
+    // ── Zone charts ────────────────────────────────────────────────────────
+    const ZONE_LABELS = ['Z1 Recovery', 'Z2 Endurance', 'Z3 Tempo', 'Z4 Threshold', 'Z5 VO₂ Max'];
+    const ZONE_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+    const ZONE_COLORS_ALPHA = ['rgba(148,163,184,0.7)','rgba(59,130,246,0.7)','rgba(16,185,129,0.7)','rgba(245,158,11,0.7)','rgba(239,68,68,0.7)'];
+
+    function renderZone(chartId, loadId, zones, title) {
+      hideLoader(loadId);
+      const totalMins = zones.reduce((a, v) => a + v, 0) / 60;
+      if (totalMins < 1) {
+        document.querySelector(`#${chartId}`).parentElement.innerHTML = `<div class="no-data">No ${title} data in this period</div>`;
+        return;
+      }
+      const def = chartDefaults();
+      const textColor = cssVar('--text');
+      const mutedColor = cssVar('--text-muted');
+      makeChart(chartId, {
+        type: 'bar',
+        data: {
+          labels: ZONE_LABELS,
+          datasets: [{
+            label: 'Minutes',
+            data: zones.map(s => (s / 60).toFixed(0)),
+            backgroundColor: ZONE_COLORS_ALPHA,
+            borderColor: ZONE_COLORS,
+            borderWidth: 1.5,
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          ...def,
+          indexAxis: 'y',
+          plugins: { ...def.plugins, legend: { display: false } },
+          scales: {
+            x: { ...def.scales.x, title: { display: true, text: 'Minutes', color: mutedColor, font: { size: 10 } } },
+            y: { ...def.scales.y, ticks: { color: textColor, font: { size: 11 } } },
+          },
+        },
+      });
+    }
+
+    // ── Activity types doughnut ────────────────────────────────────────────
+    function renderTypes(d) {
+      hideLoader('types');
+      const counts = d.activity_type_counts || {};
+      const labels = Object.keys(counts);
+      const values = Object.values(counts);
+      if (!labels.length) { showError('types', 'No activities.'); return; }
+      const palette = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16'];
+      const textColor = cssVar('--text');
+      const surfaceColor = cssVar('--surface');
+      makeChart('chart-types', {
+        type: 'doughnut',
+        data: {
+          labels: labels.map(l => l.replace('_', ' ')),
+          datasets: [{
+            data: values,
+            backgroundColor: palette.slice(0, labels.length),
+            borderColor: surfaceColor,
+            borderWidth: 2,
+            hoverOffset: 6,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: textColor, font: { size: 11 }, boxWidth: 12, padding: 10 },
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                  const pct = ((ctx.parsed / total) * 100).toFixed(0);
+                  return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    // ── TSS scatter ────────────────────────────────────────────────────────
+    function renderTssScatter(d) {
+      hideLoader('tss');
+      const acts = (d.activities || []).filter(a => a.tss != null);
+      if (!acts.length) { document.querySelector('#chart-tss').parentElement.innerHTML = '<div class="no-data">No TSS data in this period</div>'; return; }
+      // Group by activity type for color coding
+      const cycling = acts.filter(a => ['virtual_ride','indoor_cycling','road_cycling','gravel_cycling','cycling','spinning'].includes(a.activity_type));
+      const running = acts.filter(a => ['running','treadmill_running','trail_running'].includes(a.activity_type));
+      const other = acts.filter(a => !cycling.includes(a) && !running.includes(a));
+      const def = chartDefaults();
+      makeChart('chart-tss', {
+        type: 'bar',
+        data: {
+          labels: [...acts].reverse().map(a => a.date.slice(5)),
+          datasets: [{
+            label: 'TSS per activity',
+            data: [...acts].reverse().map(a => a.tss ? a.tss.toFixed(0) : null),
+            backgroundColor: [...acts].reverse().map(a => {
+              const t = a.activity_type;
+              if (['virtual_ride','indoor_cycling','road_cycling','gravel_cycling','cycling','spinning'].includes(t)) return 'rgba(37,99,235,0.65)';
+              if (['running','treadmill_running','trail_running'].includes(t)) return 'rgba(16,185,129,0.65)';
+              return 'rgba(107,114,128,0.5)';
+            }),
+            borderRadius: 3, barPercentage: 0.75,
+          }],
+        },
+        options: {
+          ...def,
+          plugins: { ...def.plugins, legend: { display: false } },
+          scales: { ...def.scales, y: { ...def.scales.y, title: { display: true, text: 'TSS', color: cssVar('--text-muted'), font: { size: 10 } } } },
+        },
+      });
+    }
+
+    // ── Activity table ─────────────────────────────────────────────────────
+    function actBadge(type) {
+      if (['virtual_ride','indoor_cycling','road_cycling','gravel_cycling','cycling','spinning','mountain_biking'].includes(type))
+        return `<span class="badge badge-cycling">${type.replace('_',' ')}</span>`;
+      if (['running','treadmill_running','trail_running'].includes(type))
+        return `<span class="badge badge-running">${type.replace('_',' ')}</span>`;
+      return `<span class="badge badge-other">${(type||'unknown').replace('_',' ')}</span>`;
+    }
+
+    function renderTable(activities, limit = 20) {
+      const tbody = document.getElementById('act-tbody');
+      const btn = document.getElementById('show-more-btn');
+      if (!activities.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1.5rem">No activities found</td></tr>';
+        btn.style.display = 'none';
+        return;
+      }
+      const slice = activities.slice(0, limit);
+      tbody.innerHTML = slice.map(a => `
+        <tr>
+          <td>${a.date}</td>
+          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${a.title || '—'}</td>
+          <td>${actBadge(a.activity_type)}</td>
+          <td>${fmtDur(a.duration_s)}</td>
+          <td>${fmtDist(a.distance_m)}</td>
+          <td>${a.normalized_power_w ? Math.round(a.normalized_power_w) + 'W' : '—'}</td>
+          <td>${a.tss ? Math.round(a.tss) : '—'}</td>
+          <td>${a.avg_hr ? Math.round(a.avg_hr) + ' bpm' : '—'}</td>
+        </tr>
+      `).join('');
+      btn.style.display = activities.length > limit ? 'block' : 'none';
+      btn.textContent = `Show more (${activities.length - limit} remaining)`;
+    }
+
+    function showMoreActivities() {
+      shownCount += 20;
+      renderTable(allActivities, shownCount);
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────────
+    let currentData = null;
+
+    async function loadData(days) {
+      try {
+        const res = await fetch(`/api/analytics/training?days=${days}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        currentData = data;
+        allActivities = data.activities || [];
+        shownCount = 20;
+        renderAll(data);
+      } catch (err) {
+        console.error('Training analytics error:', err);
+        ['pmc','weekly','ftp','hrz','pwz','types','tss'].forEach(id => showError(id, err.message));
+        document.getElementById('act-tbody').innerHTML =
+          `<tr><td colspan="8" class="error-msg">⚠ ${err.message}</td></tr>`;
+      }
+    }
+
+    function renderAll(data) {
+      updateStatCards(data);
+      renderPmc(data);
+      renderWeekly(data);
+      renderFtp(data);
+      renderZone('chart-hrz', 'hrz', data.hr_zones || [], 'HR zone');
+      renderZone('chart-pwz', 'pwz', data.power_zones || [], 'power zone');
+      renderTypes(data);
+      renderTssScatter(data);
+      renderTable(allActivities, shownCount);
+    }
+
+    function reloadCharts() {
+      if (currentData) renderAll(currentData);
+    }
+
+    function reload() {
+      const days = document.getElementById('days-select').value;
+      ['pmc','weekly','ftp','hrz','pwz','types','tss'].forEach(id => {
+        const el = document.getElementById('load-' + id);
+        if (el) el.style.display = 'flex';
+        if (charts['chart-' + id]) { charts['chart-' + id].destroy(); delete charts['chart-' + id]; }
+      });
+      document.getElementById('act-tbody').innerHTML =
+        '<tr><td colspan="8"><div class="loading-state"><div class="spinner"></div> Loading…</div></td></tr>';
+      loadData(days);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => loadData(90));
+  </script>
+</body>
+</html>

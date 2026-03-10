@@ -385,20 +385,34 @@ def get_cycling_ftp_from_settings(api: Garmin) -> Optional[float]:
 
 
 def fetch_activity_detail(api: Garmin, activity_id: str) -> Dict[str, Any]:
+    # get_activity_details returns the timeseries metrics format (no summaryDTO),
+    # so we always also fetch the activity-service direct endpoint which has summaryDTO
+    # with avg/max/normalized power, HR zones, running dynamics, etc.
+    result: Dict[str, Any] = {}
+
     fn = getattr(api, "get_activity_details", None)
     if callable(fn):
         try:
             d = fn(activity_id)
             if isinstance(d, dict):
-                return d
+                result = d
         except Exception:
             pass
 
     try:
-        d = garth.connectapi(f"activity-service/activity/{activity_id}", params={})
-        return d if isinstance(d, dict) else {}
+        summary = garth.connectapi(f"activity-service/activity/{activity_id}", params={})
+        if isinstance(summary, dict):
+            if not result:
+                result = summary
+            elif not result.get("summaryDTO"):
+                # Merge summaryDTO (and metadataDTO) from the direct endpoint
+                result["summaryDTO"] = summary.get("summaryDTO") or {}
+                if not result.get("metadataDTO"):
+                    result["metadataDTO"] = summary.get("metadataDTO") or {}
     except Exception:
-        return {}
+        pass
+
+    return result
 
 
 _POWER_MIN_W = 30.0    # below this is noise / sensor error
@@ -424,6 +438,8 @@ def extract_best_20m_power_w(detail: Dict[str, Any]) -> Optional[float]:
             "maxaveragepower",
             "best20",
             "best_20",
+            "twentyminutes",  # matches summaryDTO.maxPowerTwentyMinutes
+            "twentymin",
         ),
     ))
 
@@ -642,14 +658,21 @@ def resolve_ftp(api: Garmin) -> Tuple[Optional[float], str, Optional[float]]:
         if not act_id:
             continue
 
-        detail = fetch_activity_detail(api, act_id)
-        v = extract_best_20m_power_w(detail)
+        # Prefer list API's max20MinPower (no extra API call needed)
+        v = _bounded_power(safe_float(
+            act.get("max20MinPower") or act.get("maxAvgPower_1200")
+        ))
+        if v is None:
+            # Fall back to fetching full detail
+            detail = fetch_activity_detail(api, act_id)
+            v = extract_best_20m_power_w(detail)
+            if FTP_DETAIL_SLEEP_S:
+                time.sleep(FTP_DETAIL_SLEEP_S)
+
         if v and (best_20m is None or v > best_20m):
             best_20m = v
 
         checked += 1
-        if FTP_DETAIL_SLEEP_S:
-            time.sleep(FTP_DETAIL_SLEEP_S)
 
         # guardrail to keep calls bounded
         if checked >= 60:
@@ -744,7 +767,8 @@ def to_row(
     run_cad = safe_float(act.get("averageRunningCadenceInStepsPerMinute"))
     bike_cad = safe_float(act.get("averageCadence"))
 
-    avg_power = safe_float(act.get("averagePower"))
+    # Garmin list API uses "avgPower"; "averagePower" is sometimes absent
+    avg_power = safe_float(act.get("averagePower") or act.get("avgPower"))
     max_power = safe_float(act.get("maxPower"))
 
     aero_te = safe_float(act.get("aerobicTrainingEffect"))
@@ -764,8 +788,22 @@ def to_row(
     if max_power is None:
         max_power = _bounded_power(safe_float(summary_dto.get("maxPower")))
 
-    best_20m = extract_best_20m_power_w(detail) if detail else None
-    np_w = extract_normalized_power_w(detail) if detail else None
+    # Direct summaryDTO access (most reliable — scan_for_keys can miss these
+    # because it exits early when it hits a large numeric activityId value).
+    np_w = _bounded_power(safe_float(
+        summary_dto.get("normalizedPower") or summary_dto.get("weightedMeanPower")
+    ))
+    best_20m = _bounded_power(safe_float(
+        summary_dto.get("maxPowerTwentyMinutes") or summary_dto.get("max20MinPower")
+    ))
+
+    # Belt-and-suspenders: fall back to list API fields if summaryDTO was missing
+    if np_w is None:
+        np_w = _bounded_power(safe_float(act.get("normPower")))
+    if best_20m is None:
+        best_20m = _bounded_power(safe_float(
+            act.get("max20MinPower") or act.get("maxAvgPower_1200")
+        ))
 
     # For IF and TSS use NP if present, else avg power
     np_or_avg = np_w or avg_power

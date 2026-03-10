@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Health Analytics · Cycling Coach AI</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#1a73e8" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:               #eef2f7;
+      --surface:          #ffffff;
+      --surface-2:        #f5f7fa;
+      --border:           #dde3ec;
+      --text:             #1a1a2e;
+      --text-muted:       #6b7280;
+      --accent:           #2563eb;
+      --accent-dark:      #1d4ed8;
+      --accent-bg:        #eff6ff;
+      --shadow:           0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:        0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
+      --header-grad-from: #2563eb;
+      --header-grad-to:   #1e40af;
+      --header-text:      #ffffff;
+    }
+    [data-theme="dark"] {
+      --bg:               #0d0f14;
+      --surface:          #171a22;
+      --surface-2:        #12151c;
+      --border:           #252b38;
+      --text:             #e2e8f0;
+      --text-muted:       #8892a4;
+      --accent:           #3b82f6;
+      --accent-dark:      #2563eb;
+      --accent-bg:        #172040;
+      --shadow:           0 1px 4px rgba(0,0,0,0.4);
+      --shadow-md:        0 4px 20px rgba(0,0,0,0.35);
+      --header-grad-from: #151820;
+      --header-grad-to:   #0d0f14;
+      --header-text:      #e2e8f0;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    /* Header */
+    header {
+      background: linear-gradient(160deg, var(--header-grad-from) 0%, var(--header-grad-to) 100%);
+      color: var(--header-text);
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      border-bottom: 1px solid rgba(0,0,0,0.15);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 0.5rem; }
+    .header-left h1 { font-size: 1rem; font-weight: 600; color: var(--header-text); }
+    .header-right { display: flex; align-items: center; gap: 0.65rem; font-size: 0.82rem; }
+    .header-right a {
+      color: var(--header-text); text-decoration: none;
+      opacity: 0.75; transition: opacity 0.15s;
+    }
+    .header-right a:hover, .header-right a.active { opacity: 1; font-weight: 600; }
+    .header-right .email {
+      opacity: 0.55; max-width: 140px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #theme-toggle {
+      background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+      color: var(--header-text); border-radius: 6px; padding: 0.28rem 0.5rem;
+      font-size: 0.85rem; cursor: pointer; transition: background 0.15s; line-height: 1;
+    }
+    #theme-toggle:hover { background: rgba(255,255,255,0.2); }
+    @media (max-width: 500px) {
+      .header-right .email { display: none; }
+      .header-right a[href="/logout"] { display: none; }
+    }
+
+    /* Main */
+    .analytics-main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 1280px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .toolbar h2 { font-size: 1.2rem; font-weight: 600; }
+    .toolbar-controls { display: flex; align-items: center; gap: 0.75rem; }
+    .days-select {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 0.4rem 0.75rem;
+      font-size: 0.85rem; cursor: pointer; outline: none;
+    }
+    .days-select:focus { border-color: var(--accent); }
+
+    /* Stat cards */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .stat-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+    .stat-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.35rem; }
+    .stat-value { font-size: 1.6rem; font-weight: 700; color: var(--text); line-height: 1; }
+    .stat-unit { font-size: 0.8rem; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
+    .stat-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+    /* Chart grid */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+    .chart-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border);
+    }
+    .chart-card.full-width { grid-column: 1 / -1; }
+    .chart-title { font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 0.85rem; }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* Loading / error */
+    .loading-state {
+      display: flex; align-items: center; justify-content: center;
+      height: 220px; color: var(--text-muted); font-size: 0.875rem; gap: 0.5rem;
+    }
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-msg { color: #ef4444; font-size: 0.85rem; padding: 1rem; }
+
+    @media (max-width: 900px) {
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+      .chart-grid { grid-template-columns: 1fr; }
+      .chart-card.full-width { grid-column: 1; }
+    }
+    @media (max-width: 480px) {
+      .analytics-main { padding: 1rem; }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span>🚴</span>
+      <h1>Cycling Coach AI</h1>
+    </div>
+    <div class="header-right">
+      <a href="/">Chat</a>
+      <a href="/health" class="active">Health</a>
+      <a href="/training">Training</a>
+      <a href="/settings">Settings</a>
+      <span class="email">{{ email }}</span>
+      <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+      <a href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <div class="analytics-main">
+    <div class="toolbar">
+      <h2>Health Analytics</h2>
+      <div class="toolbar-controls">
+        <select class="days-select" id="days-select" onchange="reload()">
+          <option value="30">Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90" selected>Last 90 days</option>
+          <option value="180">Last 180 days</option>
+          <option value="365">Last year</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><div class="stat-label">Weight</div><div class="stat-value" id="sv-weight">—</div></div>
+      <div class="stat-card"><div class="stat-label">Body Fat</div><div class="stat-value" id="sv-fat">—</div></div>
+      <div class="stat-card"><div class="stat-label">HRV Avg</div><div class="stat-value" id="sv-hrv">—</div></div>
+      <div class="stat-card"><div class="stat-label">Resting HR</div><div class="stat-value" id="sv-rhr">—</div></div>
+      <div class="stat-card"><div class="stat-label">VO₂ Max</div><div class="stat-value" id="sv-vo2">—</div></div>
+      <div class="stat-card"><div class="stat-label">Sleep Score</div><div class="stat-value" id="sv-sleep">—</div></div>
+      <div class="stat-card"><div class="stat-label">Body Battery</div><div class="stat-value" id="sv-bb">—</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Stress</div><div class="stat-value" id="sv-stress">—</div></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Weight</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-weight"><div class="spinner"></div> Loading…</div><canvas id="chart-weight"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Body Composition</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-comp"><div class="spinner"></div> Loading…</div><canvas id="chart-comp"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Sleep</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-sleep"><div class="spinner"></div> Loading…</div><canvas id="chart-sleep"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">HRV &amp; Resting Heart Rate</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-hrv"><div class="spinner"></div> Loading…</div><canvas id="chart-hrv"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Body Battery</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-bb"><div class="spinner"></div> Loading…</div><canvas id="chart-bb"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Stress Level</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-stress"><div class="spinner"></div> Loading…</div><canvas id="chart-stress"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">VO₂ Max Trend</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-vo2"><div class="spinner"></div> Loading…</div><canvas id="chart-vo2"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Daily Steps vs Goal</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-steps"><div class="spinner"></div> Loading…</div><canvas id="chart-steps"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Theme ──────────────────────────────────────────────────────────────
+    (function () {
+      const t = localStorage.getItem('cc-theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+      document.getElementById('theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
+    })();
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('cc-theme', next);
+      document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+      reloadCharts();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    const charts = {};
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function isDark() {
+      return document.documentElement.getAttribute('data-theme') === 'dark';
+    }
+
+    function chartDefaults() {
+      const textColor = cssVar('--text');
+      const mutedColor = cssVar('--text-muted');
+      const gridColor = isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor, font: { size: 11 }, boxWidth: 12, padding: 12 } },
+          tooltip: { mode: 'index', intersect: false },
+        },
+        scales: {
+          x: {
+            ticks: { color: mutedColor, maxTicksLimit: 10, maxRotation: 0, font: { size: 10 } },
+            grid: { color: gridColor },
+          },
+          y: {
+            ticks: { color: mutedColor, font: { size: 10 } },
+            grid: { color: gridColor },
+          },
+        },
+      };
+    }
+
+    function makeChart(id, config) {
+      if (charts[id]) { charts[id].destroy(); }
+      const canvas = document.getElementById(id);
+      if (!canvas) return;
+      charts[id] = new Chart(canvas, config);
+    }
+
+    function hideLoader(id) {
+      const el = document.getElementById('load-' + id);
+      if (el) el.style.display = 'none';
+    }
+
+    function showError(id, msg) {
+      const wrap = document.querySelector(`#chart-${id}`)?.parentElement;
+      if (wrap) wrap.innerHTML = `<div class="error-msg">⚠ ${msg}</div>`;
+    }
+
+    // ── Stat cards ─────────────────────────────────────────────────────────
+    function setStatVal(id, val, unit = '', decimals = 1) {
+      const el = document.getElementById('sv-' + id);
+      if (!el) return;
+      if (val == null) { el.innerHTML = '—'; return; }
+      const n = typeof val === 'number' ? val.toFixed(decimals) : val;
+      el.innerHTML = `${n}<span class="stat-unit">${unit}</span>`;
+    }
+
+    function updateStatCards(latest) {
+      setStatVal('weight', latest.weight_lbs, ' lbs', 1);
+      setStatVal('fat', latest.body_fat_pct, '%', 1);
+      setStatVal('hrv', latest.hrv_avg, ' ms', 0);
+      setStatVal('rhr', latest.rhr, ' bpm', 0);
+      setStatVal('vo2', latest.vo2_max, '', 1);
+      setStatVal('sleep', latest.sleep_score, '', 0);
+      setStatVal('bb', latest.body_battery, '', 0);
+      setStatVal('stress', latest.avg_stress, '', 0);
+    }
+
+    // ── Chart renderers ────────────────────────────────────────────────────
+    function renderWeight(d) {
+      hideLoader('weight');
+      const def = chartDefaults();
+      makeChart('chart-weight', {
+        type: 'line',
+        data: {
+          labels: d.dates,
+          datasets: [{
+            label: 'Weight (lbs)',
+            data: d.weight_lbs,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.08)',
+            fill: true,
+            tension: 0.35,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            spanGaps: true,
+          }],
+        },
+        options: {
+          ...def,
+          plugins: { ...def.plugins, legend: { display: false } },
+          scales: {
+            ...def.scales,
+            y: { ...def.scales.y, title: { display: true, text: 'lbs', color: cssVar('--text-muted'), font: { size: 10 } } },
+          },
+        },
+      });
+    }
+
+    function renderComp(d) {
+      hideLoader('comp');
+      const def = chartDefaults();
+      makeChart('chart-comp', {
+        type: 'line',
+        data: {
+          labels: d.dates,
+          datasets: [
+            {
+              label: 'Body Fat %',
+              data: d.body_fat_pct,
+              borderColor: '#ef4444',
+              backgroundColor: 'transparent',
+              tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
+              yAxisID: 'y',
+            },
+            {
+              label: 'Muscle Mass (lbs)',
+              data: d.muscle_mass_lbs,
+              borderColor: '#10b981',
+              backgroundColor: 'transparent',
+              tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
+              yAxisID: 'y2',
+            },
+          ],
+        },
+        options: {
+          ...def,
+          scales: {
+            x: def.scales.x,
+            y: { ...def.scales.y, position: 'left', title: { display: true, text: 'Fat %', color: '#ef4444', font: { size: 10 } } },
+            y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Muscle lbs', color: '#10b981', font: { size: 10 } } },
+          },
+        },
+      });
+    }
+
+    function renderSleep(d) {
+      hideLoader('sleep');
+      const def = chartDefaults();
+      makeChart('chart-sleep', {
+        type: 'bar',
+        data: {
+          labels: d.dates,
+          datasets: [
+            { label: 'Deep', data: d.sleep_deep_hr, backgroundColor: '#3b82f6', stack: 'sleep', barPercentage: 0.85 },
+            { label: 'REM', data: d.sleep_rem_hr, backgroundColor: '#8b5cf6', stack: 'sleep', barPercentage: 0.85 },
+            { label: 'Light', data: d.sleep_light_hr, backgroundColor: '#93c5fd', stack: 'sleep', barPercentage: 0.85 },
+            {
+              label: 'Score',
+              data: d.sleep_score,
+              type: 'line',
+              borderColor: '#f59e0b',
+              backgroundColor: 'transparent',
+              tension: 0.35, pointRadius: 0, pointHoverRadius: 4,
+              yAxisID: 'y2', spanGaps: true,
+            },
+          ],
+        },
+        options: {
+          ...def,
+          scales: {
+            x: def.scales.x,
+            y: { ...def.scales.y, stacked: true, title: { display: true, text: 'Hours', color: cssVar('--text-muted'), font: { size: 10 } } },
+            y2: {
+              ...def.scales.y, position: 'right', grid: { drawOnChartArea: false },
+              min: 0, max: 100,
+              title: { display: true, text: 'Score', color: '#f59e0b', font: { size: 10 } },
+            },
+          },
+        },
+      });
+    }
+
+    function renderHrv(d) {
+      hideLoader('hrv');
+      const def = chartDefaults();
+      makeChart('chart-hrv', {
+        type: 'line',
+        data: {
+          labels: d.dates,
+          datasets: [
+            {
+              label: 'HRV (ms)',
+              data: d.hrv_avg,
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16,185,129,0.08)',
+              fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5,
+              spanGaps: true, yAxisID: 'y',
+            },
+            {
+              label: 'RHR (bpm)',
+              data: d.rhr,
+              borderColor: '#ef4444',
+              backgroundColor: 'transparent',
+              tension: 0.35, pointRadius: 2, pointHoverRadius: 5,
+              spanGaps: true, yAxisID: 'y2',
+            },
+          ],
+        },
+        options: {
+          ...def,
+          scales: {
+            x: def.scales.x,
+            y: { ...def.scales.y, position: 'left', title: { display: true, text: 'HRV ms', color: '#10b981', font: { size: 10 } } },
+            y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'RHR bpm', color: '#ef4444', font: { size: 10 } } },
+          },
+        },
+      });
+    }
+
+    function renderBb(d) {
+      hideLoader('bb');
+      const def = chartDefaults();
+      // Build fill-between: high and low as a range
+      makeChart('chart-bb', {
+        type: 'line',
+        data: {
+          labels: d.dates,
+          datasets: [
+            {
+              label: 'BB High',
+              data: d.body_battery_high,
+              borderColor: 'rgba(99,102,241,0.5)',
+              backgroundColor: 'rgba(99,102,241,0.15)',
+              fill: '+1', tension: 0.3, pointRadius: 0, spanGaps: true,
+            },
+            {
+              label: 'BB Low',
+              data: d.body_battery_low,
+              borderColor: 'rgba(99,102,241,0.3)',
+              backgroundColor: 'rgba(99,102,241,0.05)',
+              fill: false, tension: 0.3, pointRadius: 0, spanGaps: true,
+            },
+            {
+              label: 'Avg Battery',
+              data: d.body_battery,
+              borderColor: '#6366f1',
+              backgroundColor: 'transparent',
+              tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
+            },
+          ],
+        },
+        options: { ...def, scales: { ...def.scales, y: { ...def.scales.y, min: 0, max: 100 } } },
+      });
+    }
+
+    function renderStress(d) {
+      hideLoader('stress');
+      const def = chartDefaults();
+      makeChart('chart-stress', {
+        type: 'line',
+        data: {
+          labels: d.dates,
+          datasets: [{
+            label: 'Avg Stress',
+            data: d.avg_stress,
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245,158,11,0.1)',
+            fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
+          }],
+        },
+        options: {
+          ...def,
+          plugins: { ...def.plugins, legend: { display: false } },
+          scales: { ...def.scales, y: { ...def.scales.y, min: 0, max: 100 } },
+        },
+      });
+    }
+
+    function renderVo2(d) {
+      hideLoader('vo2');
+      const def = chartDefaults();
+      makeChart('chart-vo2', {
+        type: 'line',
+        data: {
+          labels: d.dates,
+          datasets: [{
+            label: 'VO₂ Max',
+            data: d.vo2_max,
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6,182,212,0.08)',
+            fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
+          }],
+        },
+        options: { ...def, plugins: { ...def.plugins, legend: { display: false } } },
+      });
+    }
+
+    function renderSteps(d) {
+      hideLoader('steps');
+      const def = chartDefaults();
+      makeChart('chart-steps', {
+        type: 'bar',
+        data: {
+          labels: d.dates,
+          datasets: [
+            {
+              label: 'Steps',
+              data: d.steps,
+              backgroundColor: 'rgba(37,99,235,0.6)',
+              barPercentage: 0.8,
+            },
+            {
+              label: 'Goal',
+              data: d.step_goal,
+              type: 'line',
+              borderColor: '#f59e0b',
+              borderDash: [4, 3],
+              backgroundColor: 'transparent',
+              pointRadius: 0, tension: 0, spanGaps: true,
+            },
+          ],
+        },
+        options: def,
+      });
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────────
+    let currentData = null;
+
+    async function loadData(days) {
+      try {
+        const res = await fetch(`/api/analytics/health?days=${days}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        currentData = data;
+        renderAll(data);
+      } catch (err) {
+        console.error('Health analytics error:', err);
+        ['weight','comp','sleep','hrv','bb','stress','vo2','steps'].forEach(id => showError(id, err.message));
+      }
+    }
+
+    function renderAll(data) {
+      updateStatCards(data.latest || {});
+      renderWeight(data);
+      renderComp(data);
+      renderSleep(data);
+      renderHrv(data);
+      renderBb(data);
+      renderStress(data);
+      renderVo2(data);
+      renderSteps(data);
+    }
+
+    function reloadCharts() {
+      if (currentData) renderAll(currentData);
+    }
+
+    function reload() {
+      const days = document.getElementById('days-select').value;
+      // Show spinners
+      ['weight','comp','sleep','hrv','bb','stress','vo2','steps'].forEach(id => {
+        const el = document.getElementById('load-' + id);
+        if (el) { el.style.display = 'flex'; }
+        if (charts[`chart-${id}`]) { charts[`chart-${id}`].destroy(); delete charts[`chart-${id}`]; }
+        const canvas = document.getElementById(`chart-${id}`);
+        if (canvas) canvas.style.display = 'none';
+      });
+      // reset canvas visibility after loader shown
+      ['weight','comp','sleep','hrv','bb','stress','vo2','steps'].forEach(id => {
+        const canvas = document.getElementById('chart-' + id);
+        if (canvas) canvas.style.display = '';
+      });
+      loadData(days);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => loadData(90));
+  </script>
+</body>
+</html>
