@@ -366,7 +366,7 @@ async def api_health_analytics(request: Request, days: int = 90):
            rhr, hrv_avg, avg_stress, body_battery, body_battery_high, body_battery_low,
            vo2_max, steps, step_goal, cals_total
     FROM `{PROJECT_ID}.garmin.garmin_stats`
-    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
     QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
     ORDER BY date
     """
@@ -418,7 +418,7 @@ async def api_training_analytics(request: Request, days: int = 90):
     stats_sql = f"""
     SELECT date, atl, ctl, tsb
     FROM `{PROJECT_ID}.garmin.garmin_stats`
-    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
     QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
     ORDER BY date
     """
@@ -428,7 +428,7 @@ async def api_training_analytics(request: Request, days: int = 90):
            hr_zone_1_secs, hr_zone_2_secs, hr_zone_3_secs, hr_zone_4_secs, hr_zone_5_secs,
            power_zone_1_secs, power_zone_2_secs, power_zone_3_secs, power_zone_4_secs, power_zone_5_secs
     FROM `{PROJECT_ID}.garmin.garmin_activities`
-    WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY)
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
     QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
     ORDER BY date
     """
