@@ -543,7 +543,9 @@
       hideLoader(loadId);
       const totalMins = zones.reduce((a, v) => a + v, 0) / 60;
       if (totalMins < 1) {
-        document.querySelector(`#${chartId}`).parentElement.innerHTML = `<div class="no-data">No ${title} data in this period</div>`;
+        document.querySelector(`#${chartId}`).parentElement.innerHTML =
+          `<div class="no-data" style="font-size:0.8rem;padding:1.5rem 1rem">` +
+          `No ${title} data yet<br><span style="font-size:0.75rem;display:block;margin-top:0.35rem">Zone data is captured from new activities going forward</span></div>`;
         return;
       }
       const def = chartDefaults();

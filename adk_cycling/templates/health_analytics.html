@@ -335,7 +335,7 @@
     }
 
     function updateStatCards(latest) {
-      setStatVal('weight', latest.weight_lbs, ' lbs', 1);
+      setStatVal('weight', latest.weight_kg, ' kg', 1);
       setStatVal('fat', latest.body_fat_pct, '%', 1);
       setStatVal('hrv', latest.hrv_avg, ' ms', 0);
       setStatVal('rhr', latest.rhr, ' bpm', 0);
@@ -354,8 +354,8 @@
         data: {
           labels: d.dates,
           datasets: [{
-            label: 'Weight (lbs)',
-            data: d.weight_lbs,
+            label: 'Weight (kg)',
+            data: d.weight_kg,
             borderColor: '#2563eb',
             backgroundColor: 'rgba(37,99,235,0.08)',
             fill: true,
@@ -370,7 +370,7 @@
           plugins: { ...def.plugins, legend: { display: false } },
           scales: {
             ...def.scales,
-            y: { ...def.scales.y, title: { display: true, text: 'lbs', color: cssVar('--text-muted'), font: { size: 10 } } },
+            y: { ...def.scales.y, title: { display: true, text: 'kg', color: cssVar('--text-muted'), font: { size: 10 } } },
           },
         },
       });
@@ -378,36 +378,27 @@
 
     function renderComp(d) {
       hideLoader('comp');
+      const hasFat = (d.body_fat_pct || []).some(v => v != null);
+      const hasMuscle = (d.muscle_mass_kg || []).some(v => v != null);
+      if (!hasFat && !hasMuscle) {
+        document.querySelector('#chart-comp').parentElement.innerHTML =
+          '<div class="no-data" style="padding:2.5rem 1rem;text-align:center;color:var(--text-muted);font-size:0.82rem">' +
+          '📊 No body composition data<br><span style="font-size:0.75rem;margin-top:0.35rem;display:block">Log weigh-ins in <strong>Garmin Connect → Health Stats → Weight</strong>, or sync a compatible scale (e.g. Garmin Index S2)</span></div>';
+        return;
+      }
       const def = chartDefaults();
+      const datasets = [];
+      if (hasFat) datasets.push({ label: 'Body Fat %', data: d.body_fat_pct, borderColor: '#ef4444', backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y' });
+      if (hasMuscle) datasets.push({ label: 'Muscle Mass (kg)', data: d.muscle_mass_kg, borderColor: '#10b981', backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y2' });
       makeChart('chart-comp', {
         type: 'line',
-        data: {
-          labels: d.dates,
-          datasets: [
-            {
-              label: 'Body Fat %',
-              data: d.body_fat_pct,
-              borderColor: '#ef4444',
-              backgroundColor: 'transparent',
-              tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
-              yAxisID: 'y',
-            },
-            {
-              label: 'Muscle Mass (lbs)',
-              data: d.muscle_mass_lbs,
-              borderColor: '#10b981',
-              backgroundColor: 'transparent',
-              tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
-              yAxisID: 'y2',
-            },
-          ],
-        },
+        data: { labels: d.dates, datasets },
         options: {
           ...def,
           scales: {
             x: def.scales.x,
-            y: { ...def.scales.y, position: 'left', title: { display: true, text: 'Fat %', color: '#ef4444', font: { size: 10 } } },
-            y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Muscle lbs', color: '#10b981', font: { size: 10 } } },
+            y: { ...def.scales.y, position: 'left', title: { display: hasFat, text: 'Fat %', color: '#ef4444', font: { size: 10 } } },
+            y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: hasMuscle, text: 'Muscle kg', color: '#10b981', font: { size: 10 } } },
           },
         },
       });

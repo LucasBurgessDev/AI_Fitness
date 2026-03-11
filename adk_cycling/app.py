@@ -376,6 +376,7 @@ async def api_health_analytics(request: Request, days: int = 90):
         LOGGER.exception("Health analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
 
+    _LBS_TO_KG = 1 / 2.20462
     fields = [
         "weight_lbs", "body_fat_pct", "muscle_mass_lbs",
         "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr", "sleep_light_hr", "sleep_score",
@@ -384,13 +385,23 @@ async def api_health_analytics(request: Request, days: int = 90):
     ]
     data: dict = {"dates": []}
     for f in fields:
-        data[f] = []
+        # Expose weight/muscle in kg
+        key = f.replace("_lbs", "_kg")
+        data[key] = []
 
     for row in rows:
         data["dates"].append(str(row["date"]))
         for f in fields:
+            key = f.replace("_lbs", "_kg")
             v = row[f]
-            data[f].append(float(v) if v is not None else None)
+            if v is not None:
+                fv = float(v)
+                # Convert lbs → kg
+                if f.endswith("_lbs"):
+                    fv = round(fv * _LBS_TO_KG, 1)
+                data[key].append(fv)
+            else:
+                data[key].append(None)
 
     # Latest non-null value for each field (for stat cards)
     latest: dict = {}
@@ -398,7 +409,11 @@ async def api_health_analytics(request: Request, days: int = 90):
     for row in reversed(rows):
         for f in list(remaining):
             if row[f] is not None:
-                latest[f] = float(row[f])
+                key = f.replace("_lbs", "_kg")
+                fv = float(row[f])
+                if f.endswith("_lbs"):
+                    fv = round(fv * _LBS_TO_KG, 1)
+                latest[key] = fv
                 remaining.discard(f)
         if not remaining:
             break
