@@ -267,3 +267,9 @@ Activity type · duration · distance · avg/max HR · avg/max power · normalis
 
 Running, treadmill running, trail running, road cycling, gravel cycling, mountain biking, indoor cycling, virtual ride, spinning.
 Strength training and weightlifting are excluded.
+
+### To-do
+
+- make agent less obsessed with missing data points
+- ensure data sync works
+- add charts and trends to agent
