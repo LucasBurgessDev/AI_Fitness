@@ -40,6 +40,14 @@ DEFAULTS: dict[str, Any] = {
         "training_reminder_enabled": False,
         "training_reminder_time": "17:00",
     },
+    "kpis": {
+        "weekly_cycling_km":   {"target": 0.0, "enabled": False},
+        "weekly_running_km":   {"target": 0.0, "enabled": False},
+        "weekly_hours":        {"target": 0.0, "enabled": False},
+        "weekly_active_days":  {"target": 5,   "enabled": False},
+        "target_weight_kg":    {"target": 0.0, "enabled": False},
+        "target_body_fat_pct": {"target": 0.0, "enabled": False},
+    },
 }
 
 _cache: dict[str, Any] | None = None

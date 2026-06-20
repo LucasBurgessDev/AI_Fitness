@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>{% block title %}Health Coach{% endblock %}</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#00C8FF" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Health Coach" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <script>
+    (function() {
+      var t = localStorage.getItem('cc-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <style>
+    :root {
+      --ground:     #080D14;
+      --surface:    #111825;
+      --surface-2:  #1A2233;
+      --text:       #E8EDF5;
+      --text-muted: #6B7A99;
+      --accent:     #00C8FF;
+      --green:      #00E09B;
+      --amber:      #FFB830;
+      --watts:      #FF4F1F;
+      --purple:     #9B6DFF;
+      --border:     rgba(255,255,255,0.07);
+      --shadow:     0 1px 4px rgba(0,0,0,0.4);
+      --shadow-md:  0 4px 20px rgba(0,0,0,0.35);
+      --accent-bg:  rgba(0,200,255,0.08);
+    }
+    [data-theme="light"] {
+      --ground:     #F2F5F9;
+      --surface:    #FFFFFF;
+      --surface-2:  #F0F4F8;
+      --text:       #111825;
+      --text-muted: #6B7A99;
+      --accent:     #007FA8;
+      --border:     rgba(0,0,0,0.08);
+      --shadow:     0 1px 3px rgba(0,0,0,0.07);
+      --shadow-md:  0 4px 16px rgba(0,0,0,0.08);
+      --accent-bg:  rgba(0,127,168,0.07);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--ground);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    /* ── Header ── */
+    header.app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.25rem;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 0 var(--border);
+    }
+    .hdr-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+    .hdr-brand-pill {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      border-radius: 8px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.88rem;
+      flex-shrink: 0;
+    }
+    .hdr-brand-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .hdr-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.1rem;
+      flex: 1;
+      justify-content: center;
+      padding: 0 1rem;
+    }
+    .hdr-nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 500;
+      padding: 0.35rem 0.7rem;
+      border-radius: 7px;
+      transition: color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .hdr-nav a:hover { color: var(--text); background: var(--surface-2); }
+    .hdr-nav a.active { color: var(--accent); background: var(--accent-bg); font-weight: 600; }
+    .hdr-right {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-shrink: 0;
+    }
+    .hdr-email {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      max-width: 130px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hdr-btn {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 7px;
+      padding: 0.28rem 0.55rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+    }
+    .hdr-btn:hover { color: var(--text); }
+    .hdr-signout {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.78rem;
+      padding: 0.28rem 0.5rem;
+      border-radius: 7px;
+      transition: color 0.15s;
+      white-space: nowrap;
+    }
+    .hdr-signout:hover { color: var(--text); }
+
+    @media (max-width: 640px) {
+      .hdr-nav { display: none; }
+      .hdr-email { display: none; }
+      .hdr-signout { display: none; }
+    }
+
+    /* ── Bottom nav ── */
+    .bottom-nav {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(8,13,20,0.9);
+      border-top: 1px solid var(--border);
+      padding: 0.35rem 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    [data-theme="light"] .bottom-nav { background: rgba(242,245,249,0.94); }
+    .bottom-nav-inner {
+      display: flex;
+      align-items: stretch;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .bottom-nav a {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.13rem;
+      text-decoration: none;
+      padding: 0.3rem 0.2rem;
+      border-radius: 10px;
+      margin: 0 0.1rem;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      transition: color 0.15s, background 0.15s;
+    }
+    .bottom-nav a .bn-icon { font-size: 1.15rem; line-height: 1.1; }
+    .bottom-nav a:hover { color: var(--text); }
+    .bottom-nav a.active { color: var(--accent); background: var(--accent-bg); }
+    .bottom-nav-spacer { display: none; }
+
+    @media (max-width: 640px) {
+      .bottom-nav { display: flex; }
+      .bottom-nav-spacer {
+        display: block;
+        height: calc(62px + env(safe-area-inset-bottom, 0px));
+        flex-shrink: 0;
+      }
+    }
+  </style>
+  {% block page_style %}{% endblock %}
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <header class="app-header">
+    <a class="hdr-brand" href="/">
+      <div class="hdr-brand-pill">🏃</div>
+      <span class="hdr-brand-name">Health Coach</span>
+    </a>
+    <nav class="hdr-nav">
+      <a href="/goals" class="{{ 'active' if request.url.path == '/goals' else '' }}">Goals</a>
+      <a href="/training" class="{{ 'active' if request.url.path == '/training' else '' }}">Training</a>
+      <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">Health</a>
+      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Chat</a>
+      <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">Settings</a>
+    </nav>
+    <div class="hdr-right">
+      <span class="hdr-email">{{ email | default('') }}</span>
+      <button class="hdr-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+      <a class="hdr-signout" href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <a href="/goals" class="{{ 'active' if request.url.path == '/goals' else '' }}">
+        <span class="bn-icon">⊙</span>Goals
+      </a>
+      <a href="/training" class="{{ 'active' if request.url.path == '/training' else '' }}">
+        <span class="bn-icon">◈</span>Training
+      </a>
+      <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">
+        <span class="bn-icon">♥</span>Health
+      </a>
+      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">
+        <span class="bn-icon">💬</span>Chat
+      </a>
+      <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">
+        <span class="bn-icon">⚙</span>Settings
+      </a>
+    </div>
+  </nav>
+  <div class="bottom-nav-spacer"></div>
+
+  <script>
+    function toggleTheme() {
+      var html = document.documentElement;
+      var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('cc-theme', next);
+      var btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
+      if (typeof reloadCharts === 'function') reloadCharts();
+    }
+    (function() {
+      var t = document.documentElement.getAttribute('data-theme') || 'dark';
+      var btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+    })();
+  </script>
+
+  {% block page_script %}{% endblock %}
+</body>
+</html>

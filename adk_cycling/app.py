@@ -8,7 +8,7 @@ from typing import Optional
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from google_auth_oauthlib.flow import Flow
@@ -277,38 +277,41 @@ async def settings_get(request: Request):
 
 
 @app.post("/settings", response_class=HTMLResponse)
-async def settings_post(
-    request: Request,
-    ftp: float = Form(...),
-    weight_kg: float = Form(...),
-    height_cm: int = Form(...),
-    age: int = Form(...),
-    stats_date: str = Form(...),
-    goals: str = Form(...),
-    equipment: str = Form(...),
-    morning_checkin_enabled: bool = Form(default=False),
-    morning_checkin_time: str = Form(default="07:30"),
-    training_reminder_enabled: bool = Form(default=False),
-    training_reminder_time: str = Form(default="17:00"),
-):
+async def settings_post(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
 
+    form = await request.form()
+
+    _KPI_KEYS = [
+        "weekly_cycling_km", "weekly_running_km", "weekly_hours",
+        "weekly_active_days", "target_weight_kg", "target_body_fat_pct",
+    ]
+    kpis = {}
+    for k in _KPI_KEYS:
+        enabled = form.get(f"kpi_{k}_enabled") == "true"
+        try:
+            target = float(form.get(f"kpi_{k}_target", "0") or "0")
+        except ValueError:
+            target = 0.0
+        kpis[k] = {"target": target, "enabled": enabled}
+
     new_profile = {
-        "ftp": ftp,
-        "weight_kg": weight_kg,
-        "height_cm": height_cm,
-        "age": age,
-        "stats_date": stats_date,
-        "goals": goals.strip(),
-        "equipment": equipment.strip(),
+        "ftp": float(form.get("ftp", 191)),
+        "weight_kg": float(form.get("weight_kg", 90)),
+        "height_cm": int(float(form.get("height_cm", 178))),
+        "age": int(float(form.get("age", 31))),
+        "stats_date": form.get("stats_date", "").strip(),
+        "goals": (form.get("goals", "") or "").strip(),
+        "equipment": (form.get("equipment", "") or "").strip(),
         "reminders": {
-            "morning_checkin_enabled": morning_checkin_enabled,
-            "morning_checkin_time": morning_checkin_time,
-            "training_reminder_enabled": training_reminder_enabled,
-            "training_reminder_time": training_reminder_time,
+            "morning_checkin_enabled": form.get("morning_checkin_enabled") == "true",
+            "morning_checkin_time": form.get("morning_checkin_time", "07:30"),
+            "training_reminder_enabled": form.get("training_reminder_enabled") == "true",
+            "training_reminder_time": form.get("training_reminder_time", "17:00"),
         },
+        "kpis": kpis,
     }
 
     error = None
@@ -352,6 +355,14 @@ async def training_analytics_page(request: Request):
     if not session:
         return RedirectResponse("/login")
     return templates.TemplateResponse("training_analytics.html", {"request": request, "email": session["email"]})
+
+
+@app.get("/goals", response_class=HTMLResponse)
+async def goals_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("goals.html", {"request": request, "email": session["email"]})
 
 
 @app.get("/api/analytics/health")
@@ -528,6 +539,133 @@ async def api_training_analytics(request: Request, days: int = 90):
         "latest_ctl": pmc["ctl"][-1] if pmc["ctl"] else None,
         "latest_atl": pmc["atl"][-1] if pmc["atl"] else None,
         "latest_tsb": pmc["tsb"][-1] if pmc["tsb"] else None,
+    })
+
+
+@app.get("/api/analytics/goals")
+async def api_goals_analytics(request: Request):
+    _require_session(request)
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT_ID)
+    p = profile_store.load()
+    kpis = p.get("kpis", {})
+
+    CYCLING_TYPES = "('cycling','road_cycling','gravel_cycling','mountain_biking','indoor_cycling','virtual_ride','spinning')"
+    RUNNING_TYPES = "('running','treadmill_running','trail_running')"
+
+    actuals_sql = f"""
+    WITH deduped AS (
+      SELECT date, activity_type, distance_m, duration_s
+      FROM `{PROJECT_ID}.garmin.garmin_activities`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    )
+    SELECT
+      COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS cycling_km,
+      COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS running_km,
+      COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
+      COUNT(DISTINCT date) AS active_days
+    FROM deduped
+    """
+
+    history_sql = f"""
+    WITH deduped AS (
+      SELECT date, activity_type, distance_m, duration_s
+      FROM `{PROJECT_ID}.garmin.garmin_activities`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 12 WEEK))
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    )
+    SELECT
+      FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(date, WEEK(MONDAY))) AS week_start,
+      COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS cycling_km,
+      COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS running_km,
+      COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
+      COUNT(DISTINCT date) AS active_days
+    FROM deduped
+    GROUP BY week_start
+    ORDER BY week_start
+    """
+
+    weight_sql = f"""
+    SELECT weight_lbs, body_fat_pct, date
+    FROM `{PROJECT_ID}.garmin.garmin_stats`
+    WHERE weight_lbs IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ORDER BY date DESC
+    LIMIT 1
+    """
+
+    this_week_sql = f"""
+    WITH deduped AS (
+      SELECT date, title, activity_type, duration_s, distance_m, avg_hr
+      FROM `{PROJECT_ID}.garmin.garmin_activities`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    )
+    SELECT date, title, activity_type, duration_s, distance_m, avg_hr
+    FROM deduped
+    ORDER BY date DESC
+    """
+
+    try:
+        actuals_rows = list(client.query(actuals_sql).result())
+        history_rows = list(client.query(history_sql).result())
+        weight_rows = list(client.query(weight_sql).result())
+        week_act_rows = list(client.query(this_week_sql).result())
+    except Exception as exc:
+        LOGGER.exception("Goals analytics BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    _LBS_TO_KG = 1 / 2.20462
+    actuals = {}
+    if actuals_rows:
+        r = actuals_rows[0]
+        actuals = {
+            "cycling_km": round(float(r["cycling_km"]), 1),
+            "running_km": round(float(r["running_km"]), 1),
+            "hours": round(float(r["hours"]), 1),
+            "active_days": int(r["active_days"]),
+        }
+
+    weight_latest = None
+    if weight_rows:
+        r = weight_rows[0]
+        weight_latest = {
+            "weight_kg": round(float(r["weight_lbs"]) * _LBS_TO_KG, 1) if r["weight_lbs"] else None,
+            "body_fat_pct": round(float(r["body_fat_pct"]), 1) if r["body_fat_pct"] else None,
+            "date": str(r["date"]),
+        }
+
+    history = [
+        {
+            "week_start": str(r["week_start"]),
+            "cycling_km": round(float(r["cycling_km"]), 1),
+            "running_km": round(float(r["running_km"]), 1),
+            "hours": round(float(r["hours"]), 1),
+            "active_days": int(r["active_days"]),
+        }
+        for r in history_rows
+    ]
+
+    this_week_activities = [
+        {
+            "date": str(r["date"]),
+            "title": r["title"] or "",
+            "activity_type": (r["activity_type"] or "unknown").lower(),
+            "duration_s": float(r["duration_s"]) if r["duration_s"] is not None else None,
+            "distance_m": float(r["distance_m"]) if r["distance_m"] is not None else None,
+            "avg_hr": float(r["avg_hr"]) if r["avg_hr"] is not None else None,
+        }
+        for r in week_act_rows
+    ]
+
+    return JSONResponse({
+        "kpis": kpis,
+        "actuals": actuals,
+        "weight_latest": weight_latest,
+        "history": history,
+        "this_week_activities": this_week_activities,
     })
 
 

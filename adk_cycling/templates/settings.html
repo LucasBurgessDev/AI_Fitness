@@ -1,455 +1,344 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cycling Coach AI – Settings</title>
-  <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#1a73e8" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="CycleCoach" />
-  <link rel="apple-touch-icon" href="/icon.svg" />
-  <style>
-    :root {
-      --bg:          #f0f4f8;
-      --surface:     #ffffff;
-      --surface-2:   #f8f9fb;
-      --border:      #dde3ec;
-      --text:        #1a1a1a;
-      --text-muted:  #666;
-      --accent:      #1a73e8;
-      --accent-dark: #1558b0;
-      --shadow:      0 1px 4px rgba(0,0,0,0.08);
-      --header-bg:   #1a73e8;
-      --header-text: #ffffff;
-    }
-    [data-theme="dark"] {
-      --bg:          #0f1117;
-      --surface:     #1c1f26;
-      --surface-2:   #161920;
-      --border:      #2e3340;
-      --text:        #e8eaf0;
-      --text-muted:  #8b929e;
-      --accent:      #5b9cf6;
-      --accent-dark: #4a87e8;
-      --shadow:      0 1px 4px rgba(0,0,0,0.35);
-      --header-bg:   #12151e;
-      --header-text: #e8eaf0;
-    }
+{% extends "base.html" %}
+{% block title %}Settings · Health Coach{% endblock %}
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      transition: background 0.2s, color 0.2s;
-    }
+{% block page_style %}
+<style>
+  main.settings-main {
+    flex: 1;
+    max-width: 700px;
+    width: 100%;
+    margin: 1.75rem auto;
+    padding: 0 1rem 4rem;
+  }
+  .settings-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.3rem; }
+  .settings-subtitle { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.5rem; }
 
-    header {
-      background: var(--header-bg);
-      color: var(--header-text);
-      padding: 0.7rem 1.25rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-      border-bottom: 1px solid rgba(0,0,0,0.1);
-    }
-    .header-left { display: flex; align-items: center; gap: 0.6rem; }
-    .header-left .icon { font-size: 1.3rem; }
-    .header-left h1 { font-size: 1.05rem; font-weight: 600; color: var(--header-text); }
-    .header-right { display: flex; align-items: center; gap: 0.85rem; font-size: 0.83rem; }
-    .header-right a { color: var(--header-text); text-decoration: none; opacity: 0.75; transition: opacity 0.15s; }
-    .header-right a:hover { opacity: 1; }
-    .header-right a.active { opacity: 1; font-weight: 600; }
+  .alert {
+    border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 1.1rem; font-size: 0.88rem;
+    border: 1px solid transparent;
+  }
+  .alert-success { background: rgba(0,224,155,0.1); color: var(--green); border-color: rgba(0,224,155,0.25); }
+  .alert-error { background: rgba(255,79,31,0.1); color: var(--watts); border-color: rgba(255,79,31,0.25); }
 
-    #theme-toggle {
-      background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.2);
-      color: var(--header-text);
-      border-radius: 6px;
-      padding: 0.3rem 0.55rem;
-      font-size: 0.85rem;
-      cursor: pointer;
-      line-height: 1;
-    }
-    #theme-toggle:hover { background: rgba(255,255,255,0.2); }
+  .card {
+    background: var(--surface); border-radius: 12px; box-shadow: var(--shadow);
+    border: 1px solid var(--border); padding: 1.35rem; margin-bottom: 1.1rem;
+  }
+  .card h3 {
+    font-size: 0.72rem; font-weight: 600; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+  }
 
-    main {
-      flex: 1;
-      max-width: 700px;
-      width: 100%;
-      margin: 2rem auto;
-      padding: 0 1rem 3rem;
-    }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 500px) { .field-row { grid-template-columns: 1fr; } }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.85rem; }
+  .field:last-child { margin-bottom: 0; }
 
-    h2 { font-size: 1.2rem; color: var(--text); margin-bottom: 0.3rem; }
-    .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.75rem; }
+  label { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+  label .hint { font-weight: 400; color: var(--text-muted); margin-left: 0.3rem; }
 
-    .alert {
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      margin-bottom: 1.25rem;
-      font-size: 0.9rem;
-    }
-    .alert-success { background: #e6f4ea; color: #1e7e34; border: 1px solid #a8d5b5; }
-    .alert-error   { background: #fce8e6; color: #c5221f; border: 1px solid #f5c6c4; }
-    [data-theme="dark"] .alert-success { background: #162a1c; color: #6fcf97; border-color: #2a5c38; }
-    [data-theme="dark"] .alert-error   { background: #2a1515; color: #f28b82; border-color: #5c2a2a; }
+  input[type="number"], input[type="text"], input[type="time"], textarea {
+    padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.9rem; font-family: inherit; color: var(--text); background: var(--surface-2);
+    outline: none; transition: border-color 0.15s; width: 100%;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; line-height: 1.5; }
 
-    .card {
-      background: var(--surface);
-      border-radius: 10px;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      padding: 1.5rem;
-      margin-bottom: 1.25rem;
-    }
-    .card h3 {
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 1.1rem;
-      padding-bottom: 0.5rem;
-      border-bottom: 1px solid var(--border);
-    }
+  .wpkg-preview { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem; }
+  .wpkg-preview span { font-weight: 600; color: var(--accent); }
 
-    .field-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-    @media (max-width: 500px) { .field-row { grid-template-columns: 1fr; } }
+  /* KPI rows */
+  .kpi-row {
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .kpi-row:last-child { border-bottom: none; }
+  .kpi-row label.kpi-label { flex: 1; font-size: 0.88rem; color: var(--text); margin: 0; }
+  .kpi-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+  .kpi-row input[type="number"] { width: 90px; flex-shrink: 0; padding: 0.35rem 0.6rem; font-family: 'JetBrains Mono', monospace; }
+  .kpi-unit { font-size: 0.78rem; color: var(--text-muted); flex-shrink: 0; min-width: 40px; }
 
-    .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
-    .field:last-child { margin-bottom: 0; }
+  .actions { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
+  .btn-save {
+    background: var(--accent); color: var(--ground); border: none; border-radius: 8px;
+    padding: 0.62rem 1.6rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; font-family: inherit;
+  }
+  .btn-save:hover { opacity: 0.85; }
+  .btn-cancel { color: var(--text-muted); font-size: 0.88rem; text-decoration: none; }
+  .btn-cancel:hover { color: var(--accent); }
+</style>
+{% endblock %}
 
-    label { font-size: 0.85rem; font-weight: 500; color: var(--text); }
-    label .hint { font-weight: 400; color: var(--text-muted); margin-left: 0.35rem; }
+{% block content %}
+<main class="settings-main">
+  <div class="settings-title">Settings</div>
+  <p class="settings-subtitle">Update your profile, goals, and weekly targets.</p>
 
-    input[type="number"],
-    input[type="text"],
-    textarea {
-      padding: 0.55rem 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 0.93rem;
-      font-family: inherit;
-      color: var(--text);
-      background: var(--bg);
-      outline: none;
-      transition: border-color 0.15s;
-      width: 100%;
-    }
-    input:focus, textarea:focus { border-color: var(--accent); }
-    textarea { resize: vertical; line-height: 1.5; }
+  {% if saved %}
+  <div class="alert alert-success">✓ Saved. Changes apply to your next chat message.</div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-error">⚠ Error saving profile: {{ error }}</div>
+  {% endif %}
 
-    .wpkg-preview { font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem; }
-    .wpkg-preview span { font-weight: 600; color: var(--accent); }
+  <form method="post" action="/settings">
 
-    .actions { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
-    .btn-save {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      padding: 0.65rem 1.75rem;
-      font-size: 0.93rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .btn-save:hover { background: var(--accent-dark); }
-    .btn-cancel { color: var(--text-muted); font-size: 0.9rem; text-decoration: none; }
-    .btn-cancel:hover { color: var(--accent); }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="header-left">
-      <span class="icon">🚴</span>
-      <h1>Cycling Coach AI</h1>
-    </div>
-    <div class="header-right">
-      <a href="/">Chat</a>
-      <a href="/health">Health</a>
-      <a href="/training">Training</a>
-      <a href="/settings" class="active">Settings</a>
-      <span style="opacity:0.6;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ email }}</span>
-      <button id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
-      <a href="/logout">Sign out</a>
-    </div>
-  </header>
-
-  <main>
-    <h2>Coach Profile</h2>
-    <p class="subtitle">Update your stats, goals, and equipment. Changes apply immediately to new chat messages.</p>
-
-    {% if saved %}
-    <div class="alert alert-success">✓ Profile saved. Your next message will use the updated settings.</div>
-    {% endif %}
-    {% if error %}
-    <div class="alert alert-error">⚠ Error saving profile: {{ error }}</div>
-    {% endif %}
-
-    <form method="post" action="/settings">
-
-      <div class="card">
-        <h3>My Stats</h3>
-        <div class="field-row">
-          <div class="field">
-            <label for="ftp">FTP <span class="hint">(watts)</span></label>
-            <input type="number" id="ftp" name="ftp" min="50" max="600" step="1"
-                   value="{{ profile.ftp }}" required oninput="updateWpkg()" />
-          </div>
-          <div class="field">
-            <label for="weight_kg">Weight <span class="hint">(kg)</span></label>
-            <input type="number" id="weight_kg" name="weight_kg" min="40" max="200" step="0.1"
-                   value="{{ profile.weight_kg }}" required oninput="updateWpkg()" />
-            <div class="wpkg-preview" id="wpkg-preview"></div>
-          </div>
-          <div class="field">
-            <label for="height_cm">Height <span class="hint">(cm)</span></label>
-            <input type="number" id="height_cm" name="height_cm" min="100" max="250" step="1"
-                   value="{{ profile.height_cm }}" required />
-          </div>
-          <div class="field">
-            <label for="age">Age</label>
-            <input type="number" id="age" name="age" min="10" max="100" step="1"
-                   value="{{ profile.age }}" required />
-          </div>
-          <div class="field">
-            <label for="stats_date">Stats recorded on</label>
-            <input type="text" id="stats_date" name="stats_date" placeholder="e.g. 03/01/2026"
-                   value="{{ profile.stats_date }}" required />
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Goals</h3>
+    <div class="card">
+      <h3>My Stats</h3>
+      <div class="field-row">
         <div class="field">
-          <label for="goals">Current goals <span class="hint">(one per line or free text)</span></label>
-          <textarea id="goals" name="goals" rows="6"
-            placeholder="- Complete an event on [date]&#10;- Improve FTP to X watts&#10;- Lose X kg by [date]">{{ profile.goals }}</textarea>
+          <label for="weight_kg">Weight <span class="hint">(kg)</span></label>
+          <input type="number" id="weight_kg" name="weight_kg" min="40" max="200" step="0.1"
+                 value="{{ profile.weight_kg }}" required oninput="updateWpkg()" />
+          <div class="wpkg-preview" id="wpkg-preview"></div>
         </div>
-      </div>
-
-      <div class="card">
-        <h3>Equipment</h3>
         <div class="field">
-          <label for="equipment">Your kit</label>
-          <textarea id="equipment" name="equipment" rows="3"
-            placeholder="Zwift, Wahoo Kickr Core, Trek Domane, Garmin Edge 530...">{{ profile.equipment }}</textarea>
+          <label for="height_cm">Height <span class="hint">(cm)</span></label>
+          <input type="number" id="height_cm" name="height_cm" min="100" max="250" step="1"
+                 value="{{ profile.height_cm }}" required />
+        </div>
+        <div class="field">
+          <label for="age">Age</label>
+          <input type="number" id="age" name="age" min="10" max="100" step="1"
+                 value="{{ profile.age }}" required />
+        </div>
+        <div class="field">
+          <label for="ftp">FTP <span class="hint">(watts)</span></label>
+          <input type="number" id="ftp" name="ftp" min="50" max="600" step="1"
+                 value="{{ profile.ftp }}" required oninput="updateWpkg()" />
+        </div>
+        <div class="field">
+          <label for="stats_date">Stats recorded on</label>
+          <input type="text" id="stats_date" name="stats_date" placeholder="e.g. 03/01/2026"
+                 value="{{ profile.stats_date }}" required />
         </div>
       </div>
+    </div>
 
-      <div class="card">
-        <h3>Reminders</h3>
-        <div class="field-row">
-          <div class="field">
-            <label>
-              <input type="checkbox" name="morning_checkin_enabled" value="true"
-                     {% if profile.reminders and profile.reminders.morning_checkin_enabled %}checked{% endif %} />
-              Morning recovery check-in
-            </label>
-            <input type="time" name="morning_checkin_time" step="1800"
-                   value="{{ (profile.reminders or {}).get('morning_checkin_time', '07:30') }}" />
-          </div>
-          <div class="field">
-            <label>
-              <input type="checkbox" name="training_reminder_enabled" value="true"
-                     {% if profile.reminders and profile.reminders.training_reminder_enabled %}checked{% endif %} />
-              Daily training reminder
-            </label>
-            <input type="time" name="training_reminder_time" step="1800"
-                   value="{{ (profile.reminders or {}).get('training_reminder_time', '17:00') }}" />
-          </div>
+    <div class="card">
+      <h3>Weekly Targets</h3>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_cycling_km_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_cycling_km and profile.kpis.weekly_cycling_km.enabled %}checked{% endif %} />
+        <label class="kpi-label">Cycling distance</label>
+        <input type="number" name="kpi_weekly_cycling_km_target" min="0" max="5000" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_cycling_km', {}).get('target', 0) or 0 | int }}" />
+        <span class="kpi-unit">km/wk</span>
+      </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_running_km_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_running_km and profile.kpis.weekly_running_km.enabled %}checked{% endif %} />
+        <label class="kpi-label">Running distance</label>
+        <input type="number" name="kpi_weekly_running_km_target" min="0" max="1000" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_running_km', {}).get('target', 0) or 0 | int }}" />
+        <span class="kpi-unit">km/wk</span>
+      </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_hours_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_hours and profile.kpis.weekly_hours.enabled %}checked{% endif %} />
+        <label class="kpi-label">Active time</label>
+        <input type="number" name="kpi_weekly_hours_target" min="0" max="100" step="0.5"
+          value="{{ (profile.kpis or {}).get('weekly_hours', {}).get('target', 0) }}" />
+        <span class="kpi-unit">hrs/wk</span>
+      </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_active_days_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_active_days and profile.kpis.weekly_active_days.enabled %}checked{% endif %} />
+        <label class="kpi-label">Active days</label>
+        <input type="number" name="kpi_weekly_active_days_target" min="0" max="7" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_active_days', {}).get('target', 5) }}" />
+        <span class="kpi-unit">days/wk</span>
+      </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_target_weight_kg_enabled" value="true"
+          {% if profile.kpis and profile.kpis.target_weight_kg and profile.kpis.target_weight_kg.enabled %}checked{% endif %} />
+        <label class="kpi-label">Target weight</label>
+        <input type="number" name="kpi_target_weight_kg_target" min="30" max="300" step="0.5"
+          value="{{ (profile.kpis or {}).get('target_weight_kg', {}).get('target', 80) }}" />
+        <span class="kpi-unit">kg</span>
+      </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_target_body_fat_pct_enabled" value="true"
+          {% if profile.kpis and profile.kpis.target_body_fat_pct and profile.kpis.target_body_fat_pct.enabled %}checked{% endif %} />
+        <label class="kpi-label">Target body fat</label>
+        <input type="number" name="kpi_target_body_fat_pct_target" min="0" max="60" step="0.5"
+          value="{{ (profile.kpis or {}).get('target_body_fat_pct', {}).get('target', 20) }}" />
+        <span class="kpi-unit">%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Goals</h3>
+      <div class="field">
+        <label for="goals">Your goals <span class="hint">(one per line or free text)</span></label>
+        <textarea id="goals" name="goals" rows="5"
+          placeholder="- Get out and move more&#10;- Lose weight to feel better&#10;- Sleep consistently 8 hours&#10;- Eat healthier, less junk food">{{ profile.goals }}</textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Equipment</h3>
+      <div class="field">
+        <label for="equipment">Your kit</label>
+        <textarea id="equipment" name="equipment" rows="3"
+          placeholder="Zwift, Wahoo Kickr Core, Trek Domane, Garmin Vivoactive 4…">{{ profile.equipment }}</textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Reminders</h3>
+      <div class="field-row">
+        <div class="field">
+          <label>
+            <input type="checkbox" name="morning_checkin_enabled" value="true"
+                   {% if profile.reminders and profile.reminders.morning_checkin_enabled %}checked{% endif %} />
+            Morning recovery check-in
+          </label>
+          <input type="time" name="morning_checkin_time" step="1800"
+                 value="{{ (profile.reminders or {}).get('morning_checkin_time', '07:30') }}" />
         </div>
-        <p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.5rem;">
-          Times are in Europe/London. Use 30-minute intervals (e.g. 07:00, 07:30).
-        </p>
+        <div class="field">
+          <label>
+            <input type="checkbox" name="training_reminder_enabled" value="true"
+                   {% if profile.reminders and profile.reminders.training_reminder_enabled %}checked{% endif %} />
+            Daily activity reminder
+          </label>
+          <input type="time" name="training_reminder_time" step="1800"
+                 value="{{ (profile.reminders or {}).get('training_reminder_time', '17:00') }}" />
+        </div>
       </div>
-
-      <div class="actions">
-        <button type="submit" class="btn-save">Save changes</button>
-        <a href="/" class="btn-cancel">Cancel</a>
-      </div>
-
-    </form>
-
-    <div class="card" style="margin-top:1.25rem;">
-      <h3>Garmin Data Sync</h3>
-      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1rem;">
-        Manually trigger a Garmin data pull. Only one sync can run at a time — if one is already in progress this will report back immediately.
-      </p>
-      <div class="actions">
-        <button class="btn-save" id="sync-btn" onclick="syncGarminData()">Sync now</button>
-      </div>
-      <p id="sync-status" style="font-size:0.82rem;margin-top:0.6rem;"></p>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem;">Times are Europe/London. Use 30-minute intervals (07:00, 07:30).</p>
     </div>
 
-    <div class="card" style="margin-top:1.25rem;">
-      <h3>Push Notifications</h3>
-      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1rem;">
-        Enable push notifications to receive reminders on this device even when the app isn't open.
-      </p>
-      <div class="actions" style="flex-wrap:wrap;gap:0.6rem;">
-        <button class="btn-save" id="notif-btn" onclick="toggleNotifications()">Enable notifications</button>
-        <button class="btn-save" id="test-btn" onclick="sendTestNotification()"
-                style="background:var(--text-muted);" disabled>Send test notification</button>
-      </div>
-      <p id="notif-status" style="font-size:0.82rem;color:var(--text-muted);margin-top:0.6rem;"></p>
+    <div class="actions">
+      <button type="submit" class="btn-save">Save changes</button>
+      <a href="/" class="btn-cancel">Cancel</a>
     </div>
-  </main>
+  </form>
 
-  <script>
-    const root = document.documentElement;
-    const t = localStorage.getItem('cc-theme') || 'light';
-    root.setAttribute('data-theme', t);
-    document.getElementById('theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
+  <div class="card" style="margin-top:1.1rem;">
+    <h3>Garmin Data Sync</h3>
+    <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:0.9rem;">Manually trigger a Garmin data pull. Only one sync runs at a time.</p>
+    <div class="actions">
+      <button class="btn-save" id="sync-btn" onclick="syncGarminData()">Sync now</button>
+    </div>
+    <p id="sync-status" style="font-size:0.8rem;margin-top:0.5rem;"></p>
+  </div>
 
-    function toggleTheme() {
-      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      root.setAttribute('data-theme', next);
-      localStorage.setItem('cc-theme', next);
-      document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+  <div class="card" style="margin-top:1.1rem;">
+    <h3>Push Notifications</h3>
+    <p style="font-size:0.86rem;color:var(--text-muted);margin-bottom:0.9rem;">Enable push notifications for reminders on this device.</p>
+    <div class="actions" style="flex-wrap:wrap;gap:0.6rem;">
+      <button class="btn-save" id="notif-btn" onclick="toggleNotifications()">Enable notifications</button>
+      <button class="btn-save" id="test-btn" onclick="sendTestNotification()"
+              style="background:var(--text-muted);" disabled>Send test</button>
+    </div>
+    <p id="notif-status" style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;"></p>
+  </div>
+</main>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  function updateWpkg() {
+    const ftp = parseFloat(document.getElementById('ftp').value) || 0;
+    const w = parseFloat(document.getElementById('weight_kg').value) || 1;
+    document.getElementById('wpkg-preview').innerHTML =
+      `W/kg: <span>${w > 0 ? (ftp/w).toFixed(2) : 'N/A'}</span>`;
+  }
+  updateWpkg();
+
+  // ---- Push notifications ----
+  const notifBtn = document.getElementById('notif-btn');
+  const testBtn = document.getElementById('test-btn');
+  const notifStatus = document.getElementById('notif-status');
+
+  function setStatus(msg, ok) {
+    notifStatus.textContent = msg;
+    notifStatus.style.color = ok ? 'var(--accent)' : 'var(--text-muted)';
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  async function initNotifState() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setStatus('Push notifications not supported in this browser.', false);
+      notifBtn.disabled = true; return;
     }
-
-    function updateWpkg() {
-      const ftp = parseFloat(document.getElementById('ftp').value) || 0;
-      const w = parseFloat(document.getElementById('weight_kg').value) || 1;
-      document.getElementById('wpkg-preview').innerHTML =
-        `W/kg: <span>${w > 0 ? (ftp/w).toFixed(2) : 'N/A'}</span>`;
+    const perm = Notification.permission;
+    if (perm === 'denied') {
+      setStatus('Notifications blocked. Allow them in browser settings.', false);
+      notifBtn.textContent = 'Notifications blocked'; notifBtn.disabled = true; return;
     }
-    updateWpkg();
-
-    // ---- Push notifications ----
-    const notifBtn  = document.getElementById('notif-btn');
-    const testBtn   = document.getElementById('test-btn');
-    const notifStatus = document.getElementById('notif-status');
-
-    function setStatus(msg, ok) {
-      notifStatus.textContent = msg;
-      notifStatus.style.color = ok ? 'var(--accent)' : 'var(--text-muted)';
-    }
-
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const raw = atob(base64);
-      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-    }
-
-    async function initNotifState() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        setStatus('Push notifications are not supported in this browser.', false);
-        notifBtn.disabled = true;
-        return;
-      }
-      const perm = Notification.permission;
-      if (perm === 'denied') {
-        setStatus('Notifications blocked. Please allow them in browser settings.', false);
-        notifBtn.textContent = 'Notifications blocked';
-        notifBtn.disabled = true;
-        return;
-      }
-      if (perm === 'granted') {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          notifBtn.textContent = 'Disable notifications';
-          testBtn.disabled = false;
-          setStatus('Push notifications are active on this device.', true);
-          return;
-        }
-      }
-      notifBtn.textContent = 'Enable notifications';
-    }
-
-    async function toggleNotifications() {
+    if (perm === 'granted') {
       const reg = await navigator.serviceWorker.ready;
-      const existing = await reg.pushManager.getSubscription();
-      if (existing) {
-        await existing.unsubscribe();
-        await fetch('/api/push/unsubscribe', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({endpoint: existing.endpoint}),
-        });
-        notifBtn.textContent = 'Enable notifications';
-        testBtn.disabled = true;
-        setStatus('Notifications disabled on this device.', false);
-        return;
-      }
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') {
-        setStatus('Permission denied. Please allow notifications in browser settings.', false);
-        return;
-      }
-      const resp = await fetch('/api/push/vapid-key');
-      const { publicKey } = await resp.json();
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
-      await fetch('/api/push/subscribe', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(sub.toJSON()),
-      });
-      notifBtn.textContent = 'Disable notifications';
-      testBtn.disabled = false;
-      setStatus('Push notifications enabled! Save your reminder times above.', true);
-    }
-
-    async function sendTestNotification() {
-      testBtn.disabled = true;
-      setStatus('Sending test notification…', true);
-      try {
-        const resp = await fetch('/api/push/test', { method: 'POST' });
-        const data = await resp.json();
-        setStatus(data.message || `Test sent to ${data.sent} subscription(s).`, true);
-      } catch (e) {
-        setStatus('Error sending test notification.', false);
-      } finally {
-        testBtn.disabled = false;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        notifBtn.textContent = 'Disable notifications'; testBtn.disabled = false;
+        setStatus('Push notifications are active on this device.', true); return;
       }
     }
+    notifBtn.textContent = 'Enable notifications';
+  }
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').then(initNotifState);
-    } else {
-      initNotifState();
+  async function toggleNotifications() {
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      await existing.unsubscribe();
+      await fetch('/api/push/unsubscribe', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({endpoint: existing.endpoint}) });
+      notifBtn.textContent = 'Enable notifications'; testBtn.disabled = true;
+      setStatus('Notifications disabled on this device.', false); return;
     }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { setStatus('Permission denied. Allow notifications in browser settings.', false); return; }
+    const resp = await fetch('/api/push/vapid-key');
+    const { publicKey } = await resp.json();
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+    await fetch('/api/push/subscribe', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sub.toJSON()) });
+    notifBtn.textContent = 'Disable notifications'; testBtn.disabled = false;
+    setStatus('Push notifications enabled! Save your reminder times above.', true);
+  }
 
-    // ---- Garmin sync ----
-    const syncBtn    = document.getElementById('sync-btn');
-    const syncStatus = document.getElementById('sync-status');
+  async function sendTestNotification() {
+    testBtn.disabled = true; setStatus('Sending test…', true);
+    try {
+      const resp = await fetch('/api/push/test', { method: 'POST' });
+      const data = await resp.json();
+      setStatus(data.message || `Test sent to ${data.sent} subscription(s).`, true);
+    } catch { setStatus('Error sending test notification.', false); }
+    finally { testBtn.disabled = false; }
+  }
 
-    function setSyncStatus(msg, ok) {
-      syncStatus.textContent = msg;
-      syncStatus.style.color = ok ? 'var(--accent)' : 'var(--text-muted)';
-    }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(initNotifState);
+  } else { initNotifState(); }
 
-    async function syncGarminData() {
-      syncBtn.disabled = true;
-      setSyncStatus('Requesting sync…', true);
-      try {
-        const resp = await fetch('/api/garmin/sync', { method: 'POST' });
-        const data = await resp.json();
-        const ok = data.status === 'triggered' || data.status === 'running';
-        setSyncStatus(data.message || 'Unknown response.', ok);
-      } catch (e) {
-        setSyncStatus('Error: could not reach the server.', false);
-      } finally {
-        syncBtn.disabled = false;
-      }
-    }
-  </script>
-</body>
-</html>
+  // ---- Garmin sync ----
+  const syncBtn = document.getElementById('sync-btn');
+  const syncStatus = document.getElementById('sync-status');
+
+  function setSyncStatus(msg, ok) {
+    syncStatus.textContent = msg;
+    syncStatus.style.color = ok ? 'var(--accent)' : 'var(--text-muted)';
+  }
+
+  async function syncGarminData() {
+    syncBtn.disabled = true; setSyncStatus('Requesting sync…', true);
+    try {
+      const resp = await fetch('/api/garmin/sync', { method: 'POST' });
+      const data = await resp.json();
+      const ok = data.status === 'triggered' || data.status === 'running';
+      setSyncStatus(data.message || 'Unknown response.', ok);
+    } catch { setSyncStatus('Error: could not reach the server.', false); }
+    finally { syncBtn.disabled = false; }
+  }
+</script>
+{% endblock %}

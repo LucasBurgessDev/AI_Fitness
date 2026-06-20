@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Goals · Health Coach{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block page_style %}
+<style>
+  .page-main { flex: 1; padding: 1.5rem; max-width: 960px; margin: 0 auto; width: 100%; }
+  .page-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1.5rem; }
+
+  /* ── KPI grid ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 1.75rem; }
+  .kpi-card {
+    background: var(--surface); border-radius: 16px; border: 1px solid var(--border);
+    box-shadow: var(--shadow-md); padding: 1.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.65rem;
+  }
+  .kpi-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); text-align: center; }
+
+  /* ── Ring ── */
+  .ring-wrap { position: relative; width: 120px; height: 120px; }
+  .ring {
+    width: 120px; height: 120px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: conic-gradient(var(--ring-color, var(--accent)) var(--ring-deg, 0deg), var(--ring-track, rgba(255,255,255,0.07)) 0deg);
+    transition: background 0.4s;
+  }
+  [data-theme="light"] .ring { --ring-track: rgba(0,0,0,0.07); }
+  .ring-inner {
+    width: 86px; height: 86px; border-radius: 50%;
+    background: var(--surface); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1px;
+  }
+  .ring-pct { font-family: 'JetBrains Mono', monospace; font-size: 1.25rem; font-weight: 700; line-height: 1; letter-spacing: -0.04em; color: var(--text); }
+  .ring-actual { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-muted); }
+
+  /* ── Sparkline ── */
+  .sparkline-wrap { width: 100%; height: 44px; }
+
+  /* ── Week summary bar ── */
+  .week-bar {
+    background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: var(--shadow); padding: 0.9rem 1.1rem; margin-bottom: 1.5rem;
+    display: flex; flex-wrap: wrap; gap: 1.25rem 2rem; align-items: center;
+  }
+  .week-bar-item { display: flex; flex-direction: column; }
+  .week-bar-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+  .week-bar-val { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+
+  /* ── Activities table ── */
+  .table-card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-md); overflow: hidden; }
+  .table-hdr { padding: 0.8rem 1.1rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { background: var(--surface-2); padding: 0.5rem 0.85rem; text-align: left; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-2); }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 20px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; }
+  .badge-cycling { background: rgba(0,200,255,0.12); color: var(--accent); }
+  .badge-running { background: rgba(0,224,155,0.12); color: var(--green); }
+  .badge-other { background: rgba(107,122,153,0.12); color: var(--text-muted); }
+
+  .empty-state { text-align: center; padding: 3rem 1.5rem; color: var(--text-muted); }
+  .empty-state a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .empty-state a:hover { text-decoration: underline; }
+
+  .loading-state { display: flex; align-items: center; justify-content: center; padding: 2.5rem; color: var(--text-muted); gap: 0.5rem; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 480px) { .page-main { padding: 1rem; } .kpi-grid { grid-template-columns: 1fr 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-main">
+  <div class="page-title">My Goals</div>
+
+  <div id="loading" class="loading-state"><div class="spinner"></div> Loading your data…</div>
+
+  <div id="content" style="display:none">
+    <!-- Week summary -->
+    <div class="week-bar" id="week-bar"></div>
+
+    <!-- KPI rings -->
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <!-- Empty state -->
+    <div id="empty-kpis" class="empty-state" style="display:none">
+      <p style="font-size:1.5rem;margin-bottom:0.5rem">🎯</p>
+      <p style="font-size:0.95rem;font-weight:600;margin-bottom:0.35rem">No weekly targets set</p>
+      <p style="font-size:0.85rem">Head to <a href="/settings">Settings</a> to set your weekly goals.</p>
+    </div>
+
+    <!-- This week's activities -->
+    <div class="table-card" id="acts-card" style="display:none">
+      <div class="table-hdr">This Week's Activities</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Activity</th><th>Type</th><th>Duration</th><th>Distance</th><th>Avg HR</th></tr></thead>
+          <tbody id="acts-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  const sparkCharts = {};
+
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function isDark() { return document.documentElement.getAttribute('data-theme') !== 'light'; }
+  function fmtDur(s) { if (!s) return '—'; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; }
+  function fmtDist(m) { return m==null?'—':(m/1000).toFixed(1)+' km'; }
+
+  function ringColor(pct) {
+    if (pct >= 90) return cssVar('--green');
+    if (pct >= 60) return cssVar('--amber');
+    return cssVar('--accent');
+  }
+
+  const KPI_META = {
+    weekly_cycling_km:   { label: 'Cycling', unit: 'km', decimals: 1 },
+    weekly_running_km:   { label: 'Running', unit: 'km', decimals: 1 },
+    weekly_hours:        { label: 'Active Hours', unit: 'hrs', decimals: 1 },
+    weekly_active_days:  { label: 'Active Days', unit: 'days', decimals: 0 },
+    target_weight_kg:    { label: 'Weight', unit: 'kg', decimals: 1, isTarget: true },
+    target_body_fat_pct: { label: 'Body Fat', unit: '%', decimals: 1, isTarget: true },
+  };
+
+  function renderRings(kpis, actuals, weightLatest, history) {
+    const grid = document.getElementById('kpi-grid');
+    const enabledKeys = Object.entries(kpis || {})
+      .filter(([, v]) => v.enabled)
+      .map(([k]) => k);
+
+    document.getElementById('empty-kpis').style.display = enabledKeys.length === 0 ? '' : 'none';
+    grid.innerHTML = '';
+
+    enabledKeys.forEach(key => {
+      const cfg = kpis[key];
+      const meta = KPI_META[key] || { label: key, unit: '', decimals: 1 };
+      const target = cfg.target;
+
+      let actual = null;
+      if (key === 'target_weight_kg' && weightLatest) {
+        actual = weightLatest.weight_kg;
+      } else if (key === 'target_body_fat_pct' && weightLatest) {
+        actual = weightLatest.body_fat_pct;
+      } else {
+        actual = actuals[key] || 0;
+      }
+
+      let pct = 0;
+      if (target > 0) {
+        if (meta.isTarget) {
+          // For targets like weight, "100%" means you've reached the goal
+          // Closer to target = better. We'll show how far along you are.
+          // pct = 100 if actual <= target (reached), else proportional
+          pct = actual != null ? Math.min(100, Math.round((target / actual) * 100)) : 0;
+        } else {
+          pct = Math.min(100, Math.round((actual / target) * 100));
+        }
+      }
+
+      const deg = Math.round(pct * 3.6);
+      const color = ringColor(pct);
+      const hist = (history || []).map(w => {
+        if (key === 'weekly_cycling_km') return w.cycling_km || 0;
+        if (key === 'weekly_running_km') return w.running_km || 0;
+        if (key === 'weekly_hours') return w.hours || 0;
+        if (key === 'weekly_active_days') return w.active_days || 0;
+        return 0;
+      });
+
+      const sparkId = `spark-${key}`;
+      const actualFmt = actual != null ? actual.toFixed(meta.decimals) : '—';
+      const targetFmt = target.toFixed(meta.decimals);
+
+      const card = document.createElement('div');
+      card.className = 'kpi-card';
+      card.innerHTML = `
+        <div class="kpi-label">${meta.label}</div>
+        <div class="ring-wrap">
+          <div class="ring" id="ring-${key}" style="--ring-deg:${deg}deg;--ring-color:${color};">
+            <div class="ring-inner">
+              <div class="ring-pct" style="color:${color}">${pct}%</div>
+              <div class="ring-actual">${actualFmt} ${meta.unit}</div>
+            </div>
+          </div>
+        </div>
+        <div class="ring-actual" style="font-size:0.7rem">Target: ${targetFmt} ${meta.unit}</div>
+        ${hist.length > 1 ? `<div class="sparkline-wrap"><canvas id="${sparkId}"></canvas></div>` : ''}
+      `;
+      grid.appendChild(card);
+
+      if (hist.length > 1) {
+        requestAnimationFrame(() => {
+          const canvas = document.getElementById(sparkId);
+          if (!canvas) return;
+          if (sparkCharts[sparkId]) sparkCharts[sparkId].destroy();
+          sparkCharts[sparkId] = new Chart(canvas, {
+            type: 'line',
+            data: {
+              labels: Array.from({length: hist.length}, (_, i) => i),
+              datasets: [{ data: hist, borderColor: color, backgroundColor: 'transparent', tension: 0.4, pointRadius: 0, borderWidth: 1.5 }],
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { legend: { display: false }, tooltip: { enabled: false } },
+              scales: { x: { display: false }, y: { display: false } },
+              animation: { duration: 400 },
+            },
+          });
+        });
+      }
+    });
+  }
+
+  function renderWeekBar(actuals, weightLatest) {
+    const bar = document.getElementById('week-bar');
+    const items = [
+      { label: 'Cycling', val: actuals.cycling_km != null ? actuals.cycling_km.toFixed(1) + ' km' : '—' },
+      { label: 'Running', val: actuals.running_km != null ? actuals.running_km.toFixed(1) + ' km' : '—' },
+      { label: 'Active Hours', val: actuals.hours != null ? actuals.hours.toFixed(1) + ' hrs' : '—' },
+      { label: 'Active Days', val: actuals.active_days != null ? actuals.active_days : '—' },
+    ];
+    if (weightLatest && weightLatest.weight_kg != null) {
+      items.push({ label: 'Weight', val: weightLatest.weight_kg.toFixed(1) + ' kg' });
+    }
+    if (weightLatest && weightLatest.body_fat_pct != null) {
+      items.push({ label: 'Body Fat', val: weightLatest.body_fat_pct.toFixed(1) + '%' });
+    }
+    bar.innerHTML = items.map(i => `
+      <div class="week-bar-item">
+        <div class="week-bar-label">${i.label}</div>
+        <div class="week-bar-val">${i.val}</div>
+      </div>`).join('');
+  }
+
+  function actBadge(type) {
+    if (['virtual_ride','indoor_cycling','road_cycling','gravel_cycling','cycling','spinning','mountain_biking'].includes(type))
+      return `<span class="badge badge-cycling">${type.replace(/_/g,' ')}</span>`;
+    if (['running','treadmill_running','trail_running'].includes(type))
+      return `<span class="badge badge-running">${type.replace(/_/g,' ')}</span>`;
+    return `<span class="badge badge-other">${(type||'unknown').replace(/_/g,' ')}</span>`;
+  }
+
+  function renderActivities(acts) {
+    const card = document.getElementById('acts-card');
+    const tbody = document.getElementById('acts-tbody');
+    if (!acts || !acts.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    tbody.innerHTML = acts.map(a => `
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:0.78rem">${a.date}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${a.title||'—'}</td>
+        <td>${actBadge(a.activity_type)}</td>
+        <td>${fmtDur(a.duration_s)}</td>
+        <td>${fmtDist(a.distance_m)}</td>
+        <td>${a.avg_hr ? Math.round(a.avg_hr)+' bpm' : '—'}</td>
+      </tr>`).join('');
+  }
+
+  let _data = null;
+
+  function renderAll(data) {
+    _data = data;
+    renderWeekBar(data.actuals, data.weight_latest);
+    renderRings(data.kpis, data.actuals, data.weight_latest, data.history);
+    renderActivities(data.this_week_activities);
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+  }
+
+  function reloadCharts() { if (_data) renderRings(_data.kpis, _data.actuals, _data.weight_latest, _data.history); }
+
+  async function loadData() {
+    try {
+      const res = await fetch('/api/analytics/goals');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      renderAll(data);
+    } catch (err) {
+      document.getElementById('loading').innerHTML = `<span style="color:var(--watts)">⚠ ${err.message}</span>`;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', loadData);
+</script>
+{% endblock %}
