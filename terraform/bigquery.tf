@@ -91,6 +91,19 @@ resource "google_bigquery_table" "evening_checkin" {
   ])
 }
 
+resource "google_bigquery_table" "calorie_entries" {
+  dataset_id          = google_bigquery_dataset.garmin.dataset_id
+  table_id            = "calorie_entries"
+  deletion_protection = false
+
+  schema = jsonencode([
+    { name = "date",           type = "STRING",    mode = "REQUIRED" },
+    { name = "calories_eaten", type = "INT64",     mode = "NULLABLE" },
+    { name = "notes",          type = "STRING",    mode = "NULLABLE" },
+    { name = "updated_at",     type = "TIMESTAMP", mode = "NULLABLE" },
+  ])
+}
+
 resource "google_project_iam_member" "sa_bq_data_editor" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"

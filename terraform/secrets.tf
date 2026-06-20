@@ -64,26 +64,6 @@ resource "google_secret_manager_secret" "allowed_email" {
   depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
 }
 
-resource "google_secret_manager_secret" "morning_sheet_id" {
-  secret_id = "cycling-coach-morning-sheet-id"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
-}
-
-resource "google_secret_manager_secret" "evening_sheet_id" {
-  secret_id = "cycling-coach-evening-sheet-id"
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
-}
-
 # ---------------------------------------------------------------------------
 # Grant the pipeline SA accessor rights on all secrets
 # ---------------------------------------------------------------------------
@@ -94,8 +74,6 @@ locals {
     oauth_client_id     = google_secret_manager_secret.oauth_client_id.secret_id
     oauth_client_secret = google_secret_manager_secret.oauth_client_secret.secret_id
     allowed_email       = google_secret_manager_secret.allowed_email.secret_id
-    morning_sheet_id    = google_secret_manager_secret.morning_sheet_id.secret_id
-    evening_sheet_id    = google_secret_manager_secret.evening_sheet_id.secret_id
   }
 }
 

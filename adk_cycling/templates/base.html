@@ -216,11 +216,44 @@
         flex-shrink: 0;
       }
     }
+
+    /* ── App loading splash (PWA home screen launch) ── */
+    #app-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--ground);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.25rem;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+    }
+    #app-splash.splash-hide { opacity: 0; visibility: hidden; pointer-events: none; }
+    .splash-logo {
+      width: 72px; height: 72px; border-radius: 20px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.4rem; line-height: 1;
+      animation: splash-arrive 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    }
+    @keyframes splash-arrive {
+      0%   { transform: scale(2.4) rotate(-15deg); opacity: 0; }
+      60%  { transform: scale(0.92) rotate(4deg);  opacity: 1; }
+      100% { transform: scale(1)   rotate(0deg);   opacity: 1; }
+    }
+    .splash-name {
+      font-size: 0.9rem; font-weight: 600; color: var(--text-muted);
+      letter-spacing: 0.04em; text-transform: uppercase;
+      animation: splash-fade 0.4s 0.2s ease forwards; opacity: 0;
+    }
+    @keyframes splash-fade { to { opacity: 1; } }
   </style>
   {% block page_style %}{% endblock %}
   {% block head_extra %}{% endblock %}
 </head>
 <body>
+  <div id="app-splash">
+    <div class="splash-logo">🏃</div>
+    <div class="splash-name">Health Coach</div>
+  </div>
+
   <header class="app-header">
     <a class="hdr-brand" href="/">
       <div class="hdr-brand-pill">🏃</div>
@@ -231,6 +264,7 @@
       <a href="/training" class="{{ 'active' if request.url.path == '/training' else '' }}">Training</a>
       <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">Health</a>
       <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">Check-in</a>
+      <a href="/calories" class="{{ 'active' if request.url.path == '/calories' else '' }}">Calories</a>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Chat</a>
       <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">Settings</a>
     </nav>
@@ -263,6 +297,21 @@
     </div>
   </nav>
   <div class="bottom-nav-spacer"></div>
+
+  <script>
+    (function() {
+      var splash = document.getElementById('app-splash');
+      function hideSplash() {
+        if (!splash) return;
+        setTimeout(function() {
+          splash.classList.add('splash-hide');
+          setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 420);
+        }, 350);
+      }
+      if (document.readyState === 'complete') { hideSplash(); }
+      else { window.addEventListener('load', hideSplash); }
+    })();
+  </script>
 
   <script>
     function toggleTheme() {

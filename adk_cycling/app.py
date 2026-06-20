@@ -514,6 +514,118 @@ async def api_checkin_evening(request: Request):
     return JSONResponse({"ok": True, "submission_id": sub_id})
 
 
+# ---------------------------------------------------------------------------
+# Calorie tracking routes
+# ---------------------------------------------------------------------------
+
+@app.get("/calories", response_class=HTMLResponse)
+async def calories_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("calories.html", {"request": request, "email": session["email"]})
+
+
+@app.get("/api/calories")
+async def api_calories(request: Request, days: int = 35):
+    """Return Garmin calorie burn + user-entered food calories for the last N days."""
+    _require_session(request)
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT_ID)
+    # Outer join: Garmin stats (burn) + our calorie entries (eaten)
+    sql = f"""
+    WITH garmin AS (
+      SELECT date, cals_total AS calories_burned
+      FROM `{PROJECT_ID}.garmin.garmin_stats`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ),
+    eaten AS (
+      SELECT date, calories_eaten, notes
+      FROM `{PROJECT_ID}.garmin.calorie_entries`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+    )
+    SELECT
+      COALESCE(g.date, e.date) AS date,
+      g.calories_burned,
+      e.calories_eaten,
+      e.notes,
+      CASE WHEN g.calories_burned IS NOT NULL AND e.calories_eaten IS NOT NULL
+           THEN g.calories_burned - e.calories_eaten ELSE NULL END AS net_calories
+    FROM garmin g
+    FULL OUTER JOIN eaten e ON g.date = e.date
+    ORDER BY date
+    """
+    try:
+        rows = list(client.query(sql).result())
+    except Exception as exc:
+        LOGGER.exception("Calories BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    data = {
+        "dates": [],
+        "calories_burned": [],
+        "calories_eaten": [],
+        "net_calories": [],
+        "notes": [],
+    }
+    for row in rows:
+        data["dates"].append(str(row["date"]))
+        data["calories_burned"].append(int(row["calories_burned"]) if row["calories_burned"] else None)
+        data["calories_eaten"].append(int(row["calories_eaten"]) if row["calories_eaten"] else None)
+        data["net_calories"].append(int(row["net_calories"]) if row["net_calories"] else None)
+        data["notes"].append(row["notes"] or "")
+
+    return JSONResponse(data)
+
+
+@app.post("/api/calories/entry")
+async def api_calories_entry(request: Request):
+    """Upsert a calorie entry for a given date (one row per day)."""
+    _require_session(request)
+    from google.cloud import bigquery
+    from datetime import datetime, timezone
+
+    body = await request.json()
+    date_str = body.get("date", "")
+    calories_eaten = body.get("calories_eaten")
+    notes = body.get("notes", "") or ""
+
+    if not date_str:
+        raise HTTPException(status_code=400, detail="date is required")
+
+    client = bigquery.Client(project=PROJECT_ID)
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    # MERGE upsert — one authoritative row per date
+    sql = f"""
+    MERGE `{PROJECT_ID}.garmin.calorie_entries` T
+    USING (SELECT @date AS date, @calories AS calories_eaten, @notes AS notes, @updated AS updated_at) S
+    ON T.date = S.date
+    WHEN MATCHED THEN
+      UPDATE SET calories_eaten = S.calories_eaten, notes = S.notes, updated_at = S.updated_at
+    WHEN NOT MATCHED THEN
+      INSERT (date, calories_eaten, notes, updated_at)
+      VALUES (S.date, S.calories_eaten, S.notes, S.updated_at)
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("date",     "STRING",    date_str),
+            bigquery.ScalarQueryParameter("calories", "INT64",     int(calories_eaten) if calories_eaten is not None else None),
+            bigquery.ScalarQueryParameter("notes",    "STRING",    notes),
+            bigquery.ScalarQueryParameter("updated",  "TIMESTAMP", now_ts),
+        ]
+    )
+    try:
+        client.query(sql, job_config=job_config).result()
+    except Exception as exc:
+        LOGGER.exception("Calories entry BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    return JSONResponse({"ok": True, "date": date_str, "calories_eaten": calories_eaten})
+
+
 @app.get("/api/analytics/health")
 async def api_health_analytics(request: Request, days: int = 90):
     _require_session(request)
@@ -1076,9 +1188,10 @@ async def send_reminders():
                 current_hhmm == reminders.get("morning_checkin_time", "07:30"):
             total_sent += _send_push_to_subs(
                 subs, email,
-                "Morning Recovery Check",
-                "Check your HRV, sleep score, and body battery to plan today's training.",
+                "Morning check-in 🌅",
+                "How are you feeling today? Log your morning check-in.",
                 private_key,
+                url="/checkin",
             )
 
         if reminders.get("training_reminder_enabled") and \

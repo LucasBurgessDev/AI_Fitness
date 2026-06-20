@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+{% block title %}Calories · Health Coach{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block page_style %}
+<style>
+  .cal-main { flex: 1; max-width: 920px; margin: 0 auto; width: 100%; padding: 1.5rem 1rem 4rem; }
+  .cal-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1.5rem; }
+
+  /* ── Date nav ── */
+  .date-nav {
+    display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.45rem 0.7rem; width: fit-content;
+  }
+  .date-nav-btn {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text-muted); cursor: pointer; font-size: 1rem; line-height: 1;
+    padding: 0.2rem 0.5rem; transition: color 0.15s, background 0.15s;
+  }
+  .date-nav-btn:hover { color: var(--text); }
+  .date-nav-label { font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; font-weight: 600; color: var(--text); min-width: 130px; text-align: center; }
+  .date-nav-today { font-size: 0.75rem; color: var(--accent); cursor: pointer; font-weight: 600; }
+
+  /* ── Day summary strip ── */
+  .day-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .day-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 1rem 1.15rem;
+    display: flex; flex-direction: column; gap: 0.25rem;
+  }
+  .day-card-label { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .day-card-val { font-family: 'JetBrains Mono', monospace; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.04em; line-height: 1.1; }
+  .day-card-sub { font-size: 0.72rem; color: var(--text-muted); }
+  .surplus { color: var(--watts); }
+  .deficit { color: var(--green); }
+
+  /* ── Entry form ── */
+  .entry-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 1.15rem; margin-bottom: 1.5rem;
+    display: flex; align-items: flex-end; gap: 0.85rem; flex-wrap: wrap;
+  }
+  .entry-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 120px; }
+  .entry-field label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .entry-field input, .entry-field textarea {
+    padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 0.95rem; font-family: 'JetBrains Mono', monospace; color: var(--text);
+    background: var(--surface-2); outline: none; transition: border-color 0.15s; width: 100%;
+  }
+  .entry-field input:focus, .entry-field textarea:focus { border-color: var(--accent); }
+  .entry-field textarea { font-family: inherit; resize: none; font-size: 0.88rem; }
+  .btn-save-entry {
+    padding: 0.55rem 1.2rem; border-radius: 8px; border: none;
+    background: var(--accent); color: var(--ground); font-size: 0.88rem;
+    font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity 0.15s;
+    align-self: flex-end;
+  }
+  .btn-save-entry:hover { opacity: 0.85; }
+  .btn-save-entry:disabled { opacity: 0.4; }
+  .entry-saved { font-size: 0.8rem; color: var(--green); font-weight: 600; align-self: flex-end; padding-bottom: 0.1rem; display: none; }
+
+  /* ── Period tabs ── */
+  .period-tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
+  .period-tab {
+    padding: 0.35rem 0.85rem; border-radius: 7px; border: 1px solid var(--border);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    background: var(--surface-2); color: var(--text-muted);
+    transition: background 0.15s, color 0.15s;
+  }
+  .period-tab.active { background: var(--accent); color: var(--ground); border-color: var(--accent); }
+
+  /* ── Chart grid ── */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  @media (max-width: 600px) { .chart-grid { grid-template-columns: 1fr; } .day-strip { grid-template-columns: 1fr 1fr; } }
+  .chart-card {
+    background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: var(--shadow); padding: 1rem 1.1rem;
+  }
+  .chart-card.full { grid-column: 1 / -1; }
+  .chart-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem; }
+  .chart-wrap { height: 200px; position: relative; }
+  .chart-wrap.tall { height: 260px; }
+
+  /* ── Loading ── */
+  .loading-state { display: flex; align-items: center; justify-content: center; padding: 3rem; color: var(--text-muted); gap: 0.5rem; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── History table ── */
+  .history-card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; margin-top: 1.25rem; }
+  .history-hdr { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  .history-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  th { background: var(--surface-2); padding: 0.45rem 0.85rem; text-align: left; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 0.5rem 0.85rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-2); cursor: pointer; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+  .net-surplus { color: var(--watts); font-weight: 600; }
+  .net-deficit { color: var(--green); font-weight: 600; }
+  .net-na { color: var(--text-muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cal-main">
+  <div class="cal-title">Calorie Tracking</div>
+
+  <!-- Date navigation -->
+  <div class="date-nav">
+    <button class="date-nav-btn" onclick="shiftDate(-1)">‹</button>
+    <div class="date-nav-label" id="date-label">—</div>
+    <button class="date-nav-btn" onclick="shiftDate(1)">›</button>
+    <span class="date-nav-today" onclick="goToday()">Today</span>
+  </div>
+
+  <!-- Day summary -->
+  <div class="day-strip" id="day-strip">
+    <div class="day-card">
+      <div class="day-card-label">Burned (Garmin)</div>
+      <div class="day-card-val" id="day-burned" style="color:var(--amber)">—</div>
+      <div class="day-card-sub">kcal total from activity</div>
+    </div>
+    <div class="day-card">
+      <div class="day-card-label">Eaten</div>
+      <div class="day-card-val" id="day-eaten" style="color:var(--accent)">—</div>
+      <div class="day-card-sub">kcal consumed</div>
+    </div>
+    <div class="day-card">
+      <div class="day-card-label">Net</div>
+      <div class="day-card-val" id="day-net">—</div>
+      <div class="day-card-sub" id="day-net-label">deficit / surplus</div>
+    </div>
+  </div>
+
+  <!-- Entry form -->
+  <div class="entry-card">
+    <div class="entry-field" style="max-width:180px">
+      <label>Calories eaten</label>
+      <input type="number" id="entry-cals" min="0" max="9999" step="50" placeholder="e.g. 2000" />
+    </div>
+    <div class="entry-field">
+      <label>Notes <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <textarea id="entry-notes" rows="1" placeholder="What did you eat? Any comments…"></textarea>
+    </div>
+    <button class="btn-save-entry" onclick="saveEntry()">Save</button>
+    <div class="entry-saved" id="entry-saved">✓ Saved</div>
+  </div>
+
+  <!-- Period tabs + charts -->
+  <div class="period-tabs">
+    <button class="period-tab active" id="tab-daily" onclick="setPeriod('daily')">Daily (35d)</button>
+    <button class="period-tab" id="tab-weekly" onclick="setPeriod('weekly')">Weekly</button>
+    <button class="period-tab" id="tab-monthly" onclick="setPeriod('monthly')">Monthly</button>
+  </div>
+
+  <div id="charts-loading" class="loading-state"><div class="spinner"></div> Loading…</div>
+
+  <div id="charts-area" style="display:none">
+    <div class="chart-grid">
+      <div class="chart-card full">
+        <div class="chart-title" id="main-chart-title">Daily calories — last 35 days</div>
+        <div class="chart-wrap tall"><canvas id="chart-main"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Net calories (deficit = green)</div>
+        <div class="chart-wrap"><canvas id="chart-net"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Avg daily burn vs eaten</div>
+        <div class="chart-wrap"><canvas id="chart-avg"></canvas></div>
+      </div>
+    </div>
+
+    <div class="history-card">
+      <div class="history-hdr">Recent entries — click a row to edit</div>
+      <div class="history-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Burned</th><th>Eaten</th><th>Net</th><th>Notes</th></tr></thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  const charts = {};
+  let _data = null;
+  let _selectedDate = null;
+  let _period = 'daily';
+
+  // ── Helpers ──
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function isDark() { return document.documentElement.getAttribute('data-theme') !== 'light'; }
+  function fmtDate(d) { return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}); }
+  function fmtShort(d) { return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric',month:'short'}); }
+  function toISODate(d) { return d.toISOString().slice(0,10); }
+
+  function today() { return toISODate(new Date()); }
+
+  function shiftDate(delta) {
+    const d = new Date(_selectedDate + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    setSelectedDate(toISODate(d));
+  }
+  function goToday() { setSelectedDate(today()); }
+
+  function setSelectedDate(dateStr) {
+    _selectedDate = dateStr;
+    document.getElementById('date-label').textContent = fmtDate(dateStr);
+    updateDayPanel();
+  }
+
+  function updateDayPanel() {
+    if (!_data || !_selectedDate) return;
+    const idx = _data.dates.indexOf(_selectedDate);
+    const burned = idx >= 0 ? _data.calories_burned[idx] : null;
+    const eaten  = idx >= 0 ? _data.calories_eaten[idx]  : null;
+    const net    = idx >= 0 ? _data.net_calories[idx]    : null;
+    const notes  = idx >= 0 ? _data.notes[idx]           : '';
+
+    document.getElementById('day-burned').textContent = burned != null ? burned.toLocaleString() : '—';
+    document.getElementById('day-eaten').textContent  = eaten  != null ? eaten.toLocaleString()  : '—';
+
+    const netEl = document.getElementById('day-net');
+    const netLbl = document.getElementById('day-net-label');
+    if (net != null) {
+      const surplus = net > 0;
+      netEl.textContent = (surplus ? '+' : '') + net.toLocaleString();
+      netEl.className = 'day-card-val ' + (surplus ? 'surplus' : 'deficit');
+      netLbl.textContent = surplus ? 'surplus (over target)' : 'deficit (under target)';
+    } else {
+      netEl.textContent = '—';
+      netEl.className = 'day-card-val';
+      netLbl.textContent = 'deficit / surplus';
+    }
+
+    // Populate form
+    document.getElementById('entry-cals').value = eaten != null ? eaten : '';
+    document.getElementById('entry-notes').value = notes || '';
+    document.getElementById('entry-saved').style.display = 'none';
+  }
+
+  async function saveEntry() {
+    const cals = parseInt(document.getElementById('entry-cals').value, 10);
+    const notes = document.getElementById('entry-notes').value.trim();
+    if (isNaN(cals) || cals < 0) { alert('Enter a valid calorie count'); return; }
+
+    const btn = document.querySelector('.btn-save-entry');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/calories/entry', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ date: _selectedDate, calories_eaten: cals, notes }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Save failed'); }
+      // Update local data
+      const idx = _data.dates.indexOf(_selectedDate);
+      if (idx >= 0) {
+        _data.calories_eaten[idx] = cals;
+        _data.notes[idx] = notes;
+        if (_data.calories_burned[idx] != null) {
+          _data.net_calories[idx] = _data.calories_burned[idx] - cals;
+        }
+      } else {
+        _data.dates.push(_selectedDate);
+        _data.calories_burned.push(null);
+        _data.calories_eaten.push(cals);
+        _data.net_calories.push(null);
+        _data.notes.push(notes);
+        _data.dates.sort();
+      }
+      updateDayPanel();
+      renderCharts();
+      document.getElementById('entry-saved').style.display = '';
+    } catch(err) {
+      alert('Error: ' + err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  }
+
+  // ── Period aggregation ──
+  function setPeriod(p) {
+    _period = p;
+    ['daily','weekly','monthly'].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.toggle('active', t === p);
+    });
+    renderCharts();
+  }
+
+  function getChartData() {
+    if (!_data) return { labels:[], burned:[], eaten:[], net:[] };
+    if (_period === 'daily') {
+      return {
+        labels: _data.dates.map(fmtShort),
+        burned: _data.calories_burned,
+        eaten:  _data.calories_eaten,
+        net:    _data.net_calories,
+        title:  'Daily calories — last 35 days',
+      };
+    }
+    // Aggregate by week or month
+    const buckets = {};
+    _data.dates.forEach((d, i) => {
+      const dt = new Date(d + 'T00:00:00');
+      let key;
+      if (_period === 'weekly') {
+        const day = dt.getDay() || 7;
+        const mon = new Date(dt); mon.setDate(dt.getDate() - day + 1);
+        key = toISODate(mon);
+      } else {
+        key = d.slice(0, 7);
+      }
+      if (!buckets[key]) buckets[key] = { burned: [], eaten: [], net: [] };
+      if (_data.calories_burned[i] != null) buckets[key].burned.push(_data.calories_burned[i]);
+      if (_data.calories_eaten[i] != null)  buckets[key].eaten.push(_data.calories_eaten[i]);
+      if (_data.net_calories[i] != null)    buckets[key].net.push(_data.net_calories[i]);
+    });
+    const keys = Object.keys(buckets).sort();
+    const avg = arr => arr.length ? Math.round(arr.reduce((a,b) => a+b,0) / arr.length) : null;
+    const sum = arr => arr.length ? arr.reduce((a,b) => a+b,0) : null;
+    const label = k => _period === 'weekly'
+      ? 'w/c ' + new Date(k + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric',month:'short'})
+      : new Date(k + '-01T00:00:00').toLocaleDateString('en-GB', {month:'short',year:'numeric'});
+    return {
+      labels: keys.map(label),
+      burned: keys.map(k => _period === 'weekly' ? avg(buckets[k].burned) : sum(buckets[k].burned)),
+      eaten:  keys.map(k => _period === 'weekly' ? avg(buckets[k].eaten)  : sum(buckets[k].eaten)),
+      net:    keys.map(k => _period === 'weekly' ? avg(buckets[k].net)    : sum(buckets[k].net)),
+      title:  _period === 'weekly' ? 'Weekly avg daily calories' : 'Monthly total calories',
+    };
+  }
+
+  function chartDefaults() {
+    const muted = cssVar('--text-muted');
+    const grid = isDark() ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    return {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: cssVar('--text'), font: { size: 11 }, boxWidth: 10, padding: 10 } },
+        tooltip: { mode: 'index', intersect: false },
+      },
+      scales: {
+        x: { ticks: { color: muted, maxTicksLimit: 10, maxRotation: 0, font: { size: 10 } }, grid: { color: grid } },
+        y: { ticks: { color: muted, font: { size: 10 } }, grid: { color: grid } },
+      },
+    };
+  }
+
+  function makeChart(id, config) {
+    if (charts[id]) charts[id].destroy();
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    charts[id] = new Chart(canvas, config);
+  }
+
+  function renderCharts() {
+    const cd = getChartData();
+    const amber = cssVar('--amber');
+    const accent = cssVar('--accent');
+    const green  = cssVar('--green');
+    const watts  = cssVar('--watts');
+    const muted  = cssVar('--text-muted');
+    const defs = chartDefaults();
+
+    document.getElementById('main-chart-title').textContent = cd.title;
+
+    // Main: burned vs eaten grouped bars
+    makeChart('chart-main', {
+      type: 'bar',
+      data: {
+        labels: cd.labels,
+        datasets: [
+          { label: 'Burned', data: cd.burned, backgroundColor: isDark() ? 'rgba(255,184,48,0.65)' : 'rgba(255,184,48,0.75)', barPercentage: 0.75 },
+          { label: 'Eaten',  data: cd.eaten,  backgroundColor: isDark() ? 'rgba(0,200,255,0.55)' : 'rgba(0,127,168,0.65)', barPercentage: 0.75 },
+        ],
+      },
+      options: { ...defs },
+    });
+
+    // Net calories bar (green=deficit, red=surplus)
+    const netColors = (cd.net || []).map(v => v == null ? muted : v > 0 ? watts : green);
+    makeChart('chart-net', {
+      type: 'bar',
+      data: {
+        labels: cd.labels,
+        datasets: [{ label: 'Net (burned − eaten)', data: cd.net, backgroundColor: netColors, barPercentage: 0.8 }],
+      },
+      options: {
+        ...defs,
+        plugins: { ...defs.plugins, tooltip: { callbacks: { label: ctx => (ctx.raw > 0 ? '+' : '') + ctx.raw + ' kcal surplus/deficit' } } },
+      },
+    });
+
+    // Averages doughnut (only days where both exist)
+    const paired = cd.burned.map((b, i) => b != null && cd.eaten[i] != null ? [b, cd.eaten[i]] : null).filter(Boolean);
+    const avgB = paired.length ? Math.round(paired.reduce((s,v) => s + v[0], 0) / paired.length) : 0;
+    const avgE = paired.length ? Math.round(paired.reduce((s,v) => s + v[1], 0) / paired.length) : 0;
+    makeChart('chart-avg', {
+      type: 'bar',
+      data: {
+        labels: ['Avg Burned', 'Avg Eaten'],
+        datasets: [{ data: [avgB, avgE], backgroundColor: [amber, accent], barPercentage: 0.55 }],
+      },
+      options: {
+        ...defs,
+        plugins: { ...defs.plugins, legend: { display: false } },
+        scales: { ...defs.scales, x: { ...defs.scales.x } },
+      },
+    });
+
+    // History table (last 14 rows, newest first)
+    const tbody = document.getElementById('history-tbody');
+    const rows = _data.dates
+      .map((d, i) => ({ d, burned: _data.calories_burned[i], eaten: _data.calories_eaten[i], net: _data.net_calories[i], notes: _data.notes[i] }))
+      .filter(r => r.burned != null || r.eaten != null)
+      .reverse().slice(0, 14);
+    tbody.innerHTML = rows.map(r => {
+      const net = r.net != null
+        ? `<span class="${r.net > 0 ? 'net-surplus' : 'net-deficit'}">${r.net > 0 ? '+' : ''}${r.net.toLocaleString()}</span>`
+        : `<span class="net-na">—</span>`;
+      return `<tr onclick="setSelectedDate('${r.d}')">
+        <td class="mono">${fmtShort(r.d)}</td>
+        <td class="mono">${r.burned != null ? r.burned.toLocaleString() : '—'}</td>
+        <td class="mono">${r.eaten  != null ? r.eaten.toLocaleString()  : '—'}</td>
+        <td class="mono">${net}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted)">${r.notes || ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function reloadCharts() { renderCharts(); }
+
+  async function init() {
+    setSelectedDate(today());
+    try {
+      const res = await fetch('/api/calories?days=35');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      _data = await res.json();
+      if (_data.error) throw new Error(_data.error);
+      updateDayPanel();
+      renderCharts();
+    } catch(err) {
+      document.getElementById('charts-loading').innerHTML = `<span style="color:var(--watts)">⚠ ${err.message}</span>`;
+      return;
+    }
+    document.getElementById('charts-loading').style.display = 'none';
+    document.getElementById('charts-area').style.display = '';
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+{% endblock %}
