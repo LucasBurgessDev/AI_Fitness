@@ -146,13 +146,19 @@
       const meta = KPI_META[key] || { label: key, unit: '', decimals: 1 };
       const target = cfg.target;
 
+      const ACTUALS_KEY = {
+        weekly_cycling_km: 'cycling_km',
+        weekly_running_km: 'running_km',
+        weekly_hours:      'hours',
+        weekly_active_days:'active_days',
+      };
       let actual = null;
       if (key === 'target_weight_kg' && weightLatest) {
         actual = weightLatest.weight_kg;
       } else if (key === 'target_body_fat_pct' && weightLatest) {
         actual = weightLatest.body_fat_pct;
       } else {
-        actual = actuals[key] || 0;
+        actual = (actuals || {})[ACTUALS_KEY[key] || key] || 0;
       }
 
       let pct = 0;

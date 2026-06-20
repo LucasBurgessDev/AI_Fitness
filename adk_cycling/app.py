@@ -577,7 +577,7 @@ async def api_goals_analytics(request: Request):
       QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
     )
     SELECT
-      FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(date, WEEK(MONDAY))) AS week_start,
+      FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CAST(date AS DATE), WEEK(MONDAY))) AS week_start,
       COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS cycling_km,
       COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS running_km,
       COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
