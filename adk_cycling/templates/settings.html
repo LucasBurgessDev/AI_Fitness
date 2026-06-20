@@ -208,6 +208,15 @@
           <input type="time" name="training_reminder_time" step="1800"
                  value="{{ (profile.reminders or {}).get('training_reminder_time', '17:00') }}" />
         </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" name="evening_checkin_enabled" value="true"
+                   {% if profile.reminders and profile.reminders.evening_checkin_enabled %}checked{% endif %} />
+            Evening check-in 🌙
+          </label>
+          <input type="time" name="evening_checkin_time" step="1800"
+                 value="{{ (profile.reminders or {}).get('evening_checkin_time', '21:00') }}" />
+        </div>
       </div>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem;">Times are Europe/London. Use 30-minute intervals (07:00, 07:30).</p>
     </div>

@@ -48,6 +48,49 @@ resource "google_bigquery_table" "coaching_log" {
   ])
 }
 
+resource "google_bigquery_table" "morning_checkin" {
+  dataset_id          = google_bigquery_dataset.garmin.dataset_id
+  table_id            = "morning_checkin"
+  deletion_protection = false
+
+  schema = jsonencode([
+    { name = "date",           type = "STRING",    mode = "REQUIRED" },
+    { name = "submitted_at",   type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "feeling",        type = "STRING",    mode = "NULLABLE" },
+    { name = "mood_score",     type = "INT64",     mode = "NULLABLE" },
+    { name = "working_out",    type = "BOOL",      mode = "NULLABLE" },
+    { name = "stretching",     type = "BOOL",      mode = "NULLABLE" },
+    { name = "drinks_tonight", type = "BOOL",      mode = "NULLABLE" },
+    { name = "notes",          type = "STRING",    mode = "NULLABLE" },
+    { name = "priority",       type = "STRING",    mode = "NULLABLE" },
+    { name = "fill_in_blank",  type = "STRING",    mode = "NULLABLE" },
+    { name = "source",         type = "STRING",    mode = "NULLABLE" },
+    { name = "submission_id",  type = "STRING",    mode = "REQUIRED" },
+  ])
+}
+
+resource "google_bigquery_table" "evening_checkin" {
+  dataset_id          = google_bigquery_dataset.garmin.dataset_id
+  table_id            = "evening_checkin"
+  deletion_protection = false
+
+  schema = jsonencode([
+    { name = "date",           type = "STRING",    mode = "REQUIRED" },
+    { name = "submitted_at",   type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "did_workout",    type = "BOOL",      mode = "NULLABLE" },
+    { name = "alcohol_drinks", type = "FLOAT64",   mode = "NULLABLE" },
+    { name = "tracked_eating", type = "BOOL",      mode = "NULLABLE" },
+    { name = "feeling",        type = "STRING",    mode = "NULLABLE" },
+    { name = "mood_score",     type = "INT64",     mode = "NULLABLE" },
+    { name = "worked_late",    type = "BOOL",      mode = "NULLABLE" },
+    { name = "notes",          type = "STRING",    mode = "NULLABLE" },
+    { name = "gratitude",      type = "STRING",    mode = "NULLABLE" },
+    { name = "chocolate",      type = "STRING",    mode = "NULLABLE" },
+    { name = "source",         type = "STRING",    mode = "NULLABLE" },
+    { name = "submission_id",  type = "STRING",    mode = "REQUIRED" },
+  ])
+}
+
 resource "google_project_iam_member" "sa_bq_data_editor" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"

@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% block title %}Check-in · Health Coach{% endblock %}
+
+{% block page_style %}
+<style>
+  .checkin-main { flex: 1; max-width: 540px; margin: 0 auto; width: 100%; padding: 1.5rem 1rem 4rem; }
+  .checkin-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.2rem; }
+  .checkin-sub { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+
+  /* ── Tabs ── */
+  .tab-bar {
+    display: flex; gap: 0.5rem; margin-bottom: 1.5rem;
+    background: var(--surface); border-radius: 10px; padding: 0.3rem;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    flex: 1; padding: 0.5rem; border-radius: 7px; border: none;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    background: transparent; color: var(--text-muted);
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab-btn.active { background: var(--accent); color: var(--ground); }
+  .tab-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* ── Form card ── */
+  .checkin-card {
+    background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
+    box-shadow: var(--shadow-md); padding: 1.35rem; margin-bottom: 1rem;
+  }
+  .field-label {
+    font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.65rem;
+    display: block;
+  }
+
+  /* ── Mood row ── */
+  .mood-row { display: flex; gap: 0.4rem; justify-content: space-between; flex-wrap: wrap; }
+  .mood-btn {
+    flex: 1; min-width: 52px; display: flex; flex-direction: column; align-items: center;
+    gap: 0.2rem; padding: 0.6rem 0.3rem; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-2); cursor: pointer; font-size: 1.4rem; line-height: 1;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .mood-btn span { font-size: 0.62rem; font-weight: 600; color: var(--text-muted); }
+  .mood-btn.selected { border-color: var(--accent); background: var(--accent-bg); }
+  .mood-btn.selected span { color: var(--accent); }
+
+  /* ── Toggle chips ── */
+  .toggle-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .toggle-chip {
+    padding: 0.38rem 0.85rem; border-radius: 20px; border: 1px solid var(--border);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    background: var(--surface-2); color: var(--text-muted);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+  .toggle-chip.yes { background: rgba(0,224,155,0.12); color: var(--green); border-color: rgba(0,224,155,0.3); }
+  .toggle-chip.no  { background: rgba(255,79,31,0.09); color: var(--watts); border-color: rgba(255,79,31,0.2); }
+  .toggle-chip.neutral { background: var(--surface-2); color: var(--text-muted); }
+
+  /* ── Number row ── */
+  .num-row { display: flex; align-items: center; gap: 0.6rem; }
+  .num-btn {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 1.1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-weight: 600;
+    transition: background 0.1s;
+  }
+  .num-btn:hover { background: var(--accent-bg); }
+  .num-val { font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; min-width: 2.5rem; text-align: center; }
+
+  /* ── Chocolate chips ── */
+  .choc-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .choc-chip {
+    padding: 0.38rem 0.85rem; border-radius: 20px; border: 1px solid var(--border);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    background: var(--surface-2); color: var(--text-muted);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+  .choc-chip.selected { background: rgba(155,109,255,0.12); color: var(--purple); border-color: rgba(155,109,255,0.3); }
+
+  /* ── Textarea ── */
+  textarea.checkin-ta {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-2); color: var(--text); font-family: inherit;
+    font-size: 0.88rem; padding: 0.6rem 0.75rem; resize: none; outline: none;
+    transition: border-color 0.15s; line-height: 1.5;
+  }
+  textarea.checkin-ta:focus { border-color: var(--accent); }
+
+  /* ── Submit ── */
+  .btn-submit {
+    width: 100%; padding: 0.75rem; border-radius: 10px; border: none;
+    background: var(--accent); color: var(--ground); font-size: 0.95rem;
+    font-weight: 700; cursor: pointer; transition: opacity 0.15s;
+    letter-spacing: -0.01em;
+  }
+  .btn-submit:disabled { opacity: 0.45; cursor: default; }
+  .btn-submit:hover:not(:disabled) { opacity: 0.88; }
+
+  /* ── Status ── */
+  .done-state {
+    text-align: center; padding: 2.5rem 1rem;
+    background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+  }
+  .done-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .done-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.3rem; }
+  .done-sub { font-size: 0.85rem; color: var(--text-muted); }
+
+  .loading-state { display: flex; align-items: center; justify-content: center; padding: 2.5rem; color: var(--text-muted); gap: 0.5rem; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .field-sep { margin-bottom: 1.15rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="checkin-main">
+  <div class="checkin-title">Daily Check-in</div>
+  <div class="checkin-sub" id="checkin-date"></div>
+
+  <div id="loading" class="loading-state"><div class="spinner"></div> Loading…</div>
+
+  <div id="content" style="display:none">
+    <div class="tab-bar">
+      <button class="tab-btn" id="tab-morning" onclick="switchTab('morning')">🌅 Morning</button>
+      <button class="tab-btn" id="tab-evening" onclick="switchTab('evening')">🌙 Evening</button>
+    </div>
+
+    <!-- ── Morning form ── -->
+    <div id="form-morning" style="display:none">
+      <div id="done-morning" class="done-state" style="display:none">
+        <div class="done-icon">✅</div>
+        <div class="done-title">Morning check-in done</div>
+        <div class="done-sub" id="done-morning-time"></div>
+      </div>
+      <div id="fields-morning">
+        <div class="checkin-card">
+          <span class="field-label">How are you feeling this morning?</span>
+          <div class="mood-row" id="m-mood"></div>
+        </div>
+
+        <div class="checkin-card">
+          <span class="field-label">Today's plan</span>
+          <div class="field-sep">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Working out?</div>
+            <div class="toggle-group" id="m-workout"></div>
+          </div>
+          <div class="field-sep">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Stretching?</div>
+            <div class="toggle-group" id="m-stretch"></div>
+          </div>
+          <div>
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Drinks tonight?</div>
+            <div class="toggle-group" id="m-drinks"></div>
+          </div>
+        </div>
+
+        <div class="checkin-card">
+          <span class="field-label">How do you feel? <span style="font-weight:400;font-size:0.75rem;text-transform:none;letter-spacing:0">(optional)</span></span>
+          <textarea class="checkin-ta" id="m-notes" rows="2" placeholder="Anything on your mind…"></textarea>
+          <div style="margin-top:0.85rem">
+            <span class="field-label" style="margin-bottom:0.4rem">Priority today</span>
+            <textarea class="checkin-ta" id="m-priority" rows="2" placeholder="What matters most today?"></textarea>
+          </div>
+        </div>
+
+        <button class="btn-submit" id="m-submit" onclick="submitMorning()">Submit morning check-in</button>
+      </div>
+    </div>
+
+    <!-- ── Evening form ── -->
+    <div id="form-evening" style="display:none">
+      <div id="done-evening" class="done-state" style="display:none">
+        <div class="done-icon">✅</div>
+        <div class="done-title">Evening check-in done</div>
+        <div class="done-sub" id="done-evening-time"></div>
+      </div>
+      <div id="fields-evening">
+        <div class="checkin-card">
+          <span class="field-label">How did today go?</span>
+          <div class="mood-row" id="e-mood"></div>
+        </div>
+
+        <div class="checkin-card">
+          <span class="field-label">Today's habits</span>
+          <div class="field-sep">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Did you work out?</div>
+            <div class="toggle-group" id="e-workout"></div>
+          </div>
+          <div class="field-sep">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Tracked your eating?</div>
+            <div class="toggle-group" id="e-track"></div>
+          </div>
+          <div class="field-sep">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Worked late?</div>
+            <div class="toggle-group" id="e-late"></div>
+          </div>
+          <div class="field-sep">
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Alcoholic drinks</div>
+            <div class="num-row">
+              <button class="num-btn" onclick="changeAlcohol(-0.5)">−</button>
+              <div class="num-val" id="e-alcohol-val">0</div>
+              <button class="num-btn" onclick="changeAlcohol(0.5)">+</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem">Chocolate 🍫</div>
+            <div class="choc-group" id="e-choc"></div>
+          </div>
+        </div>
+
+        <div class="checkin-card">
+          <span class="field-label">Reflect <span style="font-weight:400;font-size:0.75rem;text-transform:none;letter-spacing:0">(optional)</span></span>
+          <textarea class="checkin-ta" id="e-notes" rows="2" placeholder="How did today feel overall?"></textarea>
+          <div style="margin-top:0.85rem">
+            <span class="field-label" style="margin-bottom:0.4rem">I'm thankful for…</span>
+            <textarea class="checkin-ta" id="e-gratitude" rows="2" placeholder="Something good from today…"></textarea>
+          </div>
+        </div>
+
+        <button class="btn-submit" id="e-submit" onclick="submitEvening()">Submit evening check-in</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  const MOODS = [
+    { emoji: '😫', label: 'Terrible', val: 'Terrible' },
+    { emoji: '😕', label: 'Bad',      val: 'Bad' },
+    { emoji: '😐', label: 'Fine',     val: 'Fine' },
+    { emoji: '🙂', label: 'Good',     val: 'Good' },
+    { emoji: '😄', label: 'Great!',   val: 'Great!' },
+  ];
+  const CHOC_OPTS = ['None', 'Some ?'];
+
+  let mMood = null, eMood = null;
+  let mWorkout = null, mStretch = null, mDrinks = null;
+  let eWorkout = null, eTrack = null, eLate = null;
+  let eAlcohol = 0;
+  let eChoc = 'None';
+  let _today = null;
+
+  function buildMoodRow(containerId, onSelect) {
+    const el = document.getElementById(containerId);
+    MOODS.forEach(m => {
+      const btn = document.createElement('button');
+      btn.className = 'mood-btn';
+      btn.id = `${containerId}-${m.val}`;
+      btn.innerHTML = `${m.emoji}<span>${m.label}</span>`;
+      btn.onclick = () => {
+        el.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        onSelect(m.val);
+      };
+      el.appendChild(btn);
+    });
+  }
+
+  function buildYesNo(containerId, onSelect) {
+    const el = document.getElementById(containerId);
+    ['YES', 'NO'].forEach(v => {
+      const chip = document.createElement('div');
+      chip.className = 'toggle-chip neutral';
+      chip.id = `${containerId}-${v}`;
+      chip.textContent = v;
+      chip.onclick = () => {
+        el.querySelectorAll('.toggle-chip').forEach(c => { c.className = 'toggle-chip neutral'; });
+        chip.className = `toggle-chip ${v === 'YES' ? 'yes' : 'no'}`;
+        onSelect(v === 'YES');
+      };
+      el.appendChild(chip);
+    });
+  }
+
+  function buildChoc(containerId) {
+    const el = document.getElementById(containerId);
+    CHOC_OPTS.forEach(v => {
+      const chip = document.createElement('div');
+      chip.className = `choc-chip${v === eChoc ? ' selected' : ''}`;
+      chip.textContent = v;
+      chip.onclick = () => {
+        el.querySelectorAll('.choc-chip').forEach(c => c.classList.remove('selected'));
+        chip.classList.add('selected');
+        eChoc = v;
+      };
+      el.appendChild(chip);
+    });
+  }
+
+  function changeAlcohol(delta) {
+    eAlcohol = Math.max(0, Math.min(10, eAlcohol + delta));
+    document.getElementById('e-alcohol-val').textContent = eAlcohol % 1 === 0 ? eAlcohol : eAlcohol.toFixed(1);
+  }
+
+  function switchTab(tab) {
+    ['morning', 'evening'].forEach(t => {
+      document.getElementById(`form-${t}`).style.display = t === tab ? '' : 'none';
+      document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+    });
+  }
+
+  function autoTab(todayStatus) {
+    const hour = new Date().getHours();
+    const prefer = hour < 14 ? 'morning' : 'evening';
+    switchTab(prefer);
+  }
+
+  function markDone(kind, alreadyDone) {
+    if (!alreadyDone) return;
+    document.getElementById(`done-${kind}`).style.display = '';
+    document.getElementById(`fields-${kind}`).style.display = 'none';
+    document.getElementById(`done-${kind}-time`).textContent = 'Already submitted today';
+  }
+
+  async function submitMorning() {
+    if (!mMood) { alert('Pick a mood first'); return; }
+    const btn = document.getElementById('m-submit');
+    btn.disabled = true; btn.textContent = 'Submitting…';
+    try {
+      const res = await fetch('/api/checkin/morning', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          feeling: mMood,
+          working_out: mWorkout === true,
+          stretching: mStretch === true,
+          drinks_tonight: mDrinks === true,
+          notes: document.getElementById('m-notes').value.trim(),
+          priority: document.getElementById('m-priority').value.trim(),
+          fill_in_blank: '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Submit failed');
+      document.getElementById('done-morning').style.display = '';
+      document.getElementById('fields-morning').style.display = 'none';
+      document.getElementById('done-morning-time').textContent =
+        'Submitted at ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+    } catch(err) {
+      btn.disabled = false; btn.textContent = 'Submit morning check-in';
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function submitEvening() {
+    if (!eMood) { alert('Pick a mood first'); return; }
+    const btn = document.getElementById('e-submit');
+    btn.disabled = true; btn.textContent = 'Submitting…';
+    try {
+      const res = await fetch('/api/checkin/evening', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          feeling: eMood,
+          did_workout: eWorkout === true,
+          tracked_eating: eTrack === true,
+          worked_late: eLate === true,
+          alcohol_drinks: eAlcohol,
+          chocolate: eChoc,
+          notes: document.getElementById('e-notes').value.trim(),
+          gratitude: document.getElementById('e-gratitude').value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Submit failed');
+      document.getElementById('done-evening').style.display = '';
+      document.getElementById('fields-evening').style.display = 'none';
+      document.getElementById('done-evening-time').textContent =
+        'Submitted at ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+    } catch(err) {
+      btn.disabled = false; btn.textContent = 'Submit evening check-in';
+      alert('Error: ' + err.message);
+    }
+  }
+
+  async function init() {
+    const now = new Date();
+    _today = now.toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
+    document.getElementById('checkin-date').textContent = _today;
+
+    buildMoodRow('m-mood', v => { mMood = v; });
+    buildMoodRow('e-mood', v => { eMood = v; });
+    buildYesNo('m-workout', v => { mWorkout = v; });
+    buildYesNo('m-stretch', v => { mStretch = v; });
+    buildYesNo('m-drinks',  v => { mDrinks  = v; });
+    buildYesNo('e-workout', v => { eWorkout = v; });
+    buildYesNo('e-track',   v => { eTrack   = v; });
+    buildYesNo('e-late',    v => { eLate    = v; });
+    buildChoc('e-choc');
+
+    let todayStatus = { morning: false, evening: false };
+    try {
+      const res = await fetch('/api/checkin/today');
+      if (res.ok) todayStatus = await res.json();
+    } catch(_) {}
+
+    markDone('morning', todayStatus.morning);
+    markDone('evening', todayStatus.evening);
+    autoTab(todayStatus);
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+{% endblock %}

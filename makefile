@@ -22,12 +22,14 @@ BQ_DATASET_GARMIN  ?= garmin
 BQ_DATASET_CONTROL ?= data_control
 
 # ADK cycling service
-ADK_SERVICE_NAME ?= cycling-coach
-ADK_IMAGE_URI    := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(AR_REPO)/$(ADK_SERVICE_NAME):latest
+ADK_SERVICE_NAME    ?= cycling-coach
+ADK_IMAGE_URI       := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(AR_REPO)/$(ADK_SERVICE_NAME):latest
+MORNING_SHEET_ID    ?= 1OPsqSwgD1K-C6R3plk1qF9XRuvvv2LJWlEKsf5kimNs
+EVENING_SHEET_ID    ?= 1UzwE5TdlcijU44e7W0jHGWhusXWD42-fMWA4Ay9lZnU
 
 .PHONY: show enable-apis infra bootstrap-tokens build deploy run logs \
         bq-create-datasets bq-iam backfill-bq \
-        build-adk deploy-adk oauth-setup \
+        build-adk deploy-adk oauth-setup load-checkin-history \
         scheduler-enable scheduler-iam scheduler-create scheduler-now scheduler-list
 
 show:
@@ -124,12 +126,16 @@ deploy-adk:
 	  --region "$(REGION)" \
 	  --service-account "$(SA_EMAIL)" \
 	  --set-env-vars "PROJECT_ID=$(PROJECT_ID),DRIVE_FOLDER_ID=$(DRIVE_FOLDER_ID),GCS_PROFILE_BUCKET=$(BUCKET),REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$(PROJECT_ID),GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=1" \
-	  --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
+	  --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest,MORNING_SHEET_ID=cycling-coach-morning-sheet-id:latest,EVENING_SHEET_ID=cycling-coach-evening-sheet-id:latest" \
 	  --allow-unauthenticated \
 	  --memory 1Gi \
 	  --cpu 1 \
 	  --timeout 3600 \
 	  --port 8080
+
+load-checkin-history:
+	MORNING_SHEET_ID="$(MORNING_SHEET_ID)" EVENING_SHEET_ID="$(EVENING_SHEET_ID)" BQ_PROJECT_ID="$(PROJECT_ID)" \
+	  python pipeline/load_checkin_history.py
 
 oauth-setup:
 	@echo "1. Go to: https://console.cloud.google.com/apis/credentials?project=$(PROJECT_ID)"

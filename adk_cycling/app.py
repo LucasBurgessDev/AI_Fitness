@@ -30,6 +30,8 @@ PROJECT_ID = os.environ.get("PROJECT_ID", "health-data-482722")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8080/auth/callback")
 GARMIN_JOB_NAME = os.getenv("GARMIN_JOB_NAME", "garmin-fitness-daily")
 GARMIN_JOB_REGION = os.getenv("GARMIN_JOB_REGION", "europe-west2")
+MORNING_SHEET_ID = os.getenv("MORNING_SHEET_ID", "")
+EVENING_SHEET_ID = os.getenv("EVENING_SHEET_ID", "")
 
 SCOPES = [
     "openid",
@@ -310,6 +312,8 @@ async def settings_post(request: Request):
             "morning_checkin_time": form.get("morning_checkin_time", "07:30"),
             "training_reminder_enabled": form.get("training_reminder_enabled") == "true",
             "training_reminder_time": form.get("training_reminder_time", "17:00"),
+            "evening_checkin_enabled": form.get("evening_checkin_enabled") == "true",
+            "evening_checkin_time": form.get("evening_checkin_time", "21:00"),
         },
         "kpis": kpis,
     }
@@ -363,6 +367,151 @@ async def goals_page(request: Request):
     if not session:
         return RedirectResponse("/login")
     return templates.TemplateResponse("goals.html", {"request": request, "email": session["email"]})
+
+
+@app.get("/checkin", response_class=HTMLResponse)
+async def checkin_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse("checkin.html", {"request": request, "email": session["email"]})
+
+
+# ---------------------------------------------------------------------------
+# Check-in helpers
+# ---------------------------------------------------------------------------
+
+_MOOD_SCORE = {"Terrible": 1, "Bad": 2, "Fine": 3, "Good": 4, "Great!": 5}
+
+
+def _sheets_service():
+    from googleapiclient.discovery import build
+    from google.auth import default as _gauth
+    creds, _ = _gauth(scopes=["https://www.googleapis.com/auth/spreadsheets"])
+    return build("sheets", "v4", credentials=creds)
+
+
+def _append_to_sheet(sheet_id: str, values: list) -> None:
+    if not sheet_id:
+        LOGGER.warning("Sheet ID not configured — skipping Sheets write")
+        return
+    try:
+        svc = _sheets_service()
+        svc.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="Form Responses!A:M",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [values]},
+        ).execute()
+    except Exception as exc:
+        LOGGER.error("Sheets append failed: %s", exc)
+
+
+def _bq_insert_checkin(table_id: str, row: dict) -> None:
+    from google.cloud import bigquery
+    client = bigquery.Client(project=PROJECT_ID)
+    errors = client.insert_rows_json(f"{PROJECT_ID}.garmin.{table_id}", [row])
+    if errors:
+        LOGGER.error("BQ insert errors for %s: %s", table_id, errors)
+
+
+# ---------------------------------------------------------------------------
+# Check-in API routes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/checkin/today")
+async def api_checkin_today(request: Request):
+    """Return whether morning and/or evening check-in has been submitted today."""
+    _require_session(request)
+    from google.cloud import bigquery
+    from datetime import date
+    today = date.today().isoformat()
+    client = bigquery.Client(project=PROJECT_ID)
+    result = {"morning": False, "evening": False, "date": today}
+    try:
+        for kind, table in [("morning", "morning_checkin"), ("evening", "evening_checkin")]:
+            sql = f"""
+            SELECT COUNT(*) AS n FROM `{PROJECT_ID}.garmin.{table}`
+            WHERE date = '{today}' AND source = 'app'
+            """
+            rows = list(client.query(sql).result())
+            result[kind] = rows[0].n > 0 if rows else False
+    except Exception as exc:
+        LOGGER.warning("checkin/today BQ error (table may not exist yet): %s", exc)
+    return JSONResponse(result)
+
+
+@app.post("/api/checkin/morning")
+async def api_checkin_morning(request: Request):
+    _require_session(request)
+    from datetime import datetime, timezone, date
+    body = await request.json()
+    now = datetime.now(timezone.utc)
+    sub_id = str(uuid4())
+    feeling = body.get("feeling", "")
+    row = {
+        "date": date.today().isoformat(),
+        "submitted_at": now.isoformat(),
+        "feeling": feeling,
+        "mood_score": _MOOD_SCORE.get(feeling),
+        "working_out": bool(body.get("working_out")),
+        "stretching": bool(body.get("stretching")),
+        "drinks_tonight": bool(body.get("drinks_tonight")),
+        "notes": body.get("notes", "") or "",
+        "priority": body.get("priority", "") or "",
+        "fill_in_blank": body.get("fill_in_blank", "") or "",
+        "source": "app",
+        "submission_id": sub_id,
+    }
+    _bq_insert_checkin("morning_checkin", row)
+    _append_to_sheet(MORNING_SHEET_ID, [
+        now.strftime("%Y-%m-%d %H:%M:%S"), "",
+        feeling,
+        "YES" if row["working_out"] else "NO",
+        "YES" if row["stretching"] else "NO",
+        "YES" if row["drinks_tonight"] else "NO",
+        row["notes"], row["priority"], row["fill_in_blank"],
+        "", sub_id,
+    ])
+    return JSONResponse({"ok": True, "submission_id": sub_id})
+
+
+@app.post("/api/checkin/evening")
+async def api_checkin_evening(request: Request):
+    _require_session(request)
+    from datetime import datetime, timezone, date
+    body = await request.json()
+    now = datetime.now(timezone.utc)
+    sub_id = str(uuid4())
+    feeling = body.get("feeling", "")
+    row = {
+        "date": date.today().isoformat(),
+        "submitted_at": now.isoformat(),
+        "did_workout": bool(body.get("did_workout")),
+        "alcohol_drinks": float(body.get("alcohol_drinks", 0) or 0),
+        "tracked_eating": bool(body.get("tracked_eating")),
+        "feeling": feeling,
+        "mood_score": _MOOD_SCORE.get(feeling),
+        "worked_late": bool(body.get("worked_late")),
+        "notes": body.get("notes", "") or "",
+        "gratitude": body.get("gratitude", "") or "",
+        "chocolate": body.get("chocolate", "None") or "None",
+        "source": "app",
+        "submission_id": sub_id,
+    }
+    _bq_insert_checkin("evening_checkin", row)
+    _append_to_sheet(EVENING_SHEET_ID, [
+        now.strftime("%Y-%m-%d %H:%M:%S"), "",
+        "YES" if row["did_workout"] else "NO",
+        row["alcohol_drinks"],
+        "YES" if row["tracked_eating"] else "NO",
+        feeling,
+        "YES" if row["worked_late"] else "NO",
+        row["notes"], row["gratitude"], row["chocolate"],
+        "", sub_id,
+    ])
+    return JSONResponse({"ok": True, "submission_id": sub_id})
 
 
 @app.get("/api/analytics/health")
@@ -941,6 +1090,16 @@ async def send_reminders():
                 private_key,
             )
 
+        if reminders.get("evening_checkin_enabled") and \
+                current_hhmm == reminders.get("evening_checkin_time", "21:00"):
+            total_sent += _send_push_to_subs(
+                subs, email,
+                "Evening check-in 🌙",
+                "How did today go? Take a moment to log your day.",
+                private_key,
+                url="/checkin",
+            )
+
     LOGGER.info("send-reminders: sent %d notifications at %s", total_sent, current_hhmm)
     return JSONResponse({"sent": total_sent, "time": current_hhmm})
 
@@ -951,6 +1110,7 @@ def _send_push_to_subs(
     title: str,
     body: str,
     private_key_pem: str,
+    url: str = "/",
 ) -> int:
     """Send a push notification to all subscriptions. Returns count of successful sends."""
     import json as _json
@@ -966,7 +1126,7 @@ def _send_push_to_subs(
                     "endpoint": sub["endpoint"],
                     "keys": {"p256dh": sub["keys"]["p256dh"], "auth": sub["keys"]["auth"]},
                 },
-                data=_json.dumps({"title": title, "body": body, "url": "/"}),
+                data=_json.dumps({"title": title, "body": body, "url": url}),
                 vapid_private_key=private_key_pem,
                 vapid_claims={"sub": "mailto:coach@cycling-coach.app"},
             )

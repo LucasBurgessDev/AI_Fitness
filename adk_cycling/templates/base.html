@@ -230,6 +230,7 @@
       <a href="/goals" class="{{ 'active' if request.url.path == '/goals' else '' }}">Goals</a>
       <a href="/training" class="{{ 'active' if request.url.path == '/training' else '' }}">Training</a>
       <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">Health</a>
+      <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">Check-in</a>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Chat</a>
       <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">Settings</a>
     </nav>
@@ -247,11 +248,11 @@
       <a href="/goals" class="{{ 'active' if request.url.path == '/goals' else '' }}">
         <span class="bn-icon">⊙</span>Goals
       </a>
-      <a href="/training" class="{{ 'active' if request.url.path == '/training' else '' }}">
-        <span class="bn-icon">◈</span>Training
-      </a>
       <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">
         <span class="bn-icon">♥</span>Health
+      </a>
+      <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">
+        <span class="bn-icon">✓</span>Check-in
       </a>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">
         <span class="bn-icon">💬</span>Chat
