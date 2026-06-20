@@ -11,6 +11,22 @@ from garminconnect import Garmin
 
 from activity_filter import load_activity_filter
 
+
+def _garmin_with_retry(fn, *args, max_retries=3, **kwargs):
+    """Call fn(*args, **kwargs), retrying on Garmin 429 rate-limit errors with exponential backoff."""
+    delay = 30
+    for attempt in range(max_retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            is_rate_limit = "429" in str(exc) or "too many requests" in str(exc).lower()
+            if is_rate_limit and attempt < max_retries:
+                print(f"Rate limited (429), waiting {delay}s (attempt {attempt + 1}/{max_retries})…")
+                time.sleep(delay)
+                delay = min(delay * 2, 120)
+            else:
+                raise
+
 # -----------------------------
 # CONFIG
 # -----------------------------
@@ -635,13 +651,13 @@ def resolve_ftp(api: Garmin) -> Tuple[Optional[float], str, Optional[float]]:
     start = today - timedelta(days=FTP_LOOKBACK_DAYS)
 
     activities = None
-    try:
+    for activity_type_param in ("", None):
         try:
-            activities = api.get_activities_by_date(start.isoformat(), today.isoformat(), "")
+            activities = _garmin_with_retry(api.get_activities_by_date, start.isoformat(), today.isoformat(), activity_type_param)
+            if activities is not None:
+                break
         except Exception:
-            activities = api.get_activities_by_date(start.isoformat(), today.isoformat(), None)
-    except Exception:
-        activities = None
+            pass
 
     if not activities:
         return None, "missing", None
@@ -696,25 +712,21 @@ def fetch_activities(api: Garmin, start_iso: str, end_iso: str) -> list:
     """
     Prefer broad fetch then filter locally.
     If broad fetch fails, fall back to common types and merge.
+    Retries on Garmin 429 rate-limit errors before falling through.
     """
-    try:
+    # Broad fetch (two param variants), with retry on 429
+    for activity_type_param in ("", None):
         try:
-            acts = api.get_activities_by_date(start_iso, end_iso, "")
+            acts = _garmin_with_retry(api.get_activities_by_date, start_iso, end_iso, activity_type_param)
             if acts is not None:
                 return acts
         except Exception:
             pass
 
-        acts = api.get_activities_by_date(start_iso, end_iso, None)
-        if acts is not None:
-            return acts
-    except Exception:
-        pass
-
     merged = []
     for t in ["running", "cycling", "indoor_cycling", "virtual_ride"]:
         try:
-            a = api.get_activities_by_date(start_iso, end_iso, t)
+            a = _garmin_with_retry(api.get_activities_by_date, start_iso, end_iso, t)
             if a:
                 merged.extend(a)
         except Exception:

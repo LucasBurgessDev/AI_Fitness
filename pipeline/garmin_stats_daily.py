@@ -3,9 +3,26 @@ from garminconnect import Garmin
 from datetime import date, datetime
 import csv
 import os
+import time
 from dotenv import load_dotenv
 
 from activity_filter import load_activity_filter
+
+
+def _garmin_with_retry(fn, *args, max_retries=3, **kwargs):
+    """Call fn(*args, **kwargs), retrying on Garmin 429 rate-limit errors with exponential backoff."""
+    delay = 30
+    for attempt in range(max_retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            is_rate_limit = "429" in str(exc) or "too many requests" in str(exc).lower()
+            if is_rate_limit and attempt < max_retries:
+                print(f"Rate limited (429), waiting {delay}s (attempt {attempt + 1}/{max_retries})…")
+                time.sleep(delay)
+                delay = min(delay * 2, 120)
+            else:
+                raise
 
 # --- CONFIGURATION VIA ENVIRONMENT ---
 load_dotenv()
@@ -67,22 +84,19 @@ def build_activity_str(api, day_str, flt):
     Pulls activities for the day, then filters using activity_filters.yaml.
     """
     out = ""
-    try:
-        acts = None
+    for activity_type_param in ("", None):
         try:
-            acts = api.get_activities_by_date(day_str, day_str, "")
+            acts = _garmin_with_retry(api.get_activities_by_date, day_str, day_str, activity_type_param)
+            if acts is not None:
+                names = []
+                for act in acts:
+                    tkey = activity_type_key(act)
+                    if flt.allows(tkey):
+                        names.append(f"{act.get('activityName', 'Activity')} ({str(tkey).lower().replace(' ', '_')})")
+                out = "; ".join(names)
+                break
         except Exception:
-            acts = api.get_activities_by_date(day_str, day_str, None)
-
-        if acts:
-            names = []
-            for act in acts:
-                tkey = activity_type_key(act)
-                if flt.allows(tkey):
-                    names.append(f"{act.get('activityName', 'Activity')} ({str(tkey).lower().replace(' ', '_')})")
-            out = "; ".join(names)
-    except Exception:
-        pass
+            pass
     return out
 
 
@@ -247,7 +261,10 @@ def main():
             else:
                 h = api.connectapi(f"/hrv-service/hrv/daily/{today}")
             hrv_status = get_safe(h, "hrvSummary", "status")
-            hrv_avg = get_safe(h, "hrvSummary", "weeklyAverage")
+            raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
+            # Plausibility guard: real HRV is 10–200ms; reject bogus values
+            if raw_hrv is not None and 10 <= float(raw_hrv) <= 200:
+                hrv_avg = raw_hrv
         except Exception:
             pass
 

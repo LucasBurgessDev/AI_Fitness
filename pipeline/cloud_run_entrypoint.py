@@ -80,8 +80,10 @@ def main() -> None:
         except Exception as dl_err:
             LOGGER.warning("Drive download failed for %s (continuing): %s", fname, dl_err)
 
-    # Run data collection scripts
+    # Run data collection scripts — small gap so both don't race on the same OAuth2 token exchange
     run_cmd(["python", "garmin_activities_daily.py"])
+    import time as _time
+    _time.sleep(10)
     stats_history_start = os.getenv("STATS_HISTORY_START")
     if stats_history_start:
         LOGGER.info("Running stats history from %s", stats_history_start)
