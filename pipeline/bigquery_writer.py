@@ -278,6 +278,14 @@ def write_stats_range(
         LOGGER.info("All stats rows for range already in BQ")
         return 0
 
+    # Skip rows where every data field is null (auth failure produced empty rows)
+    _DATA_COLS = [c for c in out.columns if c not in ("date", "timestamp")]
+    empty_mask = out[_DATA_COLS].isnull().all(axis=1)
+    if empty_mask.all():
+        LOGGER.info("All stats rows have no data (Garmin auth likely failed) — skipping BQ write")
+        return 0
+    out = out[~empty_mask]
+
     out.insert(0, "run_date", out["date"].astype(str))
     out.insert(1, "batch_id", batch_id)
 

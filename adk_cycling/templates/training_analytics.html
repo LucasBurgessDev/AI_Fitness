@@ -97,8 +97,8 @@
     <select class="days-select" id="days-select" onchange="reload()">
       <option value="30">Last 30 days</option>
       <option value="60">Last 60 days</option>
-      <option value="90" selected>Last 90 days</option>
-      <option value="180">Last 180 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="180" selected>Last 180 days</option>
       <option value="365">Last year</option>
     </select>
   </div>
@@ -395,6 +395,6 @@
     loadData(days);
   }
 
-  document.addEventListener('DOMContentLoaded', () => loadData(90));
+  document.addEventListener('DOMContentLoaded', () => loadData(180));
 </script>
 {% endblock %}

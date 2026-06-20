@@ -626,7 +626,7 @@ async def api_calories_entry(request: Request):
 
 
 @app.get("/api/analytics/health")
-async def api_health_analytics(request: Request, days: int = 90):
+async def api_health_analytics(request: Request, days: int = 180):
     _require_session(request)
     from google.cloud import bigquery
 
@@ -638,7 +638,9 @@ async def api_health_analytics(request: Request, days: int = 90):
            vo2_max, steps, step_goal, cals_total
     FROM `{PROJECT_ID}.garmin.garmin_stats`
     WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY
+        CASE WHEN rhr IS NOT NULL OR weight_lbs IS NOT NULL OR steps IS NOT NULL THEN 0 ELSE 1 END,
+        run_date DESC, timestamp DESC) = 1
     ORDER BY date
     """
     try:
@@ -693,7 +695,7 @@ async def api_health_analytics(request: Request, days: int = 90):
 
 
 @app.get("/api/analytics/training")
-async def api_training_analytics(request: Request, days: int = 90):
+async def api_training_analytics(request: Request, days: int = 180):
     _require_session(request)
     from google.cloud import bigquery
     from collections import Counter
@@ -705,7 +707,9 @@ async def api_training_analytics(request: Request, days: int = 90):
     SELECT date, atl, ctl, tsb
     FROM `{PROJECT_ID}.garmin.garmin_stats`
     WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY
+        CASE WHEN atl IS NOT NULL OR ctl IS NOT NULL THEN 0 ELSE 1 END,
+        run_date DESC, timestamp DESC) = 1
     ORDER BY date
     """
     acts_sql = f"""
