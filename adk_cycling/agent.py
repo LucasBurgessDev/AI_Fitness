@@ -223,7 +223,7 @@ def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
             ROUND(ctl, 1) AS ctl,
             ROUND(ctl - atl, 1) AS tsb
         FROM with_load
-        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {weeks * 7} DAY)
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {weeks * 7} DAY))
         ORDER BY date DESC
     """
     return query_garmin_data(sql)
@@ -247,7 +247,7 @@ def get_weekly_summary(weeks: int = 8) -> str:
         WITH deduped_stats AS (
             SELECT date, rhr, hrv_avg, sleep_total_hr, sleep_score, body_battery
             FROM `{PROJECT_ID}.garmin.garmin_stats`
-            WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY)
+            WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {lookback_days} DAY))
             QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1
         ),
         weekly_stats AS (

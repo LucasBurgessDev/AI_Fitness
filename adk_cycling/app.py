@@ -10,6 +10,7 @@ from uuid import uuid4
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from google_auth_oauthlib.flow import Flow
 from itsdangerous import BadSignature, URLSafeSerializer
@@ -44,6 +45,7 @@ SCOPES = [
 # App setup
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Cycling Coach AI")
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 # Jinja2 3.1.4+ uses (name, globals_dict) as cache key — dict is unhashable.
 # Disabling the LRU cache avoids the TypeError entirely.
