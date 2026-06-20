@@ -45,6 +45,9 @@ SCOPES = [
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Cycling Coach AI")
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+# Jinja2 3.1.4+ uses (name, globals_dict) as cache key — dict is unhashable.
+# Disabling the LRU cache avoids the TypeError entirely.
+templates.env.cache = None
 signer = URLSafeSerializer(SECRET_KEY)
 
 
