@@ -1,11 +1,16 @@
 """
 One-shot historic bulk load for morning and evening check-in data.
 
-Reads all rows from both Google Sheets via the Sheets API and loads them
-into BigQuery tables garmin.morning_checkin and garmin.evening_checkin.
+Reads from local Excel files (preferred) or Google Sheets API and loads into
+BigQuery tables garmin.morning_checkin and garmin.evening_checkin.
 
-Usage:
-  MORNING_SHEET_ID=<id> EVENING_SHEET_ID=<id> BQ_PROJECT_ID=<project> python load_checkin_history.py
+Usage (local Excel files — no Sheets API auth needed):
+  MORNING_XLSX=/path/Morning Qs.xlsx EVENING_XLSX=/path/Evening Check-in .xlsx \
+    BQ_PROJECT_ID=health-data-482722 python3 load_checkin_history.py
+
+Usage (Google Sheets API — requires ADC with spreadsheets scope):
+  MORNING_SHEET_ID=<id> EVENING_SHEET_ID=<id> BQ_PROJECT_ID=<project> \
+    python3 load_checkin_history.py
 
 Idempotent: uses WRITE_TRUNCATE so re-running replaces existing data.
 """
@@ -18,12 +23,12 @@ from uuid import uuid4
 
 import pandas as pd
 from google.cloud import bigquery
-from google.auth import default as google_auth_default
-from googleapiclient.discovery import build
 
 MORNING_SHEET_ID = os.environ.get("MORNING_SHEET_ID", "")
 EVENING_SHEET_ID = os.environ.get("EVENING_SHEET_ID", "")
-PROJECT_ID = os.environ.get("BQ_PROJECT_ID", "health-data-482722")
+MORNING_XLSX     = os.environ.get("MORNING_XLSX", "")
+EVENING_XLSX     = os.environ.get("EVENING_XLSX", "")
+PROJECT_ID       = os.environ.get("BQ_PROJECT_ID", "health-data-482722")
 
 _MOOD_SCORE = {"Terrible": 1, "Bad": 2, "Fine": 3, "Good": 4, "Great!": 5}
 
@@ -59,16 +64,22 @@ _EVENING_SCHEMA = [
 ]
 
 
-def _sheets_service():
+def _read_xlsx(path: str) -> list[list]:
+    df = pd.read_excel(path, sheet_name="Form Responses", header=0, dtype=str)
+    df = df.fillna("")
+    rows = [list(df.columns)] + df.values.tolist()
+    return rows
+
+
+def _read_sheet_api(sheet_id: str) -> list[list]:
+    from google.auth import default as google_auth_default
+    from googleapiclient.discovery import build
     creds, _ = google_auth_default(
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
-    return build("sheets", "v4", credentials=creds)
-
-
-def _read_sheet(service, sheet_id: str) -> list[list]:
+    svc = build("sheets", "v4", credentials=creds)
     result = (
-        service.spreadsheets()
+        svc.spreadsheets()
         .values()
         .get(spreadsheetId=sheet_id, range="Form Responses!A:M")
         .execute()
@@ -77,15 +88,16 @@ def _read_sheet(service, sheet_id: str) -> list[list]:
 
 
 def _yn_to_bool(val) -> bool | None:
-    if val is None:
+    if val is None or str(val).strip() == "":
         return None
     return str(val).strip().upper() == "YES"
 
 
 def _parse_ts(val) -> datetime | None:
-    if not val:
+    if not val or str(val).strip() == "":
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
             return datetime.strptime(str(val).strip(), fmt).replace(tzinfo=timezone.utc)
         except ValueError:
@@ -93,23 +105,26 @@ def _parse_ts(val) -> datetime | None:
     return None
 
 
-def load_morning(service, bq_client: bigquery.Client) -> int:
-    if not MORNING_SHEET_ID:
-        print("MORNING_SHEET_ID not set — skipping morning load")
+def load_morning(bq_client: bigquery.Client) -> int:
+    if MORNING_XLSX:
+        print(f"Morning: reading from {MORNING_XLSX}")
+        rows_raw = _read_xlsx(MORNING_XLSX)
+    elif MORNING_SHEET_ID:
+        print(f"Morning: reading from Sheets API ({MORNING_SHEET_ID})")
+        rows_raw = _read_sheet_api(MORNING_SHEET_ID)
+    else:
+        print("Morning: no source set — skipping")
         return 0
-    rows_raw = _read_sheet(service, MORNING_SHEET_ID)
+
     if len(rows_raw) < 2:
         print("Morning sheet: no data rows")
         return 0
 
-    # Headers: Submission Date | Last Update Date | How do you feel today? |
-    #          Are you working out? | Are you stretching? | Are you going for drinks? |
-    #          Tell me about how you feel | What is the priority today? | Fill in the Blank |
-    #          IP | Submission ID
     records = []
     for r in rows_raw[1:]:
         def _col(i, default=None):
-            return r[i].strip() if i < len(r) and r[i] else default
+            v = r[i] if i < len(r) else None
+            return str(v).strip() if v is not None and str(v).strip() != "" else default
 
         ts = _parse_ts(_col(0))
         if ts is None:
@@ -145,24 +160,26 @@ def load_morning(service, bq_client: bigquery.Client) -> int:
     return len(records)
 
 
-def load_evening(service, bq_client: bigquery.Client) -> int:
-    if not EVENING_SHEET_ID:
-        print("EVENING_SHEET_ID not set — skipping evening load")
+def load_evening(bq_client: bigquery.Client) -> int:
+    if EVENING_XLSX:
+        print(f"Evening: reading from {EVENING_XLSX}")
+        rows_raw = _read_xlsx(EVENING_XLSX)
+    elif EVENING_SHEET_ID:
+        print(f"Evening: reading from Sheets API ({EVENING_SHEET_ID})")
+        rows_raw = _read_sheet_api(EVENING_SHEET_ID)
+    else:
+        print("Evening: no source set — skipping")
         return 0
-    rows_raw = _read_sheet(service, EVENING_SHEET_ID)
+
     if len(rows_raw) < 2:
         print("Evening sheet: no data rows")
         return 0
 
-    # Headers: Submission Date | Last Update Date | Did you workout today? |
-    #          How many alcoholic drinks? | Did you track your eating? |
-    #          How do you feel this evening? | Did you work late? |
-    #          Tell me a little more | I Am Thankful For | How much chocco? |
-    #          IP | Submission ID
     records = []
     for r in rows_raw[1:]:
         def _col(i, default=None):
-            return r[i].strip() if i < len(r) and r[i] else default
+            v = r[i] if i < len(r) else None
+            return str(v).strip() if v is not None and str(v).strip() != "" else default
 
         ts = _parse_ts(_col(0))
         if ts is None:
@@ -206,13 +223,7 @@ def load_evening(service, bq_client: bigquery.Client) -> int:
 
 
 if __name__ == "__main__":
-    if not MORNING_SHEET_ID and not EVENING_SHEET_ID:
-        print("Set MORNING_SHEET_ID and/or EVENING_SHEET_ID environment variables")
-        sys.exit(1)
-
-    svc = _sheets_service()
     bq = bigquery.Client(project=PROJECT_ID)
-
-    m = load_morning(svc, bq)
-    e = load_evening(svc, bq)
+    m = load_morning(bq)
+    e = load_evening(bq)
     print(f"\nDone. Total: {m + e} rows loaded.")

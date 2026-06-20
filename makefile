@@ -133,9 +133,12 @@ deploy-adk:
 	  --timeout 3600 \
 	  --port 8080
 
+MORNING_XLSX ?= /mnt/c/Users/LukeBurgess/Downloads/Morning Qs.xlsx
+EVENING_XLSX ?= /mnt/c/Users/LukeBurgess/Downloads/Evening Check-in .xlsx
+
 load-checkin-history:
-	MORNING_SHEET_ID="$(MORNING_SHEET_ID)" EVENING_SHEET_ID="$(EVENING_SHEET_ID)" BQ_PROJECT_ID="$(PROJECT_ID)" \
-	  python pipeline/load_checkin_history.py
+	MORNING_XLSX="$(MORNING_XLSX)" EVENING_XLSX="$(EVENING_XLSX)" BQ_PROJECT_ID="$(PROJECT_ID)" \
+	  python3 pipeline/load_checkin_history.py
 
 oauth-setup:
 	@echo "1. Go to: https://console.cloud.google.com/apis/credentials?project=$(PROJECT_ID)"
