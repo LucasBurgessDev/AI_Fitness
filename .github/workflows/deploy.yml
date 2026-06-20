@@ -157,6 +157,12 @@ jobs:
             --gcs-source-staging-dir="gs://$BUCKET/cloudbuild_source" \
             --gcs-log-dir="gs://$BUCKET/cloudbuild_logs"
 
+      - name: Remove sheet-ID secret refs (converted to plain env vars)
+        run: |
+          gcloud run services update cycling-coach \
+            --remove-secrets=MORNING_SHEET_ID,EVENING_SHEET_ID \
+            --region "$REGION" || true
+
       - name: Deploy Cloud Run Service
         run: |
           gcloud run deploy cycling-coach \
