@@ -65,7 +65,7 @@ infra:
 	  --location="$(REGION)" || true
 
 bootstrap-tokens:
-	TOKEN_CACHE_GCS_URI="$(TOKEN_CACHE_GCS_URI)" python pipeline/bootstrap_tokens_to_gcs.py
+	TOKEN_CACHE_GCS_URI="$(TOKEN_CACHE_GCS_URI)" python3 pipeline/bootstrap_tokens_to_gcs.py
 
 build:
 	gcloud builds submit pipeline/ --tag "$(IMAGE_URI)"
@@ -91,7 +91,7 @@ backfill-bq:
 
 # Backfill from local historic_data folder (no Drive/GCS needed — uses ADC for BQ auth)
 backfill-bq-local:
-	cd pipeline && LOCAL_DATA_PATH=../historic_data BQ_PROJECT_ID=$(PROJECT_ID) python backfill_bq.py
+	cd pipeline && LOCAL_DATA_PATH=../historic_data BQ_PROJECT_ID=$(PROJECT_ID) python3 backfill_bq.py
 
 logs:
 	gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=$(JOB_NAME)" --limit 120
@@ -149,7 +149,7 @@ oauth-setup:
 	@echo "   echo -n 'CLIENT_ID'     | gcloud secrets create cycling-coach-oauth-client-id --data-file=-"
 	@echo "   echo -n 'CLIENT_SECRET' | gcloud secrets create cycling-coach-oauth-client-secret --data-file=-"
 	@echo "   echo -n 'your@email'    | gcloud secrets create cycling-coach-allowed-email --data-file=-"
-	@echo "   python -c \"import secrets; print(secrets.token_hex(32))\" | gcloud secrets create cycling-coach-secret-key --data-file=-"
+	@echo "   python3 -c \"import secrets; print(secrets.token_hex(32))\" | gcloud secrets create cycling-coach-secret-key --data-file=-"
 	@echo "5. Grant SA access: gcloud secrets add-iam-policy-binding <secret> --member=serviceAccount:$(SA_EMAIL) --role=roles/secretmanager.secretAccessor"
 
 # ---------------------------------------------------------------------------
