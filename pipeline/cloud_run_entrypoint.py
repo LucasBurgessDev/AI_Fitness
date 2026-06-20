@@ -8,6 +8,7 @@ from pathlib import Path
 
 import batch_control
 import bigquery_writer
+import garmin_circuit_breaker as circuit_breaker
 from token_cache_gcs import download_token_cache, upload_token_cache
 from drive_uploader import upload_all_csvs, download_file_if_exists
 
@@ -20,16 +21,19 @@ def _setup_logging() -> None:
 LOGGER = logging.getLogger("cloud_run_entrypoint")
 
 
-def run_cmd(cmd: list[str]) -> None:
+def run_cmd(cmd: list[str]) -> str:
+    """Run a command, log output, and return combined stdout+stderr."""
     LOGGER.info("Running: %s", " ".join(cmd))
     p = subprocess.run(cmd, capture_output=True, text=True)
     LOGGER.info("Return code: %s", p.returncode)
+    combined = (p.stdout or "") + (p.stderr or "")
     if p.stdout:
         LOGGER.info("STDOUT:\n%s", p.stdout[-4000:])
     if p.stderr:
         LOGGER.info("STDERR:\n%s", p.stderr[-4000:])
     if p.returncode != 0:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}")
+    return combined
 
 
 def list_dir(path: Path) -> None:
@@ -63,6 +67,11 @@ def main() -> None:
     LOGGER.info("DRIVE_FOLDER_ID=%s", drive_folder_id)
     LOGGER.info("BQ_PROJECT_ID=%s", project_id or "(not set — BigQuery write skipped)")
 
+    # Circuit-breaker: skip run if Garmin auth has been failing repeatedly
+    if circuit_breaker.is_open():
+        LOGGER.info("Exiting early — circuit-breaker is open")
+        return
+
     # Download token cache to /tmp/.garth
     garth_dir = download_token_cache(token_uri, Path("/tmp"))
     os.environ["GARTH_DIR"] = str(garth_dir)
@@ -81,16 +90,36 @@ def main() -> None:
             LOGGER.warning("Drive download failed for %s (continuing): %s", fname, dl_err)
 
     # Run data collection scripts — small gap so both don't race on the same OAuth2 token exchange
-    run_cmd(["python", "garmin_activities_daily.py"])
+    auth_failed = False
+    try:
+        out = run_cmd(["python", "garmin_activities_daily.py"])
+        if circuit_breaker.contains_auth_failure(out):
+            auth_failed = True
+    except RuntimeError:
+        auth_failed = True
+
     import time as _time
     _time.sleep(10)
+
     stats_history_start = os.getenv("STATS_HISTORY_START")
     if stats_history_start:
         LOGGER.info("Running stats history from %s", stats_history_start)
         os.environ["START_DATE"] = stats_history_start
         run_cmd(["python", "garmin_stats_history.py"])
     else:
-        run_cmd(["python", "garmin_stats_daily.py"])
+        try:
+            out = run_cmd(["python", "garmin_stats_daily.py"])
+            if circuit_breaker.contains_auth_failure(out):
+                auth_failed = True
+        except RuntimeError:
+            auth_failed = True
+
+    if auth_failed:
+        circuit_breaker.record_failure()
+        LOGGER.warning("Garmin auth failed — circuit-breaker tripped, skipping BQ/Drive steps")
+        return
+
+    circuit_breaker.record_success()
 
     # Confirm CSVs exist
     list_dir(save_path)
