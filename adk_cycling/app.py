@@ -694,6 +694,49 @@ async def api_health_analytics(request: Request, days: int = 180):
     return JSONResponse(data)
 
 
+@app.get("/api/analytics/checkin")
+async def api_checkin_analytics(request: Request, days: int = 180):
+    _require_session(request)
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT_ID)
+    sql = f"""
+    WITH morning AS (
+        SELECT date, ROUND(AVG(CAST(mood_score AS FLOAT64)), 1) AS morning_mood
+        FROM `{PROJECT_ID}.garmin.morning_checkin`
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+        GROUP BY date
+    ),
+    evening AS (
+        SELECT date, ROUND(AVG(CAST(mood_score AS FLOAT64)), 1) AS evening_mood
+        FROM `{PROJECT_ID}.garmin.evening_checkin`
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+        GROUP BY date
+    ),
+    all_dates AS (
+        SELECT date FROM morning
+        UNION DISTINCT
+        SELECT date FROM evening
+    )
+    SELECT a.date, m.morning_mood, e.evening_mood
+    FROM all_dates a
+    LEFT JOIN morning m USING (date)
+    LEFT JOIN evening e USING (date)
+    ORDER BY date
+    """
+    try:
+        rows = list(client.query(sql).result())
+    except Exception as exc:
+        LOGGER.exception("Checkin analytics BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    return JSONResponse({
+        "dates": [str(r["date"]) for r in rows],
+        "morning_mood": [float(r["morning_mood"]) if r["morning_mood"] is not None else None for r in rows],
+        "evening_mood": [float(r["evening_mood"]) if r["evening_mood"] is not None else None for r in rows],
+    })
+
+
 @app.get("/api/analytics/training")
 async def api_training_analytics(request: Request, days: int = 180):
     _require_session(request)

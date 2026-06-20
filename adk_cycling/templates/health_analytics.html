@@ -68,6 +68,11 @@
   }
   .stat-unit { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); margin-left: 3px; font-family: 'Inter', sans-serif; }
   .stat-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.3rem; }
+  .stat-row { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+  .stat-trend-pill { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.01em; line-height: 1; }
+  .trend-up   { color: var(--green); }
+  .trend-down { color: var(--watts); }
+  .trend-neutral { color: var(--text-muted); }
 
   .chart-grid {
     display: grid;
@@ -125,14 +130,14 @@
   </div>
 
   <div class="stat-grid">
-    <div class="stat-card"><div class="stat-label">Weight</div><div class="stat-value" id="sv-weight">—</div></div>
-    <div class="stat-card"><div class="stat-label">Body Fat</div><div class="stat-value" id="sv-fat">—</div></div>
-    <div class="stat-card"><div class="stat-label">HRV Avg</div><div class="stat-value" id="sv-hrv">—</div></div>
-    <div class="stat-card"><div class="stat-label">Resting HR</div><div class="stat-value" id="sv-rhr">—</div></div>
-    <div class="stat-card"><div class="stat-label">VO₂ Max</div><div class="stat-value" id="sv-vo2">—</div></div>
-    <div class="stat-card"><div class="stat-label">Sleep Score</div><div class="stat-value" id="sv-sleep">—</div></div>
-    <div class="stat-card"><div class="stat-label">Body Battery</div><div class="stat-value" id="sv-bb">—</div></div>
-    <div class="stat-card"><div class="stat-label">Avg Stress</div><div class="stat-value" id="sv-stress">—</div></div>
+    <div class="stat-card"><div class="stat-label">Weight</div><div class="stat-row"><div class="stat-value" id="sv-weight">—</div><span class="stat-trend-pill" id="trend-weight"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Body Fat</div><div class="stat-row"><div class="stat-value" id="sv-fat">—</div><span class="stat-trend-pill" id="trend-fat"></span></div></div>
+    <div class="stat-card"><div class="stat-label">HRV Avg</div><div class="stat-row"><div class="stat-value" id="sv-hrv">—</div><span class="stat-trend-pill" id="trend-hrv"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Resting HR</div><div class="stat-row"><div class="stat-value" id="sv-rhr">—</div><span class="stat-trend-pill" id="trend-rhr"></span></div></div>
+    <div class="stat-card"><div class="stat-label">VO₂ Max</div><div class="stat-row"><div class="stat-value" id="sv-vo2">—</div><span class="stat-trend-pill" id="trend-vo2"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Sleep Score</div><div class="stat-row"><div class="stat-value" id="sv-sleep">—</div><span class="stat-trend-pill" id="trend-sleep"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Body Battery</div><div class="stat-row"><div class="stat-value" id="sv-bb">—</div><span class="stat-trend-pill" id="trend-bb"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Avg Stress</div><div class="stat-row"><div class="stat-value" id="sv-stress">—</div><span class="stat-trend-pill" id="trend-stress"></span></div></div>
   </div>
 
   <div class="chart-grid">
@@ -169,6 +174,20 @@
       <div class="chart-wrap"><div class="loading-state" id="load-steps"><div class="spinner"></div> Loading…</div><canvas id="chart-steps"></canvas></div>
     </div>
   </div>
+
+  <div style="margin-top:1.75rem">
+    <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Mood &amp; Check-ins</div>
+    <div class="chart-grid" style="grid-template-columns:repeat(2,1fr)">
+      <div class="chart-card full-width">
+        <div class="chart-title">Daily Mood (1–5)</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-mood"><div class="spinner"></div> Loading…</div><canvas id="chart-mood"></canvas></div>
+      </div>
+      <div class="chart-card" id="mood-summary-card" style="display:flex;flex-direction:column;gap:0.75rem">
+        <div class="chart-title">Check-in Summary</div>
+        <div id="mood-summary-inner" style="color:var(--text-muted);font-size:0.82rem">Loading…</div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -181,6 +200,63 @@
   }
   function isDark() {
     return document.documentElement.getAttribute('data-theme') !== 'light';
+  }
+
+  /* ── Rolling average helper ── */
+  function rollingAvg(arr, window = 7) {
+    return arr.map((_, i) => {
+      const vals = [];
+      for (let j = Math.max(0, i - window + 1); j <= i; j++) {
+        if (arr[j] != null) vals.push(arr[j]);
+      }
+      return vals.length >= 3 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    });
+  }
+
+  /* ── Trend arrow helpers ── */
+  function computeTrend(arr, recentN = 7, olderN = 7) {
+    const recent = [], older = [];
+    for (let i = arr.length - 1; i >= 0 && recent.length < recentN; i--) {
+      if (arr[i] != null) recent.push(arr[i]);
+    }
+    const olderEnd = Math.max(0, arr.length - recentN - 7);
+    for (let i = olderEnd; i >= 0 && older.length < olderN; i--) {
+      if (arr[i] != null) older.push(arr[i]);
+    }
+    if (!recent.length || !older.length) return null;
+    const rAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const oAvg = older.reduce((a, b) => a + b, 0) / older.length;
+    if (oAvg === 0) return null;
+    return { pct: (rAvg - oAvg) / Math.abs(oAvg) };
+  }
+
+  function setTrend(id, arr, higherIsBetter) {
+    const el = document.getElementById('trend-' + id);
+    if (!el) return;
+    const t = computeTrend(arr);
+    if (!t) { el.textContent = ''; return; }
+    const abs = Math.abs(t.pct);
+    if (abs < 0.02) {
+      el.textContent = '→';
+      el.className = 'stat-trend-pill trend-neutral';
+    } else if (t.pct > 0) {
+      el.textContent = `↑${(abs * 100).toFixed(0)}%`;
+      el.className = 'stat-trend-pill ' + (higherIsBetter ? 'trend-up' : 'trend-down');
+    } else {
+      el.textContent = `↓${(abs * 100).toFixed(0)}%`;
+      el.className = 'stat-trend-pill ' + (higherIsBetter ? 'trend-down' : 'trend-up');
+    }
+  }
+
+  function updateTrends(d) {
+    setTrend('weight', d.weight_kg,   false);
+    setTrend('fat',    d.body_fat_pct, false);
+    setTrend('hrv',    d.hrv_avg,      true);
+    setTrend('rhr',    d.rhr,          false);
+    setTrend('vo2',    d.vo2_max,      true);
+    setTrend('sleep',  d.sleep_score,  true);
+    setTrend('bb',     d.body_battery, true);
+    setTrend('stress', d.avg_stress,   false);
   }
 
   function chartDefaults() {
@@ -250,16 +326,23 @@
       type: 'line',
       data: {
         labels: d.dates,
-        datasets: [{
-          label: 'Weight (kg)', data: d.weight_kg,
-          borderColor: cssVar('--accent'),
-          backgroundColor: isDark() ? 'rgba(0,200,255,0.07)' : 'rgba(0,127,168,0.06)',
-          fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true,
-        }],
+        datasets: [
+          {
+            label: 'Weight (kg)', data: d.weight_kg,
+            borderColor: cssVar('--accent'),
+            backgroundColor: isDark() ? 'rgba(0,200,255,0.07)' : 'rgba(0,127,168,0.06)',
+            fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true, order: 2,
+          },
+          {
+            label: '7-day avg', data: rollingAvg(d.weight_kg),
+            borderColor: cssVar('--amber'), backgroundColor: 'transparent',
+            tension: 0.4, pointRadius: 0, borderWidth: 2, borderDash: [4, 3], spanGaps: true, order: 1,
+          },
+        ],
       },
       options: {
         ...def,
-        plugins: { ...def.plugins, legend: { display: false } },
+        plugins: { ...def.plugins, legend: { labels: { ...def.plugins.legend.labels, boxWidth: 10, padding: 10 } } },
         scales: { ...def.scales, y: { ...def.scales.y, title: { display: true, text: 'kg', color: cssVar('--text-muted'), font: { size: 10 } } } },
       },
     });
@@ -399,6 +482,103 @@
     });
   }
 
+  /* ── Mood chart ── */
+  const MOOD_LABELS = ['','😫','😕','😐','🙂','😄'];
+
+  function renderMood(d) {
+    hideLoader('mood');
+    const hasMorning = (d.morning_mood || []).some(v => v != null);
+    const hasEvening = (d.evening_mood || []).some(v => v != null);
+    if (!hasMorning && !hasEvening) {
+      const wrap = document.getElementById('chart-mood')?.parentElement;
+      if (wrap) wrap.innerHTML = '<div class="no-data">📋 No check-in data yet<br><span style="font-size:0.75rem;display:block;margin-top:0.35rem">Complete morning or evening check-ins to see your mood trend</span></div>';
+      return;
+    }
+    const def = chartDefaults();
+    const combined = d.dates.map((_, i) => {
+      const m = d.morning_mood?.[i], e = d.evening_mood?.[i];
+      if (m != null && e != null) return (m + e) / 2;
+      return m ?? e ?? null;
+    });
+    const datasets = [];
+    if (hasMorning) datasets.push({
+      label: 'Morning', data: d.morning_mood,
+      borderColor: cssVar('--accent'), backgroundColor: 'transparent',
+      tension: 0.3, pointRadius: 3, pointHoverRadius: 6, spanGaps: true,
+    });
+    if (hasEvening) datasets.push({
+      label: 'Evening', data: d.evening_mood,
+      borderColor: cssVar('--purple'), backgroundColor: 'transparent',
+      tension: 0.3, pointRadius: 3, pointHoverRadius: 6, spanGaps: true,
+    });
+    datasets.push({
+      label: '7-day avg', data: rollingAvg(combined),
+      borderColor: cssVar('--amber'), backgroundColor: 'transparent',
+      tension: 0.4, pointRadius: 0, borderWidth: 2.5, borderDash: [4, 3], spanGaps: true,
+    });
+    makeChart('chart-mood', {
+      type: 'line',
+      data: { labels: d.dates, datasets },
+      options: {
+        ...def,
+        scales: {
+          x: def.scales.x,
+          y: {
+            ...def.scales.y,
+            min: 0.8, max: 5.2,
+            ticks: { ...def.scales.y.ticks, stepSize: 1, callback: v => MOOD_LABELS[Math.round(v)] || '' },
+          },
+        },
+      },
+    });
+
+    // Summary card
+    const recent = combined.filter(v => v != null).slice(-30);
+    if (recent.length) {
+      const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+      const best = Math.max(...recent);
+      const score = Math.round(avg * 10) / 10;
+      const trend = computeTrend(combined, 7, 7);
+      let trendHtml = '';
+      if (trend) {
+        const abs = Math.abs(trend.pct);
+        if (abs >= 0.05) {
+          const arrow = trend.pct > 0 ? '↑' : '↓';
+          const cls = trend.pct > 0 ? 'trend-up' : 'trend-down';
+          trendHtml = `<span class="stat-trend-pill ${cls}">${arrow} ${(abs * 100).toFixed(0)}% vs prior week</span>`;
+        }
+      }
+      document.getElementById('mood-summary-inner').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div>
+            <div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--accent);margin-bottom:0.3rem">Avg Mood (30d)</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:700;letter-spacing:-0.04em;color:var(--text);line-height:1">${score}<span style="font-size:1.3rem;margin-left:0.2rem">${MOOD_LABELS[Math.round(avg)]}</span></div>
+            ${trendHtml ? '<div style="margin-top:0.3rem">' + trendHtml + '</div>' : ''}
+          </div>
+          <div>
+            <div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--accent);margin-bottom:0.3rem">Check-ins (30d)</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:700;letter-spacing:-0.04em;color:var(--text);line-height:1">${recent.length}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.3rem">Best: ${MOOD_LABELS[Math.round(best)]} ${best.toFixed(1)}</div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  async function loadCheckinData(days) {
+    try {
+      const res = await fetch(`/api/analytics/checkin?days=${days}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      renderMood(data);
+    } catch (err) {
+      console.error('Checkin analytics error:', err);
+      const el = document.getElementById('load-mood');
+      if (el) el.innerHTML = `<div class="error-msg">⚠ ${err.message}</div>`;
+    }
+  }
+
   let currentData = null;
 
   async function loadData(days) {
@@ -413,10 +593,12 @@
       console.error('Health analytics error:', err);
       ['weight','comp','sleep','hrv','bb','stress','vo2','steps'].forEach(id => showError(id, err.message));
     }
+    loadCheckinData(days);
   }
 
   function renderAll(data) {
     updateStatCards(data.latest || {});
+    updateTrends(data);
     renderWeight(data);
     renderComp(data);
     renderSleep(data);
@@ -431,7 +613,7 @@
 
   function reload() {
     const days = document.getElementById('days-select').value;
-    ['weight','comp','sleep','hrv','bb','stress','vo2','steps'].forEach(id => {
+    ['weight','comp','sleep','hrv','bb','stress','vo2','steps','mood'].forEach(id => {
       const el = document.getElementById('load-' + id);
       if (el) { el.style.display = 'flex'; }
       if (charts['chart-' + id]) { charts['chart-' + id].destroy(); delete charts['chart-' + id]; }
