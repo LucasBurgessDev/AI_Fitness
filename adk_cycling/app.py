@@ -93,7 +93,7 @@ def _require_session(request: Request) -> dict:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @app.get("/auth/start")
@@ -182,7 +182,7 @@ async def index(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("chat.html", {"request": request, "email": session["email"]})
+    return templates.TemplateResponse(request, "chat.html", {"email": session["email"]})
 
 
 @app.post("/chat")
@@ -276,8 +276,8 @@ async def settings_get(request: Request):
         return RedirectResponse("/login")
     p = profile_store.load()
     return templates.TemplateResponse(
-        "settings.html",
-        {"request": request, "email": session["email"], "profile": p, "saved": False, "error": None},
+        request, "settings.html",
+        {"email": session["email"], "profile": p, "saved": False, "error": None},
     )
 
 
@@ -333,14 +333,8 @@ async def settings_post(request: Request):
         error = str(exc)
 
     return templates.TemplateResponse(
-        "settings.html",
-        {
-            "request": request,
-            "email": session["email"],
-            "profile": new_profile,
-            "saved": saved,
-            "error": error,
-        },
+        request, "settings.html",
+        {"email": session["email"], "profile": new_profile, "saved": saved, "error": error},
     )
 
 
@@ -353,7 +347,7 @@ async def health_analytics_page(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("health_analytics.html", {"request": request, "email": session["email"]})
+    return templates.TemplateResponse(request, "health_analytics.html", {"email": session["email"]})
 
 
 @app.get("/training", response_class=HTMLResponse)
@@ -361,7 +355,7 @@ async def training_analytics_page(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("training_analytics.html", {"request": request, "email": session["email"]})
+    return templates.TemplateResponse(request, "training_analytics.html", {"email": session["email"]})
 
 
 @app.get("/goals", response_class=HTMLResponse)
@@ -369,7 +363,7 @@ async def goals_page(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("goals.html", {"request": request, "email": session["email"]})
+    return templates.TemplateResponse(request, "goals.html", {"email": session["email"]})
 
 
 @app.get("/checkin", response_class=HTMLResponse)
@@ -377,7 +371,7 @@ async def checkin_page(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("checkin.html", {"request": request, "email": session["email"]})
+    return templates.TemplateResponse(request, "checkin.html", {"email": session["email"]})
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +520,7 @@ async def calories_page(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("calories.html", {"request": request, "email": session["email"]})
+    return templates.TemplateResponse(request, "calories.html", {"email": session["email"]})
 
 
 @app.get("/api/calories")
