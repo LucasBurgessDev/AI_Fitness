@@ -9,6 +9,12 @@
 <style>
   body { height: 100dvh; overflow: hidden; min-height: 0; }
 
+  /* On mobile the bottom-nav is fixed ~72px tall — shrink the body to end above it */
+  @media (max-width: 640px) {
+    body { height: calc(100dvh - 72px - env(safe-area-inset-bottom, 0px)); }
+    #input-area { padding-bottom: 0.7rem; }
+  }
+
   /* ---- Main layout ---- */
   .main-layout { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
