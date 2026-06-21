@@ -7,7 +7,7 @@
 
 {% block page_style %}
 <style>
-  .page-main { flex: 1; padding: 1.5rem; max-width: 960px; margin: 0 auto; width: 100%; }
+  .page-main { flex: 1; padding: 1.5rem; max-width: 960px; margin: 0 auto; width: 100%; overflow-x: clip; }
 
   /* ── Header row ── */
   .page-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
@@ -23,17 +23,17 @@
   }
   .kpi-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); text-align: center; }
 
-  /* ── Ring ── */
-  .ring-wrap { position: relative; width: 120px; height: 120px; }
+  /* ── Ring — responsive, shrinks inside narrow cards ── */
+  .ring-wrap { position: relative; width: 120px; max-width: 100%; aspect-ratio: 1 / 1; }
   .ring {
-    width: 120px; height: 120px; border-radius: 50%;
+    width: 100%; height: 100%; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     background: conic-gradient(var(--ring-color, var(--accent)) var(--ring-deg, 0deg), var(--ring-track, rgba(255,255,255,0.07)) 0deg);
     transition: background 0.4s;
   }
   [data-theme="light"] .ring { --ring-track: rgba(0,0,0,0.07); }
   .ring-inner {
-    width: 86px; height: 86px; border-radius: 50%;
+    width: 71.67%; height: 71.67%; border-radius: 50%;
     background: var(--surface); display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 1px;
   }
@@ -95,6 +95,7 @@
   @media (max-width: 480px) {
     .page-main { padding: 1rem; }
     .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi-card { padding: 0.85rem; }
     .cal-strip { grid-template-columns: 1fr 1fr 1fr; }
     .cal-card-val { font-size: 1.1rem; }
   }
