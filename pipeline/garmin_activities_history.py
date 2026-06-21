@@ -20,7 +20,6 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional, Set, Tuple
 
-import garth
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
@@ -38,7 +37,7 @@ else:
     print("WARNING: SAVE_PATH not set in .env. Using current folder.")
     CSV_FILE = "garmin_activities.csv"
 
-TOKEN_DIR = os.getenv("GARTH_DIR", ".garth")
+TOKEN_DIR = os.getenv("GARMIN_TOKENSTORE", ".garminconnect")
 
 START_DATE = os.getenv("START_DATE", "2023-01-01")  # how far back to go
 CHUNK_DAYS = int(os.getenv("CHUNK_DAYS", "30"))      # range chunk size
@@ -339,7 +338,7 @@ def get_cycling_ftp_from_settings(api: Garmin) -> Optional[float]:
             pass
 
     try:
-        data = garth.connectapi(
+        data = api.connectapi(
             "biometric-service/biometric/latestFunctionalThresholdPower/CYCLING",
             params={},
         )
@@ -367,7 +366,7 @@ def fetch_activity_detail(api: Garmin, activity_id: str) -> Dict[str, Any]:
             pass
 
     try:
-        d = garth.connectapi(f"activity-service/activity/{activity_id}", params={})
+        d = api.connectapi(f"activity-service/activity/{activity_id}", params={})
         return d if isinstance(d, dict) else {}
     except Exception:
         return {}
@@ -592,9 +591,8 @@ def main() -> None:
 
     # Login using saved token session
     try:
-        garth.resume(TOKEN_DIR)
-        api = Garmin("dummy", "dummy")
-        api.garth = garth.client
+        api = Garmin(os.getenv("GARMIN_EMAIL"), os.getenv("GARMIN_PASSWORD"))
+        api.login(tokenstore=TOKEN_DIR)
     except Exception as e:
         print(f"Login Error: {e}")
         return

@@ -33,10 +33,11 @@ def _untar_to_parent(tar_path: Path, dest_parent: Path) -> Path:
     dest_parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(tar_path, "r:gz") as tar:
         tar.extractall(path=dest_parent)
-    return dest_parent / ".garth"
+    return dest_parent / ".garminconnect"
 
 
-def upload_token_cache(gcs_uri: str, garth_dir: Path) -> None:
+def upload_token_cache(gcs_uri: str, tokenstore_dir: Path) -> None:
+    garth_dir = tokenstore_dir  # keep internal name for compatibility
     bucket_name, blob_name = _parse_gcs_uri(gcs_uri)
 
     with tempfile.TemporaryDirectory() as td:

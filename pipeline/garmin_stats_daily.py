@@ -1,4 +1,3 @@
-import garth
 from garminconnect import Garmin
 from datetime import date, datetime
 import csv
@@ -34,7 +33,7 @@ else:
     print("WARNING: SAVE_PATH not set in .env. Using current folder.")
     CSV_FILE = "garmin_stats.csv"
 
-TOKEN_DIR = os.getenv("GARTH_DIR", ".garth")
+TOKEN_DIR = os.getenv("GARMIN_TOKENSTORE", ".garminconnect")
 # -------------------------------------
 
 
@@ -105,14 +104,8 @@ def main():
 
     try:
         print("1. Loading tokens...")
-        garth.resume(TOKEN_DIR)
-
-        api = Garmin("dummy", "dummy")
-        api.garth = garth.client
-        try:
-            api.display_name = api.garth.profile["displayName"]
-        except Exception:
-            pass
+        api = Garmin(os.getenv("GARMIN_EMAIL"), os.getenv("GARMIN_PASSWORD"))
+        api.login(tokenstore=TOKEN_DIR)
 
         flt = load_activity_filter()
 
@@ -272,7 +265,7 @@ def main():
         training_readiness = None
         try:
             fn = getattr(api, "get_training_readiness", None)
-            tr_data = fn(today) if callable(fn) else garth.connectapi(f"training-readiness/training-readiness/{today}")
+            tr_data = fn(today) if callable(fn) else api.connectapi(f"training-readiness/training-readiness/{today}")
             training_readiness = (get_safe(tr_data, "trainingReadinessScore")
                                   or get_safe(tr_data, "score")
                                   or get_safe(tr_data, "trainingReadiness"))
@@ -285,7 +278,7 @@ def main():
         fitness_age = None
         try:
             fn = getattr(api, "get_fitnessage_data", None)
-            fa_data = fn() if callable(fn) else garth.connectapi("fitnessstats-service/fitness/stats/fitnessAge")
+            fa_data = fn() if callable(fn) else api.connectapi("fitnessstats-service/fitness/stats/fitnessAge")
             fitness_age = (get_safe(fa_data, "fitnessAge")
                            or get_safe(fa_data, "biologicalAge")
                            or get_safe(fa_data, "chronologicalAge"))
@@ -357,7 +350,7 @@ def main():
             if callable(fn):
                 tl_data = fn(today, today)
             else:
-                tl_data = garth.connectapi(
+                tl_data = api.connectapi(
                     f"metrics-service/metrics/trainingload/user/{today}",
                     params={},
                 )
@@ -391,7 +384,7 @@ def main():
         lt_hr = lt_pace = None
         try:
             fn = getattr(api, "get_max_metrics", None)
-            mx = fn(today) if callable(fn) else garth.connectapi(
+            mx = fn(today) if callable(fn) else api.connectapi(
                 f"metrics-service/metrics/maxMetrics/{today}",
                 params={},
             )

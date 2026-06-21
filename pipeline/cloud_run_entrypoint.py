@@ -72,10 +72,10 @@ def main() -> None:
         LOGGER.info("Exiting early — circuit-breaker is open")
         return
 
-    # Download token cache to /tmp/.garth
+    # Download token cache to /tmp/.garminconnect
     garth_dir = download_token_cache(token_uri, Path("/tmp"))
-    os.environ["GARTH_DIR"] = str(garth_dir)
-    LOGGER.info("GARTH_DIR=%s", os.environ["GARTH_DIR"])
+    os.environ["GARMIN_TOKENSTORE"] = str(garth_dir)
+    LOGGER.info("GARMIN_TOKENSTORE=%s", os.environ["GARMIN_TOKENSTORE"])
 
     save_path = Path(os.getenv("SAVE_PATH", "/tmp"))
     save_path.mkdir(parents=True, exist_ok=True)
@@ -171,7 +171,7 @@ def main() -> None:
         LOGGER.error("Drive upload failed (continuing): %s", drive_err)
 
     # Persist refreshed token cache
-    upload_token_cache(token_uri, garth_dir)
+    upload_token_cache(token_uri, garth_dir)  # garth_dir now points to .garminconnect
     LOGGER.info("Token cache uploaded back to GCS, job complete")
 
 

@@ -1,5 +1,4 @@
 garminconnect
-garth
 requests
 python-dotenv
 PyYAML

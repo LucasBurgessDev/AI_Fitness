@@ -65,7 +65,7 @@ infra:
 	  --location="$(REGION)" || true
 
 bootstrap-tokens:
-	TOKEN_CACHE_GCS_URI="$(TOKEN_CACHE_GCS_URI)" python3 pipeline/bootstrap_tokens_to_gcs.py
+	TOKEN_CACHE_GCS_URI="$(TOKEN_CACHE_GCS_URI)" GARMIN_TOKENSTORE=pipeline/.garminconnect python3 pipeline/bootstrap_tokens_to_gcs.py
 
 build:
 	gcloud builds submit pipeline/ --tag "$(IMAGE_URI)"

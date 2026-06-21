@@ -1,4 +1,3 @@
-import garth
 from garminconnect import Garmin
 from datetime import date, timedelta
 import csv
@@ -19,7 +18,7 @@ else:
     print("WARNING: SAVE_PATH not set in .env. Using current folder.")
     CSV_FILE = "garmin_stats.csv"
 
-TOKEN_DIR = os.getenv("GARTH_DIR", ".garth")
+TOKEN_DIR = os.getenv("GARMIN_TOKENSTORE", ".garminconnect")
 START_DATE = os.getenv("START_DATE", "2023-01-01")
 # -------------------------------------
 
@@ -107,13 +106,8 @@ def main():
 
     # Login
     try:
-        garth.resume(TOKEN_DIR)
-        api = Garmin("dummy", "dummy")
-        api.garth = garth.client
-        try:
-            api.display_name = api.garth.profile["displayName"]
-        except Exception:
-            pass
+        api = Garmin(os.getenv("GARMIN_EMAIL"), os.getenv("GARMIN_PASSWORD"))
+        api.login(tokenstore=TOKEN_DIR)
     except Exception as e:
         print(f"Login failed: {e}")
         return

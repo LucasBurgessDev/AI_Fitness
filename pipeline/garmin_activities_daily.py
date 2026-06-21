@@ -5,7 +5,6 @@ import time
 from datetime import date, timedelta
 from typing import Any, Dict, Optional, Set, Tuple
 
-import garth
 from dotenv import load_dotenv
 from garminconnect import Garmin
 
@@ -39,7 +38,7 @@ else:
     print("WARNING: SAVE_PATH not set in .env. Using current folder.")
     CSV_FILE = "garmin_activities.csv"
 
-TOKEN_DIR = os.getenv("GARTH_DIR", ".garth")
+TOKEN_DIR = os.getenv("GARMIN_TOKENSTORE", ".garminconnect")
 
 LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "3"))
 DETAIL_SLEEP_S = float(os.getenv("DETAIL_SLEEP_S", "0.15"))
@@ -366,7 +365,7 @@ def get_cycling_ftp_from_settings(api: Garmin) -> Optional[float]:
     """
     Garmin settings first:
     - Prefer api.get_cycling_ftp() if available
-    - Else query biometric endpoint via garth.connectapi
+    - Else query biometric endpoint via api.connectapi
     """
     fn = getattr(api, "get_cycling_ftp", None)
     if callable(fn):
@@ -383,7 +382,7 @@ def get_cycling_ftp_from_settings(api: Garmin) -> Optional[float]:
             pass
 
     try:
-        data = garth.connectapi(
+        data = api.connectapi(
             "biometric-service/biometric/latestFunctionalThresholdPower/CYCLING",
             params={},
         )
@@ -416,7 +415,7 @@ def fetch_activity_detail(api: Garmin, activity_id: str) -> Dict[str, Any]:
             pass
 
     try:
-        summary = garth.connectapi(f"activity-service/activity/{activity_id}", params={})
+        summary = api.connectapi(f"activity-service/activity/{activity_id}", params={})
         if isinstance(summary, dict):
             if not result:
                 result = summary
@@ -905,9 +904,8 @@ def main() -> None:
 
     # Login using saved token session
     try:
-        garth.resume(TOKEN_DIR)
-        api = Garmin("dummy", "dummy")
-        api.garth = garth.client
+        api = Garmin(os.getenv("GARMIN_EMAIL"), os.getenv("GARMIN_PASSWORD"))
+        api.login(tokenstore=TOKEN_DIR)
     except Exception as e:
         print(f"Login Error: {e}")
         return

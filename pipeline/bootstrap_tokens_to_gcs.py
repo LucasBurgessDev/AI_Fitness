@@ -11,9 +11,9 @@ def main() -> None:
     if not gcs_uri:
         raise RuntimeError("Missing TOKEN_CACHE_GCS_URI, example: gs://my-bucket/garmin/token_cache.tar.gz")
 
-    garth_dir = Path(os.getenv("GARTH_DIR", ".garth")).resolve()
-    upload_token_cache(gcs_uri, garth_dir)
-    print(f"Uploaded {garth_dir} to {gcs_uri}")
+    tokenstore_dir = Path(os.getenv("GARMIN_TOKENSTORE", ".garminconnect")).resolve()
+    upload_token_cache(gcs_uri, tokenstore_dir)
+    print(f"Uploaded {tokenstore_dir} to {gcs_uri}")
 
 
 if __name__ == "__main__":

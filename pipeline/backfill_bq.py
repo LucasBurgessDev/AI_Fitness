@@ -74,7 +74,7 @@ def main() -> None:
 
         SAVE_PATH.mkdir(parents=True, exist_ok=True)
         garth_dir = download_token_cache(token_cache_uri, SAVE_PATH)
-        os.environ["GARTH_DIR"] = str(garth_dir)
+        os.environ["GARMIN_TOKENSTORE"] = str(garth_dir)
 
         LOGGER.info("Downloading CSVs from Drive folder %s", drive_folder_id)
         for fname in ("garmin_stats.csv", "garmin_activities.csv"):
