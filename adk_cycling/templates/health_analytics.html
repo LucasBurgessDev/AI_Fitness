@@ -665,6 +665,6 @@
     makeBar('act-elev', 'act-elev', history.map(w => w.elevation_m || 0), isDark() ? 'rgba(255,79,31,0.65)' : 'rgba(200,60,20,0.65)', 'm');
   }
 
-  document.addEventListener('DOMContentLoaded', () => loadData(30));
+  document.addEventListener('DOMContentLoaded', () => loadData(document.getElementById('days-select').value));
 </script>
 {% endblock %}
