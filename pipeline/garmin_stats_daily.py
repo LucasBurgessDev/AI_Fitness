@@ -203,16 +203,24 @@ def main():
         try:
             sleep_data = api.get_sleep_data(today)
             dto = get_safe(sleep_data, "dailySleepDTO") or {}
-            sleep_total = dto.get("sleepTimeSeconds")
             sleep_deep  = dto.get("deepSleepSeconds")
             sleep_rem   = dto.get("remSleepSeconds")
             sleep_light = dto.get("lightSleepSeconds")
-            sleep_awake = dto.get("awakeSleepSeconds") or dto.get("awakeSleepTime")
+            # sleepTimeSeconds is the awake-during-sleep time on newer Garmin firmware,
+            # so prefer totalSleepSeconds, then compute from stages, then fall back.
+            sleep_total_raw = (dto.get("totalSleepSeconds")
+                               or dto.get("totalSleepTime"))
+            if not sleep_total_raw:
+                stages = [s for s in [sleep_deep, sleep_rem, sleep_light] if s]
+                sleep_total_raw = sum(stages) if stages else None
+            sleep_awake = (dto.get("awakeSleepSeconds")
+                           or dto.get("awakeSleepTime")
+                           or dto.get("sleepTimeSeconds"))
             sleep_score = get_safe(sleep_data, "dailySleepDTO", "sleepScores", "overall", "value")
             if sleep_score is None:
                 sleep_score = dto.get("sleepScore") or dto.get("sleepQualityTypePK")
 
-            sleep_total = round(sleep_total / 3600, 2) if sleep_total else None
+            sleep_total = round(sleep_total_raw / 3600, 2) if sleep_total_raw else None
             sleep_deep  = round(sleep_deep  / 3600, 2) if sleep_deep  else None
             sleep_rem   = round(sleep_rem   / 3600, 2) if sleep_rem   else None
             sleep_light = round(sleep_light / 3600, 2) if sleep_light else None
@@ -255,9 +263,14 @@ def main():
                 h = api.connectapi(f"/hrv-service/hrv/daily/{today}")
             hrv_status = get_safe(h, "hrvSummary", "status")
             raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
-            # Plausibility guard: real HRV is 10–200ms; reject bogus values
-            if raw_hrv is not None and 10 <= float(raw_hrv) <= 200:
-                hrv_avg = raw_hrv
+            # Garmin API returns weeklyAverage in units of 0.01ms (i.e. ×100).
+            # Divide by 100 so the stored value is in milliseconds (e.g. 76.7ms).
+            if raw_hrv is not None:
+                v = float(raw_hrv)
+                if v > 200:
+                    v = round(v / 100, 1)
+                if 10 <= v <= 200:
+                    hrv_avg = v
         except Exception:
             pass
 

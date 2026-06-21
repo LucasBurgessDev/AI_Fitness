@@ -99,17 +99,25 @@ def main() -> None:
     # ------------------------------------------------------------------
     total = 0
 
+    force = os.getenv("FORCE_BQ", "").lower() in ("1", "true", "yes")
+
     if not stats_df.empty and "date" in stats_df.columns:
         dates = sorted(stats_df["date"].astype(str).dropna().unique().tolist())
-        LOGGER.info("Writing stats for %d dates (%s → %s)", len(dates), dates[0], dates[-1])
-        total += bigquery_writer.write_stats_range(stats_df, PROJECT_ID, dates, "backfill")
+        if force:
+            LOGGER.info("FORCE mode: writing all %d stats dates (ignoring BQ existing rows)", len(dates))
+        else:
+            LOGGER.info("Writing stats for %d dates (%s → %s)", len(dates), dates[0], dates[-1])
+        total += bigquery_writer.write_stats_range(stats_df, PROJECT_ID, dates, "backfill", force=force)
     else:
         LOGGER.warning("No stats data — skipping stats backfill")
 
     if not acts_df.empty and "date" in acts_df.columns:
         dates = sorted(acts_df["date"].astype(str).dropna().unique().tolist())
-        LOGGER.info("Writing activities for %d dates (%s → %s)", len(dates), dates[0], dates[-1])
-        total += bigquery_writer.write_activities_range(acts_df, PROJECT_ID, dates, "backfill")
+        if force:
+            LOGGER.info("FORCE mode: writing all %d activities dates (ignoring BQ existing rows)", len(dates))
+        else:
+            LOGGER.info("Writing activities for %d dates (%s → %s)", len(dates), dates[0], dates[-1])
+        total += bigquery_writer.write_activities_range(acts_df, PROJECT_ID, dates, "backfill", force=force)
     else:
         LOGGER.warning("No activities data — skipping activities backfill")
 

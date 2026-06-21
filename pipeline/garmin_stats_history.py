@@ -198,7 +198,14 @@ def main():
                 else:
                     h = api.connectapi(f"/hrv-service/hrv/daily/{day_str}")
                 hrv_s = get_safe(h, "hrvSummary", "status")
-                hrv_a = get_safe(h, "hrvSummary", "weeklyAverage")
+                raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
+                if raw_hrv is not None:
+                    v = float(raw_hrv)
+                    if v > 200:
+                        v = round(v / 100, 1)
+                    hrv_a = v if 10 <= v <= 200 else None
+                else:
+                    hrv_a = None
             except Exception:
                 pass
 

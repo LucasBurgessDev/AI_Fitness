@@ -269,8 +269,13 @@ def write_stats_range(
     project_id: str,
     dates: list[str],
     batch_id: str = "",
+    force: bool = False,
 ) -> int:
-    """Write stats rows for the given dates, skipping any already present in BQ."""
+    """Write stats rows for the given dates, skipping any already present in BQ.
+
+    Pass force=True to write all rows regardless of whether they already exist —
+    query-layer dedup (ORDER BY run_date DESC) will surface the freshest row.
+    """
     client = bigquery.Client(project=project_id)
     table_id = f"{project_id}.garmin.garmin_stats"
 
@@ -285,7 +290,7 @@ def write_stats_range(
         return 0
 
     # Skip rows already in BQ (dedup on date+timestamp to allow multiple rows per day)
-    if "timestamp" in out.columns:
+    if not force and "timestamp" in out.columns:
         existing = _existing_date_timestamps(client, table_id, dates)
         if existing:
             mask = (out["date"].astype(str) + "|" + out["timestamp"].astype(str)).isin(existing)
@@ -303,7 +308,9 @@ def write_stats_range(
         return 0
     out = out[~empty_mask]
 
-    out.insert(0, "run_date", out["date"].astype(str))
+    # Force mode uses today as run_date so fresh rows beat old backfill rows in dedup.
+    run_date_val = pd.Timestamp.today().strftime("%Y-%m-%d") if force else None
+    out.insert(0, "run_date", run_date_val if force else out["date"].astype(str))
     out.insert(1, "batch_id", batch_id)
 
     out = _coerce_int_cols(out, {"sleep_score", "rhr", "min_hr", "max_hr", "avg_stress",
@@ -343,8 +350,13 @@ def write_activities_range(
     project_id: str,
     dates: list[str],
     batch_id: str = "",
+    force: bool = False,
 ) -> int:
-    """Write activity rows for the given dates, skipping any activity_ids already in BQ."""
+    """Write activity rows for the given dates, skipping any activity_ids already in BQ.
+
+    Pass force=True to write all rows regardless — query-layer dedup (ORDER BY run_date DESC)
+    will surface the freshest row per activity.
+    """
     client = bigquery.Client(project=project_id)
     table_id = f"{project_id}.garmin.garmin_activities"
 
@@ -358,9 +370,12 @@ def write_activities_range(
         LOGGER.info("No activity rows in date range %s–%s", dates[-1], dates[0])
         return 0
 
-    # Skip activity_ids already in BQ
+    # Always coerce activity_id to string (BQ schema is STRING)
     if "activity_id" in out.columns:
         out["activity_id"] = out["activity_id"].astype(str)
+
+    # Skip activity_ids already in BQ
+    if not force:
         existing = _existing_activity_ids(client, table_id, dates)
         if existing:
             LOGGER.info("Activity IDs already in BQ (skipping): %d", len(existing))
@@ -369,7 +384,8 @@ def write_activities_range(
         LOGGER.info("All activities for range already in BQ")
         return 0
 
-    out.insert(0, "run_date", out["date"].astype(str))
+    run_date_val = pd.Timestamp.today().strftime("%Y-%m-%d") if force else None
+    out.insert(0, "run_date", run_date_val if force else out["date"].astype(str))
     out.insert(1, "batch_id", batch_id)
 
     if "avg_pace_min_mile" in out.columns:
