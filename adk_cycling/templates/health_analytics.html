@@ -107,7 +107,7 @@
 
   @media (max-width: 900px) {
     .stat-grid { grid-template-columns: repeat(2, 1fr); }
-    .chart-grid { grid-template-columns: 1fr; }
+    .chart-grid { grid-template-columns: 1fr !important; }
     .chart-card.full-width { grid-column: 1; }
   }
   @media (max-width: 480px) {
@@ -173,8 +173,8 @@
 
   <div style="margin-top:1.75rem">
     <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Mood &amp; Check-ins</div>
-    <div class="chart-grid" style="grid-template-columns:repeat(2,1fr)">
-      <div class="chart-card full-width">
+    <div class="chart-grid" style="grid-template-columns:2fr 1fr">
+      <div class="chart-card">
         <div class="chart-title">Daily Mood (1–5)</div>
         <div class="chart-wrap"><div class="loading-state" id="load-mood"><div class="spinner"></div> Loading…</div><canvas id="chart-mood"></canvas></div>
       </div>

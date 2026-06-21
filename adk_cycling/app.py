@@ -937,9 +937,12 @@ async def api_goals_analytics(request: Request):
     cal_week_sql = f"""
     SELECT
       (SELECT COALESCE(SUM(cals_total), 0)
-       FROM `{PROJECT_ID}.garmin.garmin_stats`
-       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
-       QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+       FROM (
+         SELECT cals_total
+         FROM `{PROJECT_ID}.garmin.garmin_stats`
+         WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+         QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+       )
       ) AS total_burned,
       (SELECT COALESCE(SUM(calories_eaten), 0)
        FROM `{PROJECT_ID}.garmin.calorie_entries`
