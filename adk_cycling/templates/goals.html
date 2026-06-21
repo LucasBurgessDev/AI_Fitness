@@ -8,7 +8,12 @@
 {% block page_style %}
 <style>
   .page-main { flex: 1; padding: 1.5rem; max-width: 960px; margin: 0 auto; width: 100%; }
-  .page-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1.5rem; }
+
+  /* ── Header row ── */
+  .page-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .page-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; }
+  .week-range-label { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+  .week-range-label strong { color: var(--accent); font-weight: 600; }
 
   /* ── KPI grid ── */
   .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 1.75rem; }
@@ -42,11 +47,28 @@
   .week-bar {
     background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
     box-shadow: var(--shadow); padding: 0.9rem 1.1rem; margin-bottom: 1.5rem;
-    display: flex; flex-wrap: wrap; gap: 1.25rem 2rem; align-items: center;
+    display: flex; flex-wrap: wrap; gap: 1.1rem 2rem; align-items: flex-start;
   }
-  .week-bar-item { display: flex; flex-direction: column; }
+  .week-bar-item { display: flex; flex-direction: column; gap: 0.15rem; }
   .week-bar-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+  .week-bar-val-row { display: flex; align-items: baseline; gap: 0.4rem; }
   .week-bar-val { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .trend-pill { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 20px; line-height: 1.4; }
+  .trend-up   { background: rgba(0,224,155,0.12); color: var(--green); }
+  .trend-down { background: rgba(255,79,31,0.10);  color: var(--watts); }
+  .trend-flat { background: rgba(107,122,153,0.10); color: var(--text-muted); }
+
+  /* ── Calorie strip ── */
+  .cal-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 1.5rem; }
+  .cal-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 0.9rem 1rem;
+  }
+  .cal-card-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.35rem; }
+  .cal-card-val { font-family: 'JetBrains Mono', monospace; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+  .cal-card-sub { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.2rem; }
+  .cal-surplus { color: var(--watts); }
+  .cal-deficit { color: var(--green); }
 
   /* ── Activities table ── */
   .table-card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-md); overflow: hidden; }
@@ -70,19 +92,30 @@
   .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  @media (max-width: 480px) { .page-main { padding: 1rem; } .kpi-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 480px) {
+    .page-main { padding: 1rem; }
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .cal-strip { grid-template-columns: 1fr 1fr 1fr; }
+    .cal-card-val { font-size: 1.1rem; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="page-main">
-  <div class="page-title">My Goals</div>
+  <div class="page-header">
+    <div class="page-title">My Goals</div>
+    <div class="week-range-label" id="week-range">Loading…</div>
+  </div>
 
   <div id="loading" class="loading-state"><div class="spinner"></div> Loading your data…</div>
 
   <div id="content" style="display:none">
-    <!-- Week summary -->
+    <!-- Week summary bar -->
     <div class="week-bar" id="week-bar"></div>
+
+    <!-- Calorie summary -->
+    <div class="cal-strip" id="cal-strip" style="display:none"></div>
 
     <!-- KPI rings -->
     <div class="kpi-grid" id="kpi-grid"></div>
@@ -117,25 +150,103 @@
   function fmtDur(s) { if (!s) return '—'; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; }
   function fmtDist(m) { return m==null?'—':(m/1000).toFixed(1)+' km'; }
 
+  function fmtWeekRange(startIso, endIso) {
+    const s = new Date(startIso + 'T00:00:00');
+    const e = new Date(endIso + 'T00:00:00');
+    const sStr = s.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+    const eStr = e.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+    return `${sStr} – ${eStr}`;
+  }
+
   function ringColor(pct) {
     if (pct >= 90) return cssVar('--green');
     if (pct >= 60) return cssVar('--amber');
     return cssVar('--accent');
   }
 
+  // weekly_hours intentionally excluded — user prefers not to show as KPI ring
   const KPI_META = {
-    weekly_cycling_km:   { label: 'Cycling', unit: 'km', decimals: 1 },
-    weekly_running_km:   { label: 'Running', unit: 'km', decimals: 1 },
-    weekly_hours:        { label: 'Active Hours', unit: 'hrs', decimals: 1 },
+    weekly_cycling_km:   { label: 'Cycling',    unit: 'km', decimals: 1 },
+    weekly_running_km:   { label: 'Running',    unit: 'km', decimals: 1 },
     weekly_active_days:  { label: 'Active Days', unit: 'days', decimals: 0 },
-    target_weight_kg:    { label: 'Weight', unit: 'kg', decimals: 1, isTarget: true },
-    target_body_fat_pct: { label: 'Body Fat', unit: '%', decimals: 1, isTarget: true },
+    target_weight_kg:    { label: 'Weight',     unit: 'kg', decimals: 1, isTarget: true },
+    target_body_fat_pct: { label: 'Body Fat',   unit: '%',  decimals: 1, isTarget: true },
   };
+
+  function trendPill(current, prev) {
+    if (prev == null || prev === 0) return '';
+    const delta = ((current - prev) / prev) * 100;
+    if (delta > 5)  return `<span class="trend-pill trend-up">↑ ${Math.round(delta)}%</span>`;
+    if (delta < -5) return `<span class="trend-pill trend-down">↓ ${Math.abs(Math.round(delta))}%</span>`;
+    return `<span class="trend-pill trend-flat">→</span>`;
+  }
+
+  function renderWeekBar(actuals, prev, weightLatest, weekStart, weekEnd) {
+    const bar = document.getElementById('week-bar');
+
+    // Set week range label
+    if (weekStart && weekEnd) {
+      const el = document.getElementById('week-range');
+      el.innerHTML = `Week: <strong>${fmtWeekRange(weekStart, weekEnd)}</strong>`;
+    }
+
+    const items = [
+      { label: 'Cycling', val: (actuals.cycling_km || 0).toFixed(1) + ' km', trend: trendPill(actuals.cycling_km, prev.cycling_km) },
+      { label: 'Running', val: (actuals.running_km || 0).toFixed(1) + ' km', trend: trendPill(actuals.running_km, prev.running_km) },
+      { label: 'Active Hours', val: (actuals.hours || 0).toFixed(1) + ' hrs', trend: trendPill(actuals.hours, prev.hours) },
+      { label: 'Active Days', val: String(actuals.active_days || 0), trend: trendPill(actuals.active_days, prev.active_days) },
+      { label: 'Elevation', val: (actuals.elevation_m || 0).toLocaleString() + ' m', trend: trendPill(actuals.elevation_m, prev.elevation_m) },
+    ];
+    if (weightLatest && weightLatest.weight_kg != null) {
+      items.push({ label: 'Weight', val: weightLatest.weight_kg.toFixed(1) + ' kg', trend: '' });
+    }
+    if (weightLatest && weightLatest.body_fat_pct != null) {
+      items.push({ label: 'Body Fat', val: weightLatest.body_fat_pct.toFixed(1) + '%', trend: '' });
+    }
+    bar.innerHTML = items.map(i => `
+      <div class="week-bar-item">
+        <div class="week-bar-label">${i.label}</div>
+        <div class="week-bar-val-row">
+          <div class="week-bar-val">${i.val}</div>
+          ${i.trend}
+        </div>
+      </div>`).join('');
+  }
+
+  function renderCalorieStrip(cal) {
+    const strip = document.getElementById('cal-strip');
+    if (!cal) { strip.style.display = 'none'; return; }
+    strip.style.display = '';
+
+    const netVal = cal.net;
+    const netClass = netVal == null ? '' : netVal > 0 ? 'cal-deficit' : 'cal-surplus';
+    const netSign = netVal == null ? '' : netVal > 0 ? '+' : '';
+    const netLabel = netVal == null ? 'no food data yet'
+      : netVal > 0 ? 'deficit — on track'
+      : 'surplus — over eaten';
+
+    strip.innerHTML = `
+      <div class="cal-card">
+        <div class="cal-card-label">Burned (Garmin)</div>
+        <div class="cal-card-val" style="color:var(--amber)">${cal.total_burned ? cal.total_burned.toLocaleString() : '—'}</div>
+        <div class="cal-card-sub">kcal this week</div>
+      </div>
+      <div class="cal-card">
+        <div class="cal-card-label">Eaten (tracked)</div>
+        <div class="cal-card-val" style="color:var(--accent)">${cal.total_eaten ? cal.total_eaten.toLocaleString() : '—'}</div>
+        <div class="cal-card-sub">kcal logged</div>
+      </div>
+      <div class="cal-card">
+        <div class="cal-card-label">Net</div>
+        <div class="cal-card-val ${netClass}">${netVal != null ? netSign + Math.abs(netVal).toLocaleString() : '—'}</div>
+        <div class="cal-card-sub">${netLabel}</div>
+      </div>`;
+  }
 
   function renderRings(kpis, actuals, weightLatest, history) {
     const grid = document.getElementById('kpi-grid');
     const enabledKeys = Object.entries(kpis || {})
-      .filter(([, v]) => v.enabled)
+      .filter(([k, v]) => v.enabled && KPI_META[k])
       .map(([k]) => k);
 
     document.getElementById('empty-kpis').style.display = enabledKeys.length === 0 ? '' : 'none';
@@ -143,14 +254,14 @@
 
     enabledKeys.forEach(key => {
       const cfg = kpis[key];
-      const meta = KPI_META[key] || { label: key, unit: '', decimals: 1 };
+      const meta = KPI_META[key];
+      if (!meta) return;
       const target = cfg.target;
 
       const ACTUALS_KEY = {
         weekly_cycling_km: 'cycling_km',
         weekly_running_km: 'running_km',
-        weekly_hours:      'hours',
-        weekly_active_days:'active_days',
+        weekly_active_days: 'active_days',
       };
       let actual = null;
       if (key === 'target_weight_kg' && weightLatest) {
@@ -164,9 +275,6 @@
       let pct = 0;
       if (target > 0) {
         if (meta.isTarget) {
-          // For targets like weight, "100%" means you've reached the goal
-          // Closer to target = better. We'll show how far along you are.
-          // pct = 100 if actual <= target (reached), else proportional
           pct = actual != null ? Math.min(100, Math.round((target / actual) * 100)) : 0;
         } else {
           pct = Math.min(100, Math.round((actual / target) * 100));
@@ -178,7 +286,6 @@
       const hist = (history || []).map(w => {
         if (key === 'weekly_cycling_km') return w.cycling_km || 0;
         if (key === 'weekly_running_km') return w.running_km || 0;
-        if (key === 'weekly_hours') return w.hours || 0;
         if (key === 'weekly_active_days') return w.active_days || 0;
         return 0;
       });
@@ -227,27 +334,6 @@
     });
   }
 
-  function renderWeekBar(actuals, weightLatest) {
-    const bar = document.getElementById('week-bar');
-    const items = [
-      { label: 'Cycling', val: actuals.cycling_km != null ? actuals.cycling_km.toFixed(1) + ' km' : '—' },
-      { label: 'Running', val: actuals.running_km != null ? actuals.running_km.toFixed(1) + ' km' : '—' },
-      { label: 'Active Hours', val: actuals.hours != null ? actuals.hours.toFixed(1) + ' hrs' : '—' },
-      { label: 'Active Days', val: actuals.active_days != null ? actuals.active_days : '—' },
-    ];
-    if (weightLatest && weightLatest.weight_kg != null) {
-      items.push({ label: 'Weight', val: weightLatest.weight_kg.toFixed(1) + ' kg' });
-    }
-    if (weightLatest && weightLatest.body_fat_pct != null) {
-      items.push({ label: 'Body Fat', val: weightLatest.body_fat_pct.toFixed(1) + '%' });
-    }
-    bar.innerHTML = items.map(i => `
-      <div class="week-bar-item">
-        <div class="week-bar-label">${i.label}</div>
-        <div class="week-bar-val">${i.val}</div>
-      </div>`).join('');
-  }
-
   function actBadge(type) {
     if (['virtual_ride','indoor_cycling','road_cycling','gravel_cycling','cycling','spinning','mountain_biking'].includes(type))
       return `<span class="badge badge-cycling">${type.replace(/_/g,' ')}</span>`;
@@ -276,7 +362,8 @@
 
   function renderAll(data) {
     _data = data;
-    renderWeekBar(data.actuals, data.weight_latest);
+    renderWeekBar(data.actuals, data.prev_week || {}, data.weight_latest, data.week_start, data.week_end);
+    renderCalorieStrip(data.calories_week);
     renderRings(data.kpis, data.actuals, data.weight_latest, data.history);
     renderActivities(data.this_week_activities);
     document.getElementById('loading').style.display = 'none';

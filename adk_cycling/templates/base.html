@@ -223,9 +223,14 @@
       font-size: 1.35rem;
       line-height: 1.1;
       display: block;
-      transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+      color: rgba(255,255,255,0.6);
+      transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), color 0.18s;
     }
-    .bottom-nav a.active .bn-icon { transform: scale(1.12); }
+    .bottom-nav a.active .bn-icon { transform: scale(1.12); color: #fff; }
+    .bottom-nav a:hover .bn-icon { color: rgba(255,255,255,0.9); }
+    [data-theme="light"] .bottom-nav a .bn-icon { color: var(--text-muted); }
+    [data-theme="light"] .bottom-nav a.active .bn-icon { color: var(--accent); }
+    [data-theme="light"] .bottom-nav a:hover .bn-icon { color: var(--text); }
     .bottom-nav a:hover { color: var(--text); }
     .bottom-nav a.active { color: var(--accent); background: transparent; }
     .bottom-nav-spacer { display: none; }

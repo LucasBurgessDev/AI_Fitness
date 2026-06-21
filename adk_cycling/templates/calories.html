@@ -2,7 +2,7 @@
 {% block title %}Calories · Health Coach{% endblock %}
 
 {% block head_extra %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="/static/chart.min.js"></script>
 {% endblock %}
 
 {% block page_style %}
@@ -203,7 +203,7 @@
   function isDark() { return document.documentElement.getAttribute('data-theme') !== 'light'; }
   function fmtDate(d) { return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}); }
   function fmtShort(d) { return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric',month:'short'}); }
-  function toISODate(d) { return d.toISOString().slice(0,10); }
+  function toISODate(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
 
   function today() { return toISODate(new Date()); }
 

@@ -146,10 +146,6 @@
       <div class="chart-wrap"><div class="loading-state" id="load-weight"><div class="spinner"></div> Loading…</div><canvas id="chart-weight"></canvas></div>
     </div>
     <div class="chart-card">
-      <div class="chart-title">Body Composition</div>
-      <div class="chart-wrap"><div class="loading-state" id="load-comp"><div class="spinner"></div> Loading…</div><canvas id="chart-comp"></canvas></div>
-    </div>
-    <div class="chart-card">
       <div class="chart-title">Sleep</div>
       <div class="chart-wrap"><div class="loading-state" id="load-sleep"><div class="spinner"></div> Loading…</div><canvas id="chart-sleep"></canvas></div>
     </div>
@@ -185,6 +181,32 @@
       <div class="chart-card" id="mood-summary-card" style="display:flex;flex-direction:column;gap:0.75rem">
         <div class="chart-title">Check-in Summary</div>
         <div id="mood-summary-inner" style="color:var(--text-muted);font-size:0.82rem">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:1.75rem">
+    <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Activity Performance (12 weeks)</div>
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Weekly Cycling Distance</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-act-cycling"><div class="spinner"></div></div><canvas id="chart-act-cycling"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Weekly Running Distance</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-act-running"><div class="spinner"></div></div><canvas id="chart-act-running"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Active Hours per Week</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-act-hours"><div class="spinner"></div></div><canvas id="chart-act-hours"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Activities per Week</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-act-count"><div class="spinner"></div></div><canvas id="chart-act-count"></canvas></div>
+      </div>
+      <div class="chart-card full-width">
+        <div class="chart-title">Elevation Gain per Week</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-act-elev"><div class="spinner"></div></div><canvas id="chart-act-elev"></canvas></div>
       </div>
     </div>
   </div>
@@ -344,33 +366,6 @@
         ...def,
         plugins: { ...def.plugins, legend: { labels: { ...def.plugins.legend.labels, boxWidth: 10, padding: 10 } } },
         scales: { ...def.scales, y: { ...def.scales.y, title: { display: true, text: 'kg', color: cssVar('--text-muted'), font: { size: 10 } } } },
-      },
-    });
-  }
-
-  function renderComp(d) {
-    hideLoader('comp');
-    const hasFat = (d.body_fat_pct || []).some(v => v != null);
-    const hasMuscle = (d.muscle_mass_kg || []).some(v => v != null);
-    if (!hasFat && !hasMuscle) {
-      document.querySelector('#chart-comp').parentElement.innerHTML =
-        '<div class="no-data">📊 No body composition data<br><span style="font-size:0.75rem;display:block;margin-top:0.35rem">Sync a compatible scale via Garmin Connect</span></div>';
-      return;
-    }
-    const def = chartDefaults();
-    const datasets = [];
-    if (hasFat) datasets.push({ label: 'Body Fat %', data: d.body_fat_pct, borderColor: cssVar('--watts'), backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y' });
-    if (hasMuscle) datasets.push({ label: 'Muscle Mass (kg)', data: d.muscle_mass_kg, borderColor: cssVar('--green'), backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y2' });
-    makeChart('chart-comp', {
-      type: 'line',
-      data: { labels: d.dates, datasets },
-      options: {
-        ...def,
-        scales: {
-          x: def.scales.x,
-          y: { ...def.scales.y, position: 'left', title: { display: hasFat, text: 'Fat %', color: cssVar('--watts'), font: { size: 10 } } },
-          y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: hasMuscle, text: 'Muscle kg', color: cssVar('--green'), font: { size: 10 } } },
-        },
       },
     });
   }
@@ -591,16 +586,16 @@
       renderAll(data);
     } catch (err) {
       console.error('Health analytics error:', err);
-      ['weight','comp','sleep','hrv','bb','stress','vo2','steps'].forEach(id => showError(id, err.message));
+      ['weight','sleep','hrv','bb','stress','vo2','steps'].forEach(id => showError(id, err.message));
     }
     loadCheckinData(days);
+    loadActivityTrends();
   }
 
   function renderAll(data) {
     updateStatCards(data.latest || {});
     updateTrends(data);
     renderWeight(data);
-    renderComp(data);
     renderSleep(data);
     renderHrv(data);
     renderBb(data);
@@ -613,12 +608,60 @@
 
   function reload() {
     const days = document.getElementById('days-select').value;
-    ['weight','comp','sleep','hrv','bb','stress','vo2','steps','mood'].forEach(id => {
+    ['weight','sleep','hrv','bb','stress','vo2','steps','mood'].forEach(id => {
       const el = document.getElementById('load-' + id);
       if (el) { el.style.display = 'flex'; }
       if (charts['chart-' + id]) { charts['chart-' + id].destroy(); delete charts['chart-' + id]; }
     });
     loadData(days);
+  }
+
+  async function loadActivityTrends() {
+    try {
+      const res = await fetch('/api/analytics/goals');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error || !data.history) throw new Error(data.error || 'No history');
+      renderActivityTrends(data.history);
+    } catch (err) {
+      ['cycling','running','hours','count','elev'].forEach(k => {
+        const el = document.getElementById('load-act-' + k);
+        if (el) el.innerHTML = `<span style="color:var(--text-muted);font-size:0.8rem">No data</span>`;
+      });
+    }
+  }
+
+  function shortWeek(isoDate) {
+    const d = new Date(isoDate + 'T00:00:00');
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+
+  function renderActivityTrends(history) {
+    if (!history || !history.length) return;
+    const labels = history.map(w => shortWeek(w.week_start));
+    const def = chartDefaults();
+
+    const barOpts = (yLabel) => ({
+      ...def,
+      plugins: { ...def.plugins, legend: { display: false } },
+      scales: { ...def.scales, y: { ...def.scales.y, beginAtZero: true, title: { display: true, text: yLabel, color: cssVar('--text-muted'), font: { size: 10 } } } },
+    });
+
+    const makeBar = (id, loadId, vals, color, yLabel) => {
+      const el = document.getElementById('load-' + loadId);
+      if (el) el.style.display = 'none';
+      makeChart('chart-' + id, {
+        type: 'bar',
+        data: { labels, datasets: [{ data: vals, backgroundColor: color, barPercentage: 0.75, borderRadius: 3 }] },
+        options: barOpts(yLabel),
+      });
+    };
+
+    makeBar('act-cycling', 'act-cycling', history.map(w => w.cycling_km || 0), isDark() ? 'rgba(0,200,255,0.65)' : 'rgba(0,127,168,0.65)', 'km');
+    makeBar('act-running', 'act-running', history.map(w => w.running_km || 0), isDark() ? 'rgba(0,224,155,0.65)' : 'rgba(0,180,120,0.65)', 'km');
+    makeBar('act-hours', 'act-hours', history.map(w => w.hours || 0), isDark() ? 'rgba(155,109,255,0.65)' : 'rgba(120,80,200,0.65)', 'hrs');
+    makeBar('act-count', 'act-count', history.map(w => w.activity_count || 0), isDark() ? 'rgba(255,184,48,0.65)' : 'rgba(200,140,0,0.65)', 'sessions');
+    makeBar('act-elev', 'act-elev', history.map(w => w.elevation_m || 0), isDark() ? 'rgba(255,79,31,0.65)' : 'rgba(200,60,20,0.65)', 'm');
   }
 
   document.addEventListener('DOMContentLoaded', () => loadData(180));

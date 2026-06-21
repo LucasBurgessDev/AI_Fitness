@@ -861,6 +861,7 @@ async def api_training_analytics(request: Request, days: int = 180):
 async def api_goals_analytics(request: Request):
     _require_session(request)
     from google.cloud import bigquery
+    from datetime import date, timedelta
 
     client = bigquery.Client(project=PROJECT_ID)
     p = profile_store.load()
@@ -871,7 +872,7 @@ async def api_goals_analytics(request: Request):
 
     actuals_sql = f"""
     WITH deduped AS (
-      SELECT date, activity_type, distance_m, duration_s
+      SELECT date, activity_type, distance_m, duration_s, elevation_gain_m
       FROM `{PROJECT_ID}.garmin.garmin_activities`
       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
       QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
@@ -880,13 +881,33 @@ async def api_goals_analytics(request: Request):
       COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS cycling_km,
       COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS running_km,
       COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
-      COUNT(DISTINCT date) AS active_days
+      COUNT(DISTINCT date) AS active_days,
+      COALESCE(SUM(elevation_gain_m), 0) AS elevation_m,
+      COUNT(*) AS activity_count
+    FROM deduped
+    """
+
+    prev_week_sql = f"""
+    WITH deduped AS (
+      SELECT date, activity_type, distance_m, duration_s, elevation_gain_m
+      FROM `{PROJECT_ID}.garmin.garmin_activities`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 WEEK), WEEK(MONDAY)))
+        AND date < FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    )
+    SELECT
+      COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS cycling_km,
+      COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS running_km,
+      COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
+      COUNT(DISTINCT date) AS active_days,
+      COALESCE(SUM(elevation_gain_m), 0) AS elevation_m,
+      COUNT(*) AS activity_count
     FROM deduped
     """
 
     history_sql = f"""
     WITH deduped AS (
-      SELECT date, activity_type, distance_m, duration_s
+      SELECT date, activity_type, distance_m, duration_s, elevation_gain_m
       FROM `{PROJECT_ID}.garmin.garmin_activities`
       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 12 WEEK))
       QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
@@ -896,7 +917,9 @@ async def api_goals_analytics(request: Request):
       COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS cycling_km,
       COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN distance_m ELSE 0 END), 0) / 1000.0 AS running_km,
       COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
-      COUNT(DISTINCT date) AS active_days
+      COUNT(DISTINCT date) AS active_days,
+      COALESCE(SUM(elevation_gain_m), 0) AS elevation_m,
+      COUNT(*) AS activity_count
     FROM deduped
     GROUP BY week_start
     ORDER BY week_start
@@ -909,6 +932,19 @@ async def api_goals_analytics(request: Request):
     QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
     ORDER BY date DESC
     LIMIT 1
+    """
+
+    cal_week_sql = f"""
+    SELECT
+      (SELECT COALESCE(SUM(cals_total), 0)
+       FROM `{PROJECT_ID}.garmin.garmin_stats`
+       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+       QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+      ) AS total_burned,
+      (SELECT COALESCE(SUM(calories_eaten), 0)
+       FROM `{PROJECT_ID}.garmin.calorie_entries`
+       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+      ) AS total_eaten
     """
 
     this_week_sql = f"""
@@ -925,23 +961,37 @@ async def api_goals_analytics(request: Request):
 
     try:
         actuals_rows = list(client.query(actuals_sql).result())
+        prev_week_rows = list(client.query(prev_week_sql).result())
         history_rows = list(client.query(history_sql).result())
         weight_rows = list(client.query(weight_sql).result())
+        cal_week_rows = list(client.query(cal_week_sql).result())
         week_act_rows = list(client.query(this_week_sql).result())
     except Exception as exc:
         LOGGER.exception("Goals analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
 
     _LBS_TO_KG = 1 / 2.20462
-    actuals = {}
-    if actuals_rows:
-        r = actuals_rows[0]
-        actuals = {
+
+    today_date = date.today()
+    wday = today_date.weekday()
+    week_start_date = today_date - timedelta(days=wday)
+    week_end_date = week_start_date + timedelta(days=6)
+
+    def _parse_actuals(rows):
+        if not rows:
+            return {"cycling_km": 0, "running_km": 0, "hours": 0, "active_days": 0, "elevation_m": 0, "activity_count": 0}
+        r = rows[0]
+        return {
             "cycling_km": round(float(r["cycling_km"]), 1),
             "running_km": round(float(r["running_km"]), 1),
             "hours": round(float(r["hours"]), 1),
             "active_days": int(r["active_days"]),
+            "elevation_m": int(round(float(r["elevation_m"]))),
+            "activity_count": int(r["activity_count"]),
         }
+
+    actuals = _parse_actuals(actuals_rows)
+    prev_week = _parse_actuals(prev_week_rows)
 
     weight_latest = None
     if weight_rows:
@@ -952,6 +1002,17 @@ async def api_goals_analytics(request: Request):
             "date": str(r["date"]),
         }
 
+    calories_week = None
+    if cal_week_rows:
+        r = cal_week_rows[0]
+        total_burned = int(r["total_burned"]) if r["total_burned"] else 0
+        total_eaten = int(r["total_eaten"]) if r["total_eaten"] else 0
+        calories_week = {
+            "total_burned": total_burned,
+            "total_eaten": total_eaten,
+            "net": total_burned - total_eaten if total_burned and total_eaten else None,
+        }
+
     history = [
         {
             "week_start": str(r["week_start"]),
@@ -959,6 +1020,8 @@ async def api_goals_analytics(request: Request):
             "running_km": round(float(r["running_km"]), 1),
             "hours": round(float(r["hours"]), 1),
             "active_days": int(r["active_days"]),
+            "elevation_m": int(round(float(r["elevation_m"]))),
+            "activity_count": int(r["activity_count"]),
         }
         for r in history_rows
     ]
@@ -978,9 +1041,13 @@ async def api_goals_analytics(request: Request):
     return JSONResponse({
         "kpis": kpis,
         "actuals": actuals,
+        "prev_week": prev_week,
         "weight_latest": weight_latest,
+        "calories_week": calories_week,
         "history": history,
         "this_week_activities": this_week_activities,
+        "week_start": week_start_date.isoformat(),
+        "week_end": week_end_date.isoformat(),
     })
 
 
