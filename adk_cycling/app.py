@@ -481,6 +481,8 @@ async def api_checkin_morning(request: Request):
         row["notes"], row["priority"], row["fill_in_blank"],
         "", sub_id,
     ])
+    import bq_cache
+    bq_cache.clear()
     return JSONResponse({"ok": True, "submission_id": sub_id})
 
 
@@ -518,6 +520,8 @@ async def api_checkin_evening(request: Request):
         row["notes"], row["gratitude"], row["chocolate"],
         "", sub_id,
     ])
+    import bq_cache
+    bq_cache.clear()
     return JSONResponse({"ok": True, "submission_id": sub_id})
 
 
@@ -630,6 +634,8 @@ async def api_calories_entry(request: Request):
         LOGGER.exception("Calories entry BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
 
+    import bq_cache
+    bq_cache.clear()
     return JSONResponse({"ok": True, "date": date_str, "calories_eaten": calories_eaten})
 
 
@@ -652,7 +658,8 @@ async def api_health_analytics(request: Request, days: int = 180):
     ORDER BY date
     """
     try:
-        rows = list(client.query(sql).result())
+        import bq_cache
+        rows = bq_cache.query(client, sql)
     except Exception as exc:
         LOGGER.exception("Health analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -733,7 +740,8 @@ async def api_checkin_analytics(request: Request, days: int = 180):
     ORDER BY date
     """
     try:
-        rows = list(client.query(sql).result())
+        import bq_cache
+        rows = bq_cache.query(client, sql)
     except Exception as exc:
         LOGGER.exception("Checkin analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -774,8 +782,9 @@ async def api_training_analytics(request: Request, days: int = 180):
     ORDER BY date
     """
     try:
-        stats_rows = list(client.query(stats_sql).result())
-        act_rows = list(client.query(acts_sql).result())
+        import bq_cache
+        stats_rows = bq_cache.query(client, stats_sql)
+        act_rows = bq_cache.query(client, acts_sql)
     except Exception as exc:
         LOGGER.exception("Training analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -830,8 +839,9 @@ async def api_training_analytics(request: Request, days: int = 180):
         if r["ftp_watts"] is not None:
             ftp_by_date[d_str] = float(r["ftp_watts"])
 
-        d_obj = r["date"]
-        week_start = str(d_obj - timedelta(days=d_obj.weekday())) if hasattr(d_obj, "weekday") else d_str[:10]
+        from datetime import date as _date
+        d_parsed = _date.fromisoformat(d_str[:10])
+        week_start = str(d_parsed - timedelta(days=d_parsed.weekday()))
         if week_start not in weekly:
             weekly[week_start] = {"week_start": week_start, "tss": 0.0, "hours": 0.0, "count": 0}
         weekly[week_start]["tss"] += float(r["tss"]) if r["tss"] is not None else 0.0
@@ -963,12 +973,19 @@ async def api_goals_analytics(request: Request):
     """
 
     try:
-        actuals_rows = list(client.query(actuals_sql).result())
-        prev_week_rows = list(client.query(prev_week_sql).result())
-        history_rows = list(client.query(history_sql).result())
-        weight_rows = list(client.query(weight_sql).result())
-        cal_week_rows = list(client.query(cal_week_sql).result())
-        week_act_rows = list(client.query(this_week_sql).result())
+        import asyncio
+        import bq_cache
+        (
+            actuals_rows, prev_week_rows, history_rows,
+            weight_rows, cal_week_rows, week_act_rows,
+        ) = await asyncio.gather(
+            asyncio.to_thread(bq_cache.query, client, actuals_sql),
+            asyncio.to_thread(bq_cache.query, client, prev_week_sql),
+            asyncio.to_thread(bq_cache.query, client, history_sql),
+            asyncio.to_thread(bq_cache.query, client, weight_sql),
+            asyncio.to_thread(bq_cache.query, client, cal_week_sql),
+            asyncio.to_thread(bq_cache.query, client, this_week_sql),
+        )
     except Exception as exc:
         LOGGER.exception("Goals analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)

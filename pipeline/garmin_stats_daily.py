@@ -1,4 +1,5 @@
 from garminconnect import Garmin
+from concurrent.futures import ThreadPoolExecutor, Future
 from datetime import date, datetime
 import csv
 import os
@@ -99,6 +100,232 @@ def build_activity_str(api, day_str, flt):
     return out
 
 
+def _fetch_sleep(api, today):
+    try:
+        sleep_data = api.get_sleep_data(today)
+        dto = get_safe(sleep_data, "dailySleepDTO") or {}
+        sleep_deep  = dto.get("deepSleepSeconds")
+        sleep_rem   = dto.get("remSleepSeconds")
+        sleep_light = dto.get("lightSleepSeconds")
+        sleep_total_raw = dto.get("totalSleepSeconds") or dto.get("totalSleepTime")
+        if not sleep_total_raw:
+            stages = [s for s in [sleep_deep, sleep_rem, sleep_light] if s]
+            sleep_total_raw = sum(stages) if stages else None
+        sleep_awake = (dto.get("awakeSleepSeconds") or dto.get("awakeSleepTime")
+                       or dto.get("sleepTimeSeconds"))
+        sleep_score = get_safe(sleep_data, "dailySleepDTO", "sleepScores", "overall", "value")
+        if sleep_score is None:
+            sleep_score = dto.get("sleepScore") or dto.get("sleepQualityTypePK")
+        return {
+            "sleep_total": round(sleep_total_raw / 3600, 2) if sleep_total_raw else None,
+            "sleep_deep":  round(sleep_deep  / 3600, 2) if sleep_deep  else None,
+            "sleep_rem":   round(sleep_rem   / 3600, 2) if sleep_rem   else None,
+            "sleep_light": round(sleep_light / 3600, 2) if sleep_light else None,
+            "sleep_awake": round(sleep_awake / 3600, 2) if sleep_awake else None,
+            "sleep_score": sleep_score,
+        }
+    except Exception:
+        return {}
+
+
+def _fetch_training_status(api, today):
+    try:
+        if hasattr(api, "get_training_status"):
+            t_status = api.get_training_status(today)
+            return {"training_status": get_safe(t_status, "mostRecentTerminatedTrainingStatus", "status")}
+    except Exception:
+        pass
+    return {}
+
+
+def _fetch_body_comp(api, today):
+    try:
+        body_comp = api.get_body_composition(today)
+        if body_comp and "totalAverage" in body_comp:
+            avg = body_comp["totalAverage"]
+            w_g = avg.get("weight")
+            m_g = avg.get("muscleMass")
+            return {
+                "weight":      round(w_g / 453.592, 1) if w_g else None,
+                "muscle_mass": round(m_g / 453.592, 1) if m_g else None,
+                "fat_pct":     avg.get("bodyFat"),
+                "water_pct":   avg.get("bodyWater"),
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def _fetch_hrv(api, today):
+    try:
+        if hasattr(api, "get_hrv_data"):
+            h = api.get_hrv_data(today)
+        else:
+            h = api.connectapi(f"/hrv-service/hrv/daily/{today}")
+        hrv_status = get_safe(h, "hrvSummary", "status")
+        raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
+        hrv_avg = None
+        if raw_hrv is not None:
+            v = float(raw_hrv)
+            if v > 200:
+                v = round(v / 100, 1)
+            if 10 <= v <= 200:
+                hrv_avg = v
+        return {"hrv_status": hrv_status, "hrv_avg": hrv_avg}
+    except Exception:
+        return {}
+
+
+def _fetch_training_readiness(api, today):
+    try:
+        fn = getattr(api, "get_training_readiness", None)
+        tr_data = (fn(today) if callable(fn)
+                   else api.connectapi(f"training-readiness/training-readiness/{today}"))
+        v = (get_safe(tr_data, "trainingReadinessScore")
+             or get_safe(tr_data, "score")
+             or get_safe(tr_data, "trainingReadiness"))
+        return {"training_readiness": int(v) if v is not None else None}
+    except Exception:
+        return {}
+
+
+def _fetch_fitness_age(api):
+    try:
+        fn = getattr(api, "get_fitnessage_data", None)
+        fa_data = (fn() if callable(fn)
+                   else api.connectapi("fitnessstats-service/fitness/stats/fitnessAge"))
+        v = (get_safe(fa_data, "fitnessAge")
+             or get_safe(fa_data, "biologicalAge")
+             or get_safe(fa_data, "chronologicalAge"))
+        return {"fitness_age": int(v) if v is not None else None}
+    except Exception:
+        return {}
+
+
+def _fetch_floors(api, today):
+    try:
+        fn = getattr(api, "get_floors", None)
+        fl_data = fn(today) if callable(fn) else None
+        if fl_data:
+            v = (get_safe(fl_data, "floorCount")
+                 or get_safe(fl_data, "floorsAscended")
+                 or get_safe(fl_data, "totalFloors"))
+            return {"floors_climbed": int(v) if v is not None else None}
+    except Exception:
+        pass
+    return {}
+
+
+def _fetch_intensity_mins(api, today):
+    try:
+        fn = getattr(api, "get_intensity_minutes_data", None)
+        im_data = fn(today) if callable(fn) else None
+        if im_data:
+            mod = (get_safe(im_data, "moderateIntensityMinutes")
+                   or get_safe(im_data, "moderateDuration"))
+            vig = (get_safe(im_data, "vigorousIntensityMinutes")
+                   or get_safe(im_data, "vigorousDuration"))
+            return {
+                "intensity_moderate": int(mod) if mod is not None else None,
+                "intensity_vigorous":  int(vig) if vig is not None else None,
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def _fetch_race_predictions(api):
+    try:
+        fn = getattr(api, "get_race_predictions", None)
+        rp_data = fn() if callable(fn) else None
+        result = {}
+        if rp_data:
+            preds = rp_data if isinstance(rp_data, list) else rp_data.get("predictions", [])
+            for pred in (preds or []):
+                dist = pred.get("distance") or pred.get("racingDistance") or pred.get("distanceMeters", 0)
+                t = pred.get("racingTime") or pred.get("time") or pred.get("predictedTime")
+                if not (dist and t):
+                    continue
+                dist, t = float(dist), float(t)
+                if 4900 <= dist <= 5100:
+                    result["race_5k"] = int(t)
+                elif 9900 <= dist <= 10100:
+                    result["race_10k"] = int(t)
+                elif 20000 <= dist <= 22000:
+                    result["race_half"] = int(t)
+                elif 41000 <= dist <= 43000:
+                    result["race_full"] = int(t)
+        return result
+    except Exception:
+        return {}
+
+
+def _fetch_training_load(api, today):
+    try:
+        fn = getattr(api, "get_training_load", None)
+        if callable(fn):
+            tl_data = fn(today, today)
+        else:
+            tl_data = api.connectapi(f"metrics-service/metrics/trainingload/user/{today}", params={})
+        if isinstance(tl_data, list) and tl_data:
+            tl_data = tl_data[-1]
+        if not isinstance(tl_data, dict):
+            return {}
+        atl = (get_safe(tl_data, "acuteTrainingLoad")
+               or get_safe(tl_data, "acuteLoad")
+               or get_safe(tl_data, "shortTermLoad"))
+        ctl = (get_safe(tl_data, "chronicTrainingLoad")
+               or get_safe(tl_data, "chronicLoad")
+               or get_safe(tl_data, "longTermLoad"))
+        tsb = get_safe(tl_data, "trainingStressBalance")
+        if tsb is None and atl is not None and ctl is not None:
+            try:
+                tsb = round(float(ctl) - float(atl), 1)
+            except Exception:
+                pass
+        aerobic_raw = (get_safe(tl_data, "aerobicLoadFraction")
+                       or get_safe(tl_data, "aerobicContribution")
+                       or get_safe(tl_data, "aerobicLoadPercent")
+                       or get_safe(tl_data, "loadFocusAerobic"))
+        tl_aerobic_pct = None
+        if aerobic_raw is not None:
+            v = float(aerobic_raw)
+            tl_aerobic_pct = round(v * 100, 1) if v <= 1 else round(v, 1)
+        return {"atl": atl, "ctl": ctl, "tsb": tsb, "tl_aerobic_pct": tl_aerobic_pct}
+    except Exception:
+        return {}
+
+
+def _fetch_max_metrics(api, today):
+    try:
+        fn = getattr(api, "get_max_metrics", None)
+        mx = (fn(today) if callable(fn)
+              else api.connectapi(f"metrics-service/metrics/maxMetrics/{today}", params={}))
+        vals = {}
+        if isinstance(mx, dict):
+            vals = mx.get("values") or mx
+        elif isinstance(mx, list):
+            for item in mx:
+                if isinstance(item, dict):
+                    cd = item.get("calendarDate") or item.get("date", "")
+                    if cd == today:
+                        vals = item.get("values") or item
+                        break
+            if not vals and mx:
+                vals = mx[-1].get("values") or mx[-1] if isinstance(mx[-1], dict) else {}
+        result = {}
+        if isinstance(vals, dict):
+            lt_hr_raw = vals.get("lactateThresholdHeartRate")
+            if lt_hr_raw is not None:
+                result["lt_hr"] = int(float(lt_hr_raw))
+            lt_speed_mps = vals.get("lactateThresholdSpeed")
+            if lt_speed_mps and float(lt_speed_mps) > 0:
+                result["lt_pace"] = round(1000.0 / (float(lt_speed_mps) * 60.0), 2)
+        return result
+    except Exception:
+        return {}
+
+
 def main():
     ensure_folder(CSV_FILE)
 
@@ -112,7 +339,7 @@ def main():
         now = datetime.now()
         today = now.date().isoformat()
         now_str = now.strftime("%H:%M:%S")
-        print(f"2. Pulling data for {today} at {now_str}...")
+        print(f"2. Pulling data for {today} at {now_str} (parallel API calls)...")
 
         # 1) Core Biometrics
         try:
@@ -166,267 +393,84 @@ def main():
             try:
                 hr_data = api.get_heart_rates(today)
                 if hr_data and "heartRateValues" in hr_data:
-                    # format is [timestamp, value, ...]
-                    valid_hrs = [
-                        x[1]
-                        for x in hr_data["heartRateValues"]
-                        if x[1] is not None
-                    ]
+                    valid_hrs = [x[1] for x in hr_data["heartRateValues"] if x[1] is not None]
                     if valid_hrs:
-                        measured_min = min(valid_hrs)
-                        measured_max = max(valid_hrs)
-                        # Prefer summary if available (unlikely if we are here), else calc
                         if min_hr is None:
-                            min_hr = measured_min
+                            min_hr = min(valid_hrs)
                         if max_hr is None:
-                            max_hr = measured_max
+                            max_hr = max(valid_hrs)
             except Exception:
                 pass
-        
+
         if stress_avg is None:
             try:
                 stress_data = api.get_stress_data(today)
                 if stress_data and "stressValuesArray" in stress_data:
-                    # filter out -1 or nulls if any, usually just check valid values
-                    valid_stress = [
-                        x[1] 
-                        for x in stress_data["stressValuesArray"] 
-                        if x[1] is not None and x[1] > 0
-                    ]
+                    valid_stress = [x[1] for x in stress_data["stressValuesArray"]
+                                    if x[1] is not None and x[1] > 0]
                     if valid_stress:
                         stress_avg = int(sum(valid_stress) / len(valid_stress))
             except Exception:
                 pass
         # ---------------------------------
 
-        # 2) Sleep
-        try:
-            sleep_data = api.get_sleep_data(today)
-            dto = get_safe(sleep_data, "dailySleepDTO") or {}
-            sleep_deep  = dto.get("deepSleepSeconds")
-            sleep_rem   = dto.get("remSleepSeconds")
-            sleep_light = dto.get("lightSleepSeconds")
-            # sleepTimeSeconds is the awake-during-sleep time on newer Garmin firmware,
-            # so prefer totalSleepSeconds, then compute from stages, then fall back.
-            sleep_total_raw = (dto.get("totalSleepSeconds")
-                               or dto.get("totalSleepTime"))
-            if not sleep_total_raw:
-                stages = [s for s in [sleep_deep, sleep_rem, sleep_light] if s]
-                sleep_total_raw = sum(stages) if stages else None
-            sleep_awake = (dto.get("awakeSleepSeconds")
-                           or dto.get("awakeSleepTime")
-                           or dto.get("sleepTimeSeconds"))
-            sleep_score = get_safe(sleep_data, "dailySleepDTO", "sleepScores", "overall", "value")
-            if sleep_score is None:
-                sleep_score = dto.get("sleepScore") or dto.get("sleepQualityTypePK")
+        # 2–13) All remaining API calls fire in parallel
+        print("3. Fetching supplementary metrics in parallel...")
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            f_sleep     = executor.submit(_fetch_sleep,              api, today)
+            f_ts        = executor.submit(_fetch_training_status,    api, today)
+            f_bc        = executor.submit(_fetch_body_comp,          api, today)
+            f_hrv       = executor.submit(_fetch_hrv,                api, today)
+            f_tr        = executor.submit(_fetch_training_readiness, api, today)
+            f_fa        = executor.submit(_fetch_fitness_age,        api)
+            f_fl        = executor.submit(_fetch_floors,             api, today)
+            f_im        = executor.submit(_fetch_intensity_mins,     api, today)
+            f_rp        = executor.submit(_fetch_race_predictions,   api)
+            f_tl        = executor.submit(_fetch_training_load,      api, today)
+            f_mm        = executor.submit(_fetch_max_metrics,        api, today)
+            f_acts      = executor.submit(build_activity_str,        api, today, flt)
 
-            sleep_total = round(sleep_total_raw / 3600, 2) if sleep_total_raw else None
-            sleep_deep  = round(sleep_deep  / 3600, 2) if sleep_deep  else None
-            sleep_rem   = round(sleep_rem   / 3600, 2) if sleep_rem   else None
-            sleep_light = round(sleep_light / 3600, 2) if sleep_light else None
-            sleep_awake = round(sleep_awake / 3600, 2) if sleep_awake else None
-        except Exception:
-            sleep_total = sleep_deep = sleep_rem = sleep_light = sleep_awake = sleep_score = None
+        sleep_r  = f_sleep.result()
+        ts_r     = f_ts.result()
+        bc_r     = f_bc.result()
+        hrv_r    = f_hrv.result()
+        tr_r     = f_tr.result()
+        fa_r     = f_fa.result()
+        fl_r     = f_fl.result()
+        im_r     = f_im.result()
+        rp_r     = f_rp.result()
+        tl_r     = f_tl.result()
+        mm_r     = f_mm.result()
+        activity_str = f_acts.result()
 
-        # 3) Training Status
-        training_status = None
-        try:
-            if hasattr(api, "get_training_status"):
-                t_status = api.get_training_status(today)
-                training_status = get_safe(t_status, "mostRecentTerminatedTrainingStatus", "status")
-        except Exception:
-            pass
-
-        # 4) Body Comp
-        weight = muscle_mass = fat_pct = water_pct = None
-        try:
-            body_comp = api.get_body_composition(today)
-            if body_comp and "totalAverage" in body_comp:
-                avg = body_comp["totalAverage"]
-                w_g = avg.get("weight")
-                if w_g:
-                    weight = round(w_g / 453.592, 1)
-                m_g = avg.get("muscleMass")
-                if m_g:
-                    muscle_mass = round(m_g / 453.592, 1)
-                fat_pct = avg.get("bodyFat")
-                water_pct = avg.get("bodyWater")
-        except Exception:
-            pass
-
-        # 5) HRV
-        hrv_status = hrv_avg = None
-        try:
-            if hasattr(api, "get_hrv_data"):
-                h = api.get_hrv_data(today)
-            else:
-                h = api.connectapi(f"/hrv-service/hrv/daily/{today}")
-            hrv_status = get_safe(h, "hrvSummary", "status")
-            raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
-            # Garmin API returns weeklyAverage in units of 0.01ms (i.e. ×100).
-            # Divide by 100 so the stored value is in milliseconds (e.g. 76.7ms).
-            if raw_hrv is not None:
-                v = float(raw_hrv)
-                if v > 200:
-                    v = round(v / 100, 1)
-                if 10 <= v <= 200:
-                    hrv_avg = v
-        except Exception:
-            pass
-
-        # 6) Training Readiness
-        training_readiness = None
-        try:
-            fn = getattr(api, "get_training_readiness", None)
-            tr_data = fn(today) if callable(fn) else api.connectapi(f"training-readiness/training-readiness/{today}")
-            training_readiness = (get_safe(tr_data, "trainingReadinessScore")
-                                  or get_safe(tr_data, "score")
-                                  or get_safe(tr_data, "trainingReadiness"))
-            if training_readiness is not None:
-                training_readiness = int(training_readiness)
-        except Exception:
-            pass
-
-        # 7) Fitness Age
-        fitness_age = None
-        try:
-            fn = getattr(api, "get_fitnessage_data", None)
-            fa_data = fn() if callable(fn) else api.connectapi("fitnessstats-service/fitness/stats/fitnessAge")
-            fitness_age = (get_safe(fa_data, "fitnessAge")
-                           or get_safe(fa_data, "biologicalAge")
-                           or get_safe(fa_data, "chronologicalAge"))
-            if fitness_age is not None:
-                fitness_age = int(fitness_age)
-        except Exception:
-            pass
-
-        # 8) Floors climbed
-        floors_climbed = None
-        try:
-            fn = getattr(api, "get_floors", None)
-            fl_data = fn(today) if callable(fn) else None
-            if fl_data:
-                floors_climbed = (get_safe(fl_data, "floorCount")
-                                  or get_safe(fl_data, "floorsAscended")
-                                  or get_safe(fl_data, "totalFloors"))
-                if floors_climbed is not None:
-                    floors_climbed = int(floors_climbed)
-        except Exception:
-            pass
-
-        # 9) Intensity Minutes
-        intensity_moderate = intensity_vigorous = None
-        try:
-            fn = getattr(api, "get_intensity_minutes_data", None)
-            im_data = fn(today) if callable(fn) else None
-            if im_data:
-                intensity_moderate = (get_safe(im_data, "moderateIntensityMinutes")
-                                      or get_safe(im_data, "moderateDuration"))
-                intensity_vigorous  = (get_safe(im_data, "vigorousIntensityMinutes")
-                                       or get_safe(im_data, "vigorousDuration"))
-                if intensity_moderate is not None:
-                    intensity_moderate = int(intensity_moderate)
-                if intensity_vigorous is not None:
-                    intensity_vigorous = int(intensity_vigorous)
-        except Exception:
-            pass
-
-        # 10) Race Predictions
-        race_5k = race_10k = race_half = race_full = None
-        try:
-            fn = getattr(api, "get_race_predictions", None)
-            rp_data = fn() if callable(fn) else None
-            if rp_data:
-                predictions = rp_data if isinstance(rp_data, list) else rp_data.get("predictions", [])
-                for pred in (predictions or []):
-                    dist = pred.get("distance") or pred.get("racingDistance") or pred.get("distanceMeters", 0)
-                    t = pred.get("racingTime") or pred.get("time") or pred.get("predictedTime")
-                    if not (dist and t):
-                        continue
-                    dist = float(dist)
-                    t = float(t)
-                    if 4900 <= dist <= 5100:
-                        race_5k = int(t)
-                    elif 9900 <= dist <= 10100:
-                        race_10k = int(t)
-                    elif 20000 <= dist <= 22000:
-                        race_half = int(t)
-                    elif 41000 <= dist <= 43000:
-                        race_full = int(t)
-        except Exception:
-            pass
-
-        # 11) Training Load (ATL / CTL / TSB + Focus)
-        atl = ctl = tsb = tl_aerobic_pct = None
-        try:
-            fn = getattr(api, "get_training_load", None)
-            if callable(fn):
-                tl_data = fn(today, today)
-            else:
-                tl_data = api.connectapi(
-                    f"metrics-service/metrics/trainingload/user/{today}",
-                    params={},
-                )
-            # Normalise: API may return list or single dict
-            if isinstance(tl_data, list) and tl_data:
-                tl_data = tl_data[-1]
-            if isinstance(tl_data, dict):
-                atl = (get_safe(tl_data, "acuteTrainingLoad")
-                       or get_safe(tl_data, "acuteLoad")
-                       or get_safe(tl_data, "shortTermLoad"))
-                ctl = (get_safe(tl_data, "chronicTrainingLoad")
-                       or get_safe(tl_data, "chronicLoad")
-                       or get_safe(tl_data, "longTermLoad"))
-                tsb = get_safe(tl_data, "trainingStressBalance")
-                if tsb is None and atl is not None and ctl is not None:
-                    try:
-                        tsb = round(float(ctl) - float(atl), 1)
-                    except Exception:
-                        pass
-                aerobic_raw = (get_safe(tl_data, "aerobicLoadFraction")
-                               or get_safe(tl_data, "aerobicContribution")
-                               or get_safe(tl_data, "aerobicLoadPercent")
-                               or get_safe(tl_data, "loadFocusAerobic"))
-                if aerobic_raw is not None:
-                    v = float(aerobic_raw)
-                    tl_aerobic_pct = round(v * 100, 1) if v <= 1 else round(v, 1)
-        except Exception:
-            pass
-
-        # 12) Lactate Threshold (HR + Pace)
-        lt_hr = lt_pace = None
-        try:
-            fn = getattr(api, "get_max_metrics", None)
-            mx = fn(today) if callable(fn) else api.connectapi(
-                f"metrics-service/metrics/maxMetrics/{today}",
-                params={},
-            )
-            # Response can be a dict with "values" key or a list of dicts
-            vals = {}
-            if isinstance(mx, dict):
-                vals = mx.get("values") or mx
-            elif isinstance(mx, list):
-                for item in mx:
-                    if isinstance(item, dict):
-                        cd = item.get("calendarDate") or item.get("date", "")
-                        if cd == today:
-                            vals = item.get("values") or item
-                            break
-                if not vals and mx:
-                    vals = mx[-1].get("values") or mx[-1] if isinstance(mx[-1], dict) else {}
-            if isinstance(vals, dict):
-                lt_hr_raw = vals.get("lactateThresholdHeartRate")
-                if lt_hr_raw is not None:
-                    lt_hr = int(float(lt_hr_raw))
-                lt_speed_mps = vals.get("lactateThresholdSpeed")
-                if lt_speed_mps and float(lt_speed_mps) > 0:
-                    mins_per_km = 1000.0 / (float(lt_speed_mps) * 60.0)
-                    lt_pace = round(mins_per_km, 2)
-        except Exception:
-            pass
-
-        # 13) Activities (filtered)
-        activity_str = build_activity_str(api, today, flt)
+        sleep_total        = sleep_r.get("sleep_total")
+        sleep_deep         = sleep_r.get("sleep_deep")
+        sleep_rem          = sleep_r.get("sleep_rem")
+        sleep_light        = sleep_r.get("sleep_light")
+        sleep_awake        = sleep_r.get("sleep_awake")
+        sleep_score        = sleep_r.get("sleep_score")
+        training_status    = ts_r.get("training_status")
+        weight             = bc_r.get("weight")
+        muscle_mass        = bc_r.get("muscle_mass")
+        fat_pct            = bc_r.get("fat_pct")
+        water_pct          = bc_r.get("water_pct")
+        hrv_status         = hrv_r.get("hrv_status")
+        hrv_avg            = hrv_r.get("hrv_avg")
+        training_readiness = tr_r.get("training_readiness")
+        fitness_age        = fa_r.get("fitness_age")
+        floors_climbed     = fl_r.get("floors_climbed")
+        intensity_moderate = im_r.get("intensity_moderate")
+        intensity_vigorous = im_r.get("intensity_vigorous")
+        race_5k            = rp_r.get("race_5k")
+        race_10k           = rp_r.get("race_10k")
+        race_half          = rp_r.get("race_half")
+        race_full          = rp_r.get("race_full")
+        atl                = tl_r.get("atl")
+        ctl                = tl_r.get("ctl")
+        tsb                = tl_r.get("tsb")
+        tl_aerobic_pct     = tl_r.get("tl_aerobic_pct")
+        lt_hr              = mm_r.get("lt_hr")
+        lt_pace            = mm_r.get("lt_pace")
 
         new_row = [
             today, now_str,

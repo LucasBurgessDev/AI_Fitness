@@ -47,3 +47,34 @@ def clear() -> None:
         count = len(_store)
         _store.clear()
     LOGGER.info("BQ cache cleared (%d entries evicted)", count)
+
+
+def query(client, sql: str) -> list:
+    """Run a BQ query with TTL caching. Returns list of plain dicts.
+
+    On a cache hit the BQ client is not used at all. On a miss the result is
+    serialised to JSON and stored so the next call is instant.
+    """
+    import json
+    import decimal
+
+    cached = get(sql)
+    if cached is not None:
+        LOGGER.debug("BQ cache hit")
+        return json.loads(cached)
+
+    LOGGER.debug("BQ cache miss, running query")
+    raw = list(client.query(sql).result())
+
+    def _to_json(v):
+        if v is None or isinstance(v, (bool, int, float, str)):
+            return v
+        if isinstance(v, decimal.Decimal):
+            return float(v)
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+        return str(v)
+
+    result = [{k: _to_json(v) for k, v in dict(row).items()} for row in raw]
+    put(sql, json.dumps(result))
+    return result

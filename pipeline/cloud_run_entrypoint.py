@@ -89,30 +89,51 @@ def main() -> None:
         except Exception as dl_err:
             LOGGER.warning("Drive download failed for %s (continuing): %s", fname, dl_err)
 
-    # Run data collection scripts — small gap so both don't race on the same OAuth2 token exchange
-    auth_failed = False
-    try:
-        out = run_cmd(["python", "garmin_activities_daily.py"])
-        if circuit_breaker.contains_auth_failure(out):
-            auth_failed = True
-    except RuntimeError:
-        auth_failed = True
-
+    # Run data collection scripts in parallel; a 3-second stagger avoids a simultaneous
+    # OAuth2 token refresh race if the token happens to be expiring on this run.
     import time as _time
-    _time.sleep(10)
 
+    auth_failed = False
     stats_history_start = os.getenv("STATS_HISTORY_START")
+
+    LOGGER.info("Starting garmin_activities_daily.py")
+    p_acts = subprocess.Popen(
+        ["python", "garmin_activities_daily.py"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+
+    _time.sleep(3)
+
     if stats_history_start:
         LOGGER.info("Running stats history from %s", stats_history_start)
         os.environ["START_DATE"] = stats_history_start
-        run_cmd(["python", "garmin_stats_history.py"])
+        LOGGER.info("Starting garmin_stats_history.py")
+        p_stats = subprocess.Popen(
+            ["python", "garmin_stats_history.py"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
     else:
-        try:
-            out = run_cmd(["python", "garmin_stats_daily.py"])
-            if circuit_breaker.contains_auth_failure(out):
-                auth_failed = True
-        except RuntimeError:
-            auth_failed = True
+        LOGGER.info("Starting garmin_stats_daily.py")
+        p_stats = subprocess.Popen(
+            ["python", "garmin_stats_daily.py"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+    acts_stdout, acts_stderr = p_acts.communicate()
+    stats_stdout, stats_stderr = p_stats.communicate()
+
+    acts_out = (acts_stdout or "") + (acts_stderr or "")
+    stats_out = (stats_stdout or "") + (stats_stderr or "")
+
+    LOGGER.info("garmin_activities_daily rc=%d\nSTDOUT+STDERR:\n%s",
+                p_acts.returncode, acts_out[-4000:])
+    LOGGER.info("garmin_stats rc=%d\nSTDOUT+STDERR:\n%s",
+                p_stats.returncode, stats_out[-4000:])
+
+    if p_acts.returncode != 0 or circuit_breaker.contains_auth_failure(acts_out):
+        auth_failed = True
+    if p_stats.returncode != 0 or circuit_breaker.contains_auth_failure(stats_out):
+        auth_failed = True
 
     if auth_failed:
         circuit_breaker.record_failure()
