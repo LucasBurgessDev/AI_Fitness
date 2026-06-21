@@ -198,9 +198,19 @@ def _pace_str_to_float(val) -> Optional[float]:
 
 
 def _coerce_int_cols(df: pd.DataFrame, cols: set) -> pd.DataFrame:
+    def _to_int(x):
+        if x is None or x == "":
+            return pd.NA
+        try:
+            f = float(str(x))
+        except (ValueError, TypeError):
+            return pd.NA
+        import math
+        return pd.NA if math.isnan(f) else int(f)
+
     for col in cols:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+            df[col] = pd.array([_to_int(x) for x in df[col]], dtype="Int64")
     return df
 
 
@@ -208,6 +218,13 @@ def _coerce_float_cols(df: pd.DataFrame, cols: set) -> pd.DataFrame:
     for col in cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def _coerce_str_cols(df: pd.DataFrame, cols: set) -> pd.DataFrame:
+    for col in cols:
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: str(x) if pd.notna(x) else None)
     return df
 
 
@@ -304,6 +321,7 @@ def write_stats_range(
                                     "atl", "ctl", "tsb", "tl_aerobic_pct",
                                     "lactate_threshold_pace"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
+    out = _coerce_str_cols(out, {"hrv_status", "training_status", "activities"})
 
     job_config = bigquery.LoadJobConfig(
         schema=_STATS_SCHEMA,
@@ -430,6 +448,7 @@ def write_stats(
                                     "lactate_threshold_pace"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
 
+    out = _coerce_str_cols(out, {"hrv_status", "training_status", "activities"})
     job_config = bigquery.LoadJobConfig(
         schema=_STATS_SCHEMA,
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
