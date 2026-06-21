@@ -547,7 +547,7 @@ async def api_calories(request: Request, days: int = 35):
     # Outer join: Garmin stats (burn) + our calorie entries (eaten)
     sql = f"""
     WITH garmin AS (
-      SELECT date, cals_total AS calories_burned
+      SELECT date, cals_total AS calories_burned, cals_active AS calories_active
       FROM `{PROJECT_ID}.garmin.garmin_stats`
       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
       QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
@@ -560,6 +560,7 @@ async def api_calories(request: Request, days: int = 35):
     SELECT
       COALESCE(g.date, e.date) AS date,
       g.calories_burned,
+      g.calories_active,
       e.calories_eaten,
       e.notes,
       CASE WHEN g.calories_burned IS NOT NULL AND e.calories_eaten IS NOT NULL
@@ -577,6 +578,7 @@ async def api_calories(request: Request, days: int = 35):
     data = {
         "dates": [],
         "calories_burned": [],
+        "calories_active": [],
         "calories_eaten": [],
         "net_calories": [],
         "notes": [],
@@ -584,6 +586,7 @@ async def api_calories(request: Request, days: int = 35):
     for row in rows:
         data["dates"].append(str(row["date"]))
         data["calories_burned"].append(int(row["calories_burned"]) if row["calories_burned"] else None)
+        data["calories_active"].append(int(row["calories_active"]) if row["calories_active"] else None)
         data["calories_eaten"].append(int(row["calories_eaten"]) if row["calories_eaten"] else None)
         data["net_calories"].append(int(row["net_calories"]) if row["net_calories"] else None)
         data["notes"].append(row["notes"] or "")

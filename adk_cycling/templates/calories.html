@@ -27,7 +27,7 @@
 
   /* ── Day summary strip ── */
   .day-strip {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;
   }
   .day-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -78,6 +78,7 @@
   /* ── Chart grid ── */
   .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
   @media (max-width: 600px) { .chart-grid { grid-template-columns: 1fr; } .day-strip { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 380px) { .day-strip { grid-template-columns: 1fr 1fr; } }
   .chart-card {
     background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
     box-shadow: var(--shadow); padding: 1rem 1.1rem;
@@ -131,6 +132,11 @@
       <div class="day-card-label">Eaten</div>
       <div class="day-card-val" id="day-eaten" style="color:var(--accent)">—</div>
       <div class="day-card-sub">kcal consumed</div>
+    </div>
+    <div class="day-card">
+      <div class="day-card-label">Net (Garmin)</div>
+      <div class="day-card-val" id="day-active" style="color:var(--green)">—</div>
+      <div class="day-card-sub">active cals above BMR</div>
     </div>
     <div class="day-card">
       <div class="day-card-label">Deficit</div>
@@ -223,13 +229,15 @@
   function updateDayPanel() {
     if (!_data || !_selectedDate) return;
     const idx = _data.dates.indexOf(_selectedDate);
-    const burned = idx >= 0 ? _data.calories_burned[idx] : null;
-    const eaten  = idx >= 0 ? _data.calories_eaten[idx]  : null;
-    const net    = idx >= 0 ? _data.net_calories[idx]    : null;
-    const notes  = idx >= 0 ? _data.notes[idx]           : '';
+    const burned  = idx >= 0 ? _data.calories_burned[idx]  : null;
+    const eaten   = idx >= 0 ? _data.calories_eaten[idx]   : null;
+    const active  = idx >= 0 ? _data.calories_active[idx]  : null;
+    const net     = idx >= 0 ? _data.net_calories[idx]     : null;
+    const notes   = idx >= 0 ? _data.notes[idx]            : '';
 
-    document.getElementById('day-burned').textContent = burned != null ? burned.toLocaleString() : '—';
-    document.getElementById('day-eaten').textContent  = eaten  != null ? eaten.toLocaleString()  : '—';
+    document.getElementById('day-burned').textContent  = burned  != null ? burned.toLocaleString()  : '—';
+    document.getElementById('day-eaten').textContent   = eaten   != null ? eaten.toLocaleString()   : '—';
+    document.getElementById('day-active').textContent  = active  != null ? active.toLocaleString()  : '—';
 
     const netEl = document.getElementById('day-net');
     const netLbl = document.getElementById('day-net-label');
@@ -275,6 +283,7 @@
       } else {
         _data.dates.push(_selectedDate);
         _data.calories_burned.push(null);
+        _data.calories_active.push(null);
         _data.calories_eaten.push(cals);
         _data.net_calories.push(null);
         _data.notes.push(notes);
