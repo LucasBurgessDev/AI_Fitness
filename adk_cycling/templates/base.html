@@ -287,7 +287,7 @@
       <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">Health</a>
       <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">Check-in</a>
       <a href="/calories" class="{{ 'active' if request.url.path == '/calories' else '' }}">Calories</a>
-      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Chat</a>
+      <a href="/chat" class="{{ 'active' if request.url.path == '/chat' else '' }}">Chat</a>
       <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">Settings</a>
     </nav>
     <div class="hdr-right">
@@ -310,7 +310,10 @@
       <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">
         <span class="bn-icon">✓</span>Check-in
       </a>
-      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">
+      <a href="/calories" class="{{ 'active' if request.url.path == '/calories' else '' }}">
+        <span class="bn-icon">🍽</span>Calories
+      </a>
+      <a href="/chat" class="{{ 'active' if request.url.path == '/chat' else '' }}">
         <span class="bn-icon">💬</span>Chat
       </a>
       <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">

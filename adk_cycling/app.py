@@ -184,6 +184,14 @@ async def index(request: Request):
     session = _get_session(request)
     if not session:
         return RedirectResponse("/login")
+    return RedirectResponse("/goals")
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
     return templates.TemplateResponse(request, "chat.html", {"email": session["email"]})
 
 
