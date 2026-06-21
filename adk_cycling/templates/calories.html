@@ -437,7 +437,7 @@
       .reverse().slice(0, 14);
     tbody.innerHTML = rows.map(r => {
       const net = r.net != null
-        ? `<span class="${r.net > 0 ? 'net-surplus' : 'net-deficit'}">${r.net > 0 ? '+' : ''}${r.net.toLocaleString()}</span>`
+        ? `<span class="${r.net > 0 ? 'net-deficit' : 'net-surplus'}">${r.net > 0 ? '+' : ''}${r.net.toLocaleString()}</span>`
         : `<span class="net-na">—</span>`;
       return `<tr onclick="setSelectedDate('${r.d}')">
         <td class="mono">${fmtShort(r.d)}</td>
