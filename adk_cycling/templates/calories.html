@@ -133,9 +133,9 @@
       <div class="day-card-sub">kcal consumed</div>
     </div>
     <div class="day-card">
-      <div class="day-card-label">Net</div>
+      <div class="day-card-label">Deficit</div>
       <div class="day-card-val" id="day-net">—</div>
-      <div class="day-card-sub" id="day-net-label">deficit / surplus</div>
+      <div class="day-card-sub" id="day-net-label">burned − consumed</div>
     </div>
   </div>
 
@@ -234,14 +234,14 @@
     const netEl = document.getElementById('day-net');
     const netLbl = document.getElementById('day-net-label');
     if (net != null) {
-      const surplus = net > 0;
-      netEl.textContent = (surplus ? '+' : '') + net.toLocaleString();
-      netEl.className = 'day-card-val ' + (surplus ? 'surplus' : 'deficit');
-      netLbl.textContent = surplus ? 'surplus (over target)' : 'deficit (under target)';
+      const inDeficit = net > 0; // burned > eaten = caloric deficit = good
+      netEl.textContent = (inDeficit ? '+' : '') + net.toLocaleString();
+      netEl.className = 'day-card-val ' + (inDeficit ? 'deficit' : 'surplus');
+      netLbl.textContent = inDeficit ? 'in deficit — great!' : 'in surplus';
     } else {
       netEl.textContent = '—';
       netEl.className = 'day-card-val';
-      netLbl.textContent = 'deficit / surplus';
+      netLbl.textContent = 'burned − consumed';
     }
 
     // Populate form
