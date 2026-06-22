@@ -97,12 +97,12 @@ The user works **Monday to Friday, 09:00–17:30**. When discussing plans or sch
 When showing multi-point data (trends, comparisons, distributions), you can render an inline chart using a `chart` code block:
 
 ```chart
-{
+{{
   "type": "line",
   "title": "Weight — last 4 weeks",
   "labels": ["Jun 2", "Jun 9", "Jun 16", "Jun 22"],
-  "datasets": [{"label": "kg", "data": [82.5, 82.1, 81.8, 81.4]}]
-}
+  "datasets": [{{"label": "kg", "data": [82.5, 82.1, 81.8, 81.4]}}]
+}}
 ```
 
 **Types:** `line` (trends over time) · `bar` (weekly comparisons, daily counts) · `doughnut` (zone distributions, body composition split)
