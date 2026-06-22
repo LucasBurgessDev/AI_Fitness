@@ -144,12 +144,29 @@
   .assistant .bubble hr { border: none; border-top: 1px solid var(--border); margin: 0.65rem 0; }
   .message-wrapper { display: flex; flex-direction: column; max-width: 78%; }
 
-  /* Thinking dots */
-  .thinking-dots { display: inline-flex; gap: 4px; align-items: center; padding: 0.1rem 0; }
-  .thinking-dots span { width: 7px; height: 7px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.2s infinite; }
-  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-5px); opacity: 1; } }
+  /* Agent status bubble */
+  .agent-status { min-width: 180px; }
+  .agent-hd { display: flex; align-items: center; gap: 0.45rem; color: var(--text-muted); font-size: 0.82rem; font-style: italic; margin-bottom: 0.45rem; }
+  .agent-hd-spinner {
+    width: 12px; height: 12px; flex-shrink: 0;
+    border: 2px solid rgba(0,200,255,0.2); border-top-color: var(--accent);
+    border-radius: 50%; animation: agt-spin 0.75s linear infinite; display: inline-block;
+  }
+  .agent-tools { display: flex; flex-direction: column; gap: 0.3rem; }
+  .agent-tool {
+    display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem;
+    animation: agt-in 0.2s ease forwards;
+  }
+  .agent-tool.running { color: var(--text); }
+  .agent-tool.done { color: var(--green); }
+  .tool-spin {
+    width: 10px; height: 10px; flex-shrink: 0;
+    border: 1.5px solid rgba(0,200,255,0.2); border-top-color: var(--accent);
+    border-radius: 50%; animation: agt-spin 0.75s linear infinite; display: inline-block;
+  }
+  .agent-tool.done .tool-spin { border: none; animation: none; font-size: 0.75rem; line-height: 10px; width: 10px; text-align: center; }
+  @keyframes agt-spin { to { transform: rotate(360deg); } }
+  @keyframes agt-in { from { opacity: 0; transform: translateX(-3px); } to { opacity: 1; transform: none; } }
 
   /* ---- Input ---- */
   #input-area {
@@ -425,11 +442,43 @@
     chatEl.appendChild(w); chatEl.scrollTop = chatEl.scrollHeight;
   }
 
+  const TOOL_LABELS = {
+    query_garmin_data:          'Querying fitness data',
+    get_recent_activities:      'Fetching recent activities',
+    get_recent_stats:           'Reading daily stats',
+    get_intraday_stats:         'Checking today\'s data',
+    get_training_load:          'Calculating training load',
+    get_weekly_summary:         'Building weekly summary',
+    get_body_composition_trend: 'Analysing body composition',
+    list_calendar_events:       'Checking your calendar',
+    create_training_event:      'Updating your calendar',
+    delete_calendar_event:      'Updating your calendar',
+    get_coaching_log:           'Reading coaching history',
+  };
+
   function appendThinking() {
     showChat();
     const w = document.createElement('div'); w.className = 'message assistant';
-    w.innerHTML = `<div class="avatar">AI</div><div class="message-wrapper"><div class="bubble"><div class="thinking-dots"><span></span><span></span><span></span></div></div></div>`;
+    w.innerHTML = `<div class="avatar">AI</div><div class="message-wrapper"><div class="bubble agent-status">
+      <div class="agent-hd"><span class="agent-hd-spinner"></span>Thinking…</div>
+      <div class="agent-tools"></div>
+    </div></div>`;
     chatEl.appendChild(w); chatEl.scrollTop = chatEl.scrollHeight; return w;
+  }
+
+  function toolStart(w, name) {
+    const label = TOOL_LABELS[name] || name.replace(/_/g, ' ');
+    const tools = w.querySelector('.agent-tools');
+    const row = document.createElement('div');
+    row.className = 'agent-tool running'; row.dataset.tool = name;
+    row.innerHTML = `<span class="tool-spin"></span><span>${label}</span>`;
+    tools.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function toolDone(w, name) {
+    const row = w.querySelector(`.agent-tool[data-tool="${CSS.escape(name)}"]`);
+    if (row) { row.className = 'agent-tool done'; row.querySelector('.tool-spin').textContent = '✓'; }
   }
 
   function appendAssistant(html) {
@@ -448,7 +497,7 @@
     appendUser(text);
     const thinking = appendThinking();
     try {
-      const r = await fetch('/chat', {
+      const r = await fetch('/chat/stream', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ message: text, session_id: activeSessionId }),
       });
@@ -456,10 +505,28 @@
         const err = await r.json().catch(() => ({ detail: r.statusText }));
         throw new Error(err.detail || 'Request failed');
       }
-      const d = await r.json();
-      thinking.remove();
-      appendAssistant(marked.parse(d.response || '(no response)'));
-      loadSessionList();
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const chunks = buf.split('\n\n');
+        buf = chunks.pop();
+        for (const chunk of chunks) {
+          if (!chunk.startsWith('data: ')) continue;
+          let evt;
+          try { evt = JSON.parse(chunk.slice(6)); } catch { continue; }
+          if (evt.type === 'tool_start') { toolStart(thinking, evt.name); }
+          else if (evt.type === 'tool_done') { toolDone(thinking, evt.name); }
+          else if (evt.type === 'done') {
+            thinking.remove();
+            appendAssistant(marked.parse(evt.response || '(no response)'));
+            loadSessionList();
+          } else if (evt.type === 'error') { throw new Error(evt.message); }
+        }
+      }
     } catch(err) {
       thinking.remove();
       appendAssistant(`<em style="color:var(--text-muted)">Error: ${err.message}</em>`);

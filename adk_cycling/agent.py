@@ -631,15 +631,8 @@ def evict_session(session_id: str) -> None:
     _runners.pop(session_id, None)
 
 
-async def run_agent(
-    message: str,
-    session_id: str = "default",
-    user_email: str = "",
-) -> str:
-    """Run the cycling agent for a single user message and return the response text."""
-    runner = _get_runner(session_id, user_email=user_email)
-
-    # Create session on first use; get_session returns None (not an exception) when not found.
+async def _prepare_session(session_id: str, user_email: str, message: str) -> str:
+    """Ensure ADK session exists; return message with cold-start preamble if new session."""
     session = await _session_service.get_session(
         app_name=_APP_NAME, user_id="user", session_id=session_id
     )
@@ -649,40 +642,54 @@ async def run_agent(
             app_name=_APP_NAME, user_id="user", session_id=session_id
         )
 
-    # Cold-start context restore: prepend prior conversation history + coaching log
-    actual_message = message
-    if is_new_session and user_email:
-        import session_store
-        import coaching_log as coaching_log_mod
+    if not (is_new_session and user_email):
+        return message
 
-        preamble_parts: list[str] = []
+    import session_store
+    import coaching_log as coaching_log_mod
 
-        # 1. Prior conversation history for this session
-        restore_ctx = session_store.get_restore_context(user_email, session_id)
-        if restore_ctx:
-            preamble_parts.append(restore_ctx)
+    preamble_parts: list[str] = []
+    restore_ctx = session_store.get_restore_context(user_email, session_id)
+    if restore_ctx:
+        preamble_parts.append(restore_ctx)
+    try:
+        log_ctx = coaching_log_mod.get_insights(
+            project_id=PROJECT_ID, email=user_email, weeks=52
+        )
+        if log_ctx and "No coaching log entries found" not in log_ctx and "Error" not in log_ctx:
+            preamble_parts.append(log_ctx)
+    except Exception as exc:
+        LOGGER.warning("Could not fetch coaching log for preamble: %s", exc)
 
-        # 2. Coaching log — inject long-term memory so the model has it without a tool call
-        try:
-            log_ctx = coaching_log_mod.get_insights(
-                project_id=PROJECT_ID, email=user_email, weeks=52
-            )
-            if log_ctx and "No coaching log entries found" not in log_ctx and "Error" not in log_ctx:
-                preamble_parts.append(log_ctx)
-        except Exception as exc:
-            LOGGER.warning("Could not fetch coaching log for preamble: %s", exc)
+    if preamble_parts:
+        return "\n\n".join(preamble_parts) + "\n\n" + message
+    return message
 
-        if preamble_parts:
-            actual_message = "\n\n".join(preamble_parts) + "\n\n" + message
+
+async def run_agent_stream(
+    message: str,
+    session_id: str = "default",
+    user_email: str = "",
+):
+    """Async generator: yields tool_start/tool_done dicts, then a final done dict with the response."""
+    runner = _get_runner(session_id, user_email=user_email)
+    actual_message = await _prepare_session(session_id, user_email, message)
 
     content = Content(parts=[Part(text=actual_message)])
     response_parts: list[str] = []
 
     async for event in runner.run_async(
-        user_id="user",
-        session_id=session_id,
-        new_message=content,
+        user_id="user", session_id=session_id, new_message=content
     ):
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                fc = getattr(part, "function_call", None)
+                if fc and getattr(fc, "name", None):
+                    yield {"type": "tool_start", "name": fc.name}
+                fr = getattr(part, "function_response", None)
+                if fr and getattr(fr, "name", None):
+                    yield {"type": "tool_done", "name": fr.name}
+
         if hasattr(event, "is_final_response") and event.is_final_response():
             if event.content and event.content.parts:
                 for part in event.content.parts:
@@ -691,7 +698,6 @@ async def run_agent(
 
     response_text = "".join(response_parts) or "I was unable to generate a response. Please try again."
 
-    # Background: persist messages to GCS + auto-extract coaching insights
     if user_email:
         def _persist() -> None:
             import session_store
@@ -700,4 +706,16 @@ async def run_agent(
             _auto_save_insights(message, response_text, user_email, session_id)
         threading.Thread(target=_persist, daemon=True).start()
 
-    return response_text
+    yield {"type": "done", "response": response_text}
+
+
+async def run_agent(
+    message: str,
+    session_id: str = "default",
+    user_email: str = "",
+) -> str:
+    """Run the agent and return the final response text (non-streaming)."""
+    async for evt in run_agent_stream(message, session_id=session_id, user_email=user_email):
+        if evt.get("type") == "done":
+            return evt["response"]
+    return "I was unable to generate a response. Please try again."

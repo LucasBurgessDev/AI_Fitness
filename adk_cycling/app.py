@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from google_auth_oauthlib.flow import Flow
@@ -216,6 +216,36 @@ async def chat(request: Request):
         raise HTTPException(status_code=500, detail="Agent error — please try again")
 
     return JSONResponse({"response": response_text})
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: Request):
+    session = _require_session(request)
+    body = await request.json()
+    message = body.get("message", "").strip()
+    session_id = body.get("session_id", "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    email = session["email"]
+
+    async def event_stream():
+        import json
+        from agent import run_agent_stream
+        try:
+            async for evt in run_agent_stream(message, session_id, email):
+                yield f"data: {json.dumps(evt)}\n\n"
+        except Exception as e:
+            LOGGER.exception("Agent stream error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Agent error — please try again'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------------------------------------------------------
