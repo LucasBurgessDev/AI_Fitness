@@ -214,6 +214,7 @@
     background: var(--surface); border-top: 1px solid var(--border);
     padding: 0.7rem 1rem; padding-bottom: max(0.7rem, env(safe-area-inset-bottom));
     flex-shrink: 0;
+    position: sticky; bottom: 0; z-index: 10;
   }
   #input-row { display: flex; gap: 0.5rem; max-width: 860px; margin: 0 auto; align-items: flex-end; }
   #message-input {
@@ -223,7 +224,7 @@
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   #message-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,200,255,0.1); }
-  #message-input::placeholder { color: var(--text-muted); }
+  #message-input::placeholder { color: var(--text-muted); font-size: 0.88rem; }
   #send-btn {
     width: 44px; height: 44px; padding: 0;
     background: var(--accent); color: var(--ground);
@@ -298,7 +299,7 @@
       </div>
       <div id="input-row">
         <button id="burger-btn" onclick="toggleSidebar()" title="Conversations">☰</button>
-        <textarea id="message-input" placeholder="Ask about your health, activity, sleep, weight…" rows="1"></textarea>
+        <textarea id="message-input" placeholder="Ask your health coach…" rows="1"></textarea>
         <button id="send-btn" onclick="sendMessage()" title="Send">↑</button>
       </div>
     </div>
