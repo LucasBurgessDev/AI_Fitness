@@ -130,11 +130,13 @@
   }
   .quote-dots::-webkit-scrollbar { display: none; }
   .quote-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: var(--border); cursor: pointer; transition: background 0.2s, transform 0.2s;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-muted); opacity: 0.3;
+    cursor: pointer; transition: background 0.2s, transform 0.2s, opacity 0.2s;
     border: none; padding: 0; flex-shrink: 0;
+    -webkit-appearance: none; appearance: none;
   }
-  .quote-dot.active { background: var(--accent); transform: scale(1.4); }
+  .quote-dot.active { background: var(--accent); opacity: 1; transform: scale(1.3); }
   @media (max-width: 600px) {
     .quote-card { padding: 1.1rem 1.25rem; min-height: 90px; }
     .quote-text { font-size: 0.88rem; }

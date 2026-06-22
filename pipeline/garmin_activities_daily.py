@@ -558,9 +558,14 @@ def fetch_hr_zones_endpoint(api: Garmin, activity_id: str) -> list:
         return zones
     try:
         data = fn(activity_id)
-        if not isinstance(data, dict):
+        # API returns a list directly, or sometimes a dict with timeInZoneList
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            items = data.get("timeInZoneList", [])
+        else:
             return zones
-        for item in data.get("timeInZoneList", []):
+        for item in items:
             z = int(item.get("zoneNumber", 0))
             if 1 <= z <= 5:
                 zones[z - 1] = safe_float(item.get("secsInZone"))
