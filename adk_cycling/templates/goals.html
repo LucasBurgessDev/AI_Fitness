@@ -295,19 +295,35 @@
       const actualFmt = actual != null ? actual.toFixed(meta.decimals) : '—';
       const targetFmt = target.toFixed(meta.decimals);
 
+      // For "target" KPIs (weight, body fat) show the actual value in the ring
+      // and a delta label — the % fill still shows proximity to goal visually
+      let ringInner, ringSubLabel;
+      if (meta.isTarget && actual != null) {
+        const delta = (actual - target).toFixed(meta.decimals);
+        const absDelta = Math.abs(parseFloat(delta));
+        const atGoal = absDelta < 0.1;
+        const overGoal = parseFloat(delta) > 0;
+        ringInner = `<div class="ring-pct" style="color:${color};font-size:1.1rem">${actualFmt}</div>
+                     <div class="ring-actual">${meta.unit}</div>`;
+        ringSubLabel = atGoal
+          ? `<span style="color:var(--green)">At target ✓</span>`
+          : `${overGoal ? '+' : ''}${delta} ${meta.unit} vs target`;
+      } else {
+        ringInner = `<div class="ring-pct" style="color:${color}">${pct}%</div>
+                     <div class="ring-actual">${actualFmt} ${meta.unit}</div>`;
+        ringSubLabel = `Target: ${targetFmt} ${meta.unit}`;
+      }
+
       const card = document.createElement('div');
       card.className = 'kpi-card';
       card.innerHTML = `
         <div class="kpi-label">${meta.label}</div>
         <div class="ring-wrap">
           <div class="ring" id="ring-${key}" style="--ring-deg:${deg}deg;--ring-color:${color};">
-            <div class="ring-inner">
-              <div class="ring-pct" style="color:${color}">${pct}%</div>
-              <div class="ring-actual">${actualFmt} ${meta.unit}</div>
-            </div>
+            <div class="ring-inner">${ringInner}</div>
           </div>
         </div>
-        <div class="ring-actual" style="font-size:0.7rem">Target: ${targetFmt} ${meta.unit}</div>
+        <div class="ring-actual" style="font-size:0.7rem">${ringSubLabel}</div>
         ${hist.length > 1 ? `<div class="sparkline-wrap"><canvas id="${sparkId}"></canvas></div>` : ''}
       `;
       grid.appendChild(card);
