@@ -156,7 +156,7 @@
           {% if profile.kpis and profile.kpis.target_weight_kg and profile.kpis.target_weight_kg.enabled %}checked{% endif %} />
         <label class="kpi-label">Target weight</label>
         <input type="number" name="kpi_target_weight_kg_target" min="30" max="300" step="0.5"
-          value="{{ (profile.kpis or {}).get('target_weight_kg', {}).get('target', 80) }}" />
+          value="{{ (profile.kpis or {}).get('target_weight_kg', {}).get('target', 85) }}" />
         <span class="kpi-unit">kg</span>
       </div>
       <div class="kpi-row">
