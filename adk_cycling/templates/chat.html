@@ -69,23 +69,32 @@
 
   /* ---- Welcome view ---- */
   #welcome-view {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 2rem 1.5rem; gap: 1.5rem; min-height: 0;
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding: 2rem 1.5rem 1.25rem; min-height: 0;
   }
   #welcome-view.hidden { display: none; }
   .welcome-hero { text-align: center; }
-  .welcome-hero .hero-icon { font-size: 2.4rem; margin-bottom: 0.5rem; }
-  .welcome-hero h2 { font-size: 1.35rem; font-weight: 700; color: var(--text); margin-bottom: 0.3rem; }
-  .welcome-hero p { font-size: 0.88rem; color: var(--text-muted); max-width: 340px; line-height: 1.5; }
-  .suggestions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; width: 100%; max-width: 540px; }
-  @media (max-width: 420px) { .suggestions-grid { grid-template-columns: 1fr; } }
-  .suggestion-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    padding: 0.7rem 0.9rem; font-size: 0.82rem; color: var(--text);
-    cursor: pointer; transition: background 0.12s, border-color 0.12s, transform 0.1s;
-    text-align: left; line-height: 1.4; box-shadow: var(--shadow);
+  .welcome-hero .hero-icon { font-size: 2.2rem; margin-bottom: 0.45rem; }
+  .welcome-hero h2 { font-size: 1.25rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+  .welcome-hero p { font-size: 0.85rem; color: var(--text-muted); max-width: 320px; line-height: 1.5; margin: 0 auto; }
+
+  /* ---- Suggestion chips (above input bar) ---- */
+  #chip-row {
+    display: flex; gap: 0.45rem; padding: 0.55rem 1rem;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; flex-shrink: 0;
+    background: var(--surface); border-top: 1px solid var(--border);
   }
-  .suggestion-card:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+  #chip-row::-webkit-scrollbar { display: none; }
+  #chip-row.hidden { display: none; }
+  .chip {
+    white-space: nowrap; flex-shrink: 0;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 20px;
+    padding: 0.3rem 0.75rem; font-size: 0.8rem; color: var(--text-muted);
+    cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+    font-family: inherit;
+  }
+  .chip:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
 
   /* ---- Messages ---- */
   #chat-container {
@@ -273,19 +282,20 @@
         <h2>Your Health Coach</h2>
         <p>Ask me about your activity, sleep, weight, energy levels, and how to build healthier habits.</p>
       </div>
-      <div class="suggestions-grid">
-        <div class="suggestion-card" onclick="fillInput(this)">How was my week of activity?</div>
-        <div class="suggestion-card" onclick="fillInput(this)">How's my sleep been?</div>
-        <div class="suggestion-card" onclick="fillInput(this)">How's my energy and recovery today?</div>
-        <div class="suggestion-card" onclick="fillInput(this)">What should I focus on this week?</div>
-        <div class="suggestion-card" onclick="fillInput(this)">How's my weight trending?</div>
-        <div class="suggestion-card" onclick="fillInput(this)">What's a good plan to move more this week?</div>
-      </div>
     </div>
 
     <div id="chat-container" class="hidden"></div>
 
     <div id="input-area">
+      <div id="chip-row">
+        <button class="chip" onclick="fillInput(this)" data-msg="How was my week of activity?">This week's activity</button>
+        <button class="chip" onclick="fillInput(this)" data-msg="How's my sleep been lately?">Sleep</button>
+        <button class="chip" onclick="fillInput(this)" data-msg="How's my energy and recovery today?">Energy today</button>
+        <button class="chip" onclick="fillInput(this)" data-msg="What should I focus on this week to feel better?">Focus this week</button>
+        <button class="chip" onclick="fillInput(this)" data-msg="How's my weight trending?">Weight trend</button>
+        <button class="chip" onclick="fillInput(this)" data-msg="What's a good way to get more active this week?">Move more</button>
+        <button class="chip" onclick="fillInput(this)" data-msg="What does my body battery say about my recovery?">Body battery</button>
+      </div>
       <div id="input-row">
         <button id="burger-btn" onclick="toggleSidebar()" title="Conversations">☰</button>
         <textarea id="message-input" placeholder="Ask about your health, activity, sleep, weight…" rows="1"></textarea>
@@ -440,10 +450,12 @@
     document.getElementById('welcome-view').classList.remove('hidden');
     document.getElementById('chat-container').classList.add('hidden');
     document.getElementById('chat-container').innerHTML = '';
+    document.getElementById('chip-row').classList.remove('hidden');
   }
   function showChat() {
     document.getElementById('welcome-view').classList.add('hidden');
     document.getElementById('chat-container').classList.remove('hidden');
+    document.getElementById('chip-row').classList.add('hidden');
   }
   function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -554,7 +566,12 @@
   });
   inputEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 
-  function fillInput(el) { inputEl.value = el.textContent; inputEl.focus(); }
+  function fillInput(el) {
+    inputEl.value = el.dataset.msg || el.textContent;
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 130) + 'px';
+    inputEl.focus();
+  }
 
   function appendUser(text) {
     showChat();
