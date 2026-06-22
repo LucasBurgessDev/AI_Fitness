@@ -3,6 +3,7 @@
 
 {% block head_extra %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/chart.min.js"></script>
 {% endblock %}
 
 {% block page_style %}
@@ -138,10 +139,41 @@
   }
   .assistant .bubble pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; overflow-x: auto; margin: 0.45rem 0; }
   .assistant .bubble pre code { background: none; border: none; padding: 0; }
-  .assistant .bubble table { border-collapse: collapse; width: 100%; font-size: 0.84rem; margin: 0.45rem 0; }
-  .assistant .bubble th, .assistant .bubble td { border: 1px solid var(--border); padding: 0.3rem 0.55rem; text-align: left; }
-  .assistant .bubble th { background: var(--surface-2); font-weight: 600; }
+  /* Tables — scrollable on mobile */
+  .assistant .bubble .table-wrap {
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    margin: 0.5rem 0; border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .assistant .bubble .table-wrap table {
+    border-collapse: collapse; min-width: 100%; font-size: 0.82rem; margin: 0; white-space: nowrap;
+  }
+  .assistant .bubble .table-wrap th,
+  .assistant .bubble .table-wrap td {
+    padding: 0.32rem 0.65rem; text-align: left;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+  .assistant .bubble .table-wrap th:last-child,
+  .assistant .bubble .table-wrap td:last-child { border-right: none; }
+  .assistant .bubble .table-wrap th { background: var(--surface-2); font-weight: 600; font-size: 0.79rem; }
+  .assistant .bubble .table-wrap tr:last-child td { border-bottom: none; }
+  .assistant .bubble .table-wrap tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+  [data-theme="light"] .assistant .bubble .table-wrap tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
   .assistant .bubble hr { border: none; border-top: 1px solid var(--border); margin: 0.65rem 0; }
+
+  /* Inline charts */
+  .chat-chart {
+    margin: 0.6rem 0; padding: 0.85rem 0.9rem;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .chat-chart .chart-label {
+    font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.6rem;
+  }
+  .chat-chart canvas { max-height: 200px; }
+  @media (max-width: 640px) { .chat-chart canvas { max-height: 160px; } }
   .message-wrapper { display: flex; flex-direction: column; max-width: 78%; }
 
   /* Agent status bubble */
@@ -398,7 +430,7 @@
       chatEl.innerHTML = '';
       for (const msg of messages) {
         if (msg.role === 'user') appendUser(msg.content);
-        else if (msg.role === 'assistant') appendAssistant(marked.parse(msg.content || ''));
+        else if (msg.role === 'assistant') appendAssistant(msg.content || '', true);
       }
       chatEl.scrollTop = chatEl.scrollHeight;
     } catch(e) { console.error('loadMessages', e); showWelcome(); }
@@ -425,6 +457,96 @@
   const sendBtn = document.getElementById('send-btn');
 
   marked.setOptions({ breaks: true, gfm: true });
+
+  // ---- Markdown post-processor ----
+  function renderMarkdown(md) {
+    let html = marked.parse(md || '');
+    // Wrap tables in a horizontal-scroll container
+    html = html.replace(/<table>/g, '<div class="table-wrap"><table>')
+               .replace(/<\/table>/g, '</table></div>');
+    // Replace ```chart code blocks with chart placeholders
+    html = html.replace(
+      /<pre><code class="language-chart">([\s\S]*?)<\/code><\/pre>/g,
+      (_, raw) => {
+        const json = raw
+          .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+          .replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
+        const id = 'cc' + Math.random().toString(36).slice(2, 8);
+        return `<div class="chat-chart" id="${id}" data-spec="${encodeURIComponent(json)}"></div>`;
+      }
+    );
+    return html;
+  }
+
+  // ---- Chart rendering ----
+  const _chartInstances = {};
+
+  function hydrateCharts(el) {
+    el.querySelectorAll('.chat-chart[data-spec]').forEach(div => {
+      try {
+        const spec = JSON.parse(decodeURIComponent(div.dataset.spec));
+        renderChatChart(div, spec);
+        div.removeAttribute('data-spec');
+      } catch(e) {
+        div.textContent = 'Chart error: ' + e.message;
+      }
+    });
+  }
+
+  function renderChatChart(div, spec) {
+    const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const fg   = dark ? '#E8EDF5' : '#111825';
+    const grid = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const pal  = ['#00C8FF','#00E09B','#9B6DFF','#FFB830','#FF4F1F','#6B7A99'];
+
+    if (spec.title) {
+      const lbl = document.createElement('div');
+      lbl.className = 'chart-label'; lbl.textContent = spec.title;
+      div.appendChild(lbl);
+    }
+    const canvas = document.createElement('canvas');
+    div.appendChild(canvas);
+
+    const isPie = spec.type === 'doughnut' || spec.type === 'pie';
+    const datasets = (spec.datasets || []).map((ds, i) => ({
+      label: ds.label || '',
+      data: ds.data,
+      backgroundColor: isPie ? pal : (spec.type === 'bar' ? pal[i % pal.length] + 'BB' : 'transparent'),
+      borderColor: isPie ? '#00000000' : pal[i % pal.length],
+      borderWidth: spec.type === 'line' ? 2 : 1,
+      fill: false,
+      tension: 0.35,
+      pointRadius: spec.type === 'line' ? 3 : 0,
+      pointHoverRadius: 5,
+    }));
+
+    const id = div.id;
+    if (_chartInstances[id]) { _chartInstances[id].destroy(); }
+    _chartInstances[id] = new Chart(canvas, {
+      type: spec.type || 'bar',
+      data: { labels: spec.labels || [], datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        animation: { duration: 400 },
+        plugins: {
+          legend: {
+            display: datasets.length > 1 || isPie,
+            labels: { color: fg, font: { size: 11 }, boxWidth: 12, padding: 10 },
+          },
+          tooltip: {
+            backgroundColor: dark ? '#1A2233' : '#FFFFFF',
+            titleColor: fg, bodyColor: fg,
+            borderColor: grid, borderWidth: 1,
+          },
+        },
+        scales: isPie ? undefined : {
+          x: { ticks: { color: fg, font: { size: 10 }, maxRotation: 45 }, grid: { color: grid } },
+          y: { ticks: { color: fg, font: { size: 10 } }, grid: { color: grid } },
+        },
+      },
+    });
+  }
 
   inputEl.addEventListener('input', () => {
     inputEl.style.height = 'auto';
@@ -481,12 +603,15 @@
     if (row) { row.className = 'agent-tool done'; row.querySelector('.tool-spin').textContent = '✓'; }
   }
 
-  function appendAssistant(html) {
+  function appendAssistant(html, raw) {
     showChat();
     const w = document.createElement('div'); w.className = 'message assistant';
     w.innerHTML = `<div class="avatar">AI</div><div class="message-wrapper"><div class="bubble"></div></div>`;
-    w.querySelector('.bubble').innerHTML = html;
-    chatEl.appendChild(w); chatEl.scrollTop = chatEl.scrollHeight; return w;
+    const bubble = w.querySelector('.bubble');
+    bubble.innerHTML = raw ? renderMarkdown(html) : html;
+    chatEl.appendChild(w);
+    hydrateCharts(bubble);
+    chatEl.scrollTop = chatEl.scrollHeight; return w;
   }
 
   async function sendMessage() {
@@ -522,14 +647,14 @@
           else if (evt.type === 'tool_done') { toolDone(thinking, evt.name); }
           else if (evt.type === 'done') {
             thinking.remove();
-            appendAssistant(marked.parse(evt.response || '(no response)'));
+            appendAssistant(evt.response || '(no response)', true);
             loadSessionList();
           } else if (evt.type === 'error') { throw new Error(evt.message); }
         }
       }
     } catch(err) {
       thinking.remove();
-      appendAssistant(`<em style="color:var(--text-muted)">Error: ${err.message}</em>`);
+      appendAssistant(`<em style="color:var(--text-muted)">Error: ${escHtml(err.message)}</em>`);
     } finally { sendBtn.disabled = false; inputEl.focus(); }
   }
 </script>
