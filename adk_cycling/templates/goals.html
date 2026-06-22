@@ -104,9 +104,10 @@
   .quote-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
     box-shadow: var(--shadow-md); padding: 1.4rem 1.75rem; margin-bottom: 1.5rem;
-    min-height: 110px; display: flex; flex-direction: column; justify-content: center;
-    position: relative; overflow: hidden;
+    min-height: 120px; display: flex; flex-direction: column; justify-content: center;
+    position: relative; overflow: hidden; cursor: grab;
   }
+  .quote-card:active { cursor: grabbing; }
   .quote-card::before {
     content: '\201C';
     position: absolute; top: 0.2rem; left: 0.9rem;
@@ -123,14 +124,15 @@
     padding-left: 0.5rem;
   }
   .quote-dots {
-    display: flex; gap: 0.35rem; justify-content: center; margin-top: 0.9rem;
+    display: flex; gap: 0.25rem; justify-content: center; margin-top: 0.9rem;
+    flex-wrap: wrap; max-width: 100%;
   }
   .quote-dot {
-    width: 6px; height: 6px; border-radius: 50%;
+    width: 5px; height: 5px; border-radius: 50%;
     background: var(--border); cursor: pointer; transition: background 0.2s, transform 0.2s;
-    border: none; padding: 0;
+    border: none; padding: 0; flex-shrink: 0;
   }
-  .quote-dot.active { background: var(--accent); transform: scale(1.3); }
+  .quote-dot.active { background: var(--accent); transform: scale(1.4); }
   @media (max-width: 600px) {
     .quote-card { padding: 1.1rem 1.25rem; min-height: 90px; }
     .quote-text { font-size: 0.88rem; }
@@ -188,20 +190,68 @@
 <script>
   // ── Quotes carousel ──
   (function() {
-    const QUOTES = [
+    const ALL_QUOTES = [
+      // JRR Tolkien
+      { text: "Not all those who wander are lost.", author: "J.R.R. Tolkien" },
+      { text: "All we have to decide is what to do with the time that is given us.", author: "J.R.R. Tolkien" },
+      { text: "Even the smallest person can change the course of the future.", author: "J.R.R. Tolkien" },
+      { text: "Faithless is he that says farewell when the road darkens.", author: "J.R.R. Tolkien" },
+      { text: "It's a dangerous business, going out your door. You step onto the road, and if you don't keep your feet, there's no knowing where you might be swept off to.", author: "J.R.R. Tolkien" },
+      { text: "The greatest adventure is what lies ahead.", author: "J.R.R. Tolkien" },
+      // Marcus Aurelius / Stoics
+      { text: "The impediment to action advances action. What stands in the way becomes the way.", author: "Marcus Aurelius" },
+      { text: "You have power over your mind, not outside events. Realize this, and you will find strength.", author: "Marcus Aurelius" },
+      { text: "Confine yourself to the present.", author: "Marcus Aurelius" },
+      { text: "Do not indulge in dreams of what you do not have, but count the blessings you actually possess.", author: "Marcus Aurelius" },
+      { text: "He suffers more than necessary, who suffers before it is necessary.", author: "Seneca" },
+      { text: "Difficulties strengthen the mind, as labour does the body.", author: "Seneca" },
+      // Fitness & cycling
       { text: "It never gets easier, you just get faster.", author: "Greg LeMond" },
       { text: "Ride as much or as little, as long or as short as you feel. But ride.", author: "Eddy Merckx" },
-      { text: "Nothing compares to the simple pleasure of riding a bike.", author: "John F. Kennedy" },
       { text: "The body achieves what the mind believes.", author: "Unknown" },
-      { text: "Champions keep going when they don't have anything left.", author: "Billie Jean King" },
-      { text: "Pain is temporary. Glory is forever.", author: "Unknown" },
-      { text: "Every day is a good day to ride.", author: "Unknown" },
+      { text: "Take care of your body. It's the only place you have to live.", author: "Jim Rohn" },
       { text: "Your body is capable of more than your mind will allow.", author: "Unknown" },
       { text: "Suffering is temporary. KOMs are forever.", author: "Cycling Community" },
+      { text: "Champions keep going when they don't have anything left.", author: "Billie Jean King" },
       { text: "The harder the battle, the sweeter the victory.", author: "Les Brown" },
+      // Churchill & history
+      { text: "Success is not final, failure is not fatal: it is the courage to continue that counts.", author: "Winston Churchill" },
+      { text: "Continuous effort — not strength or intelligence — is the key to unlocking our potential.", author: "Winston Churchill" },
+      { text: "Nothing in the world is worth having or worth doing unless it means effort, pain, difficulty.", author: "Theodore Roosevelt" },
+      { text: "Do what you can, with what you have, where you are.", author: "Theodore Roosevelt" },
+      // Philosophy & literature
+      { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Aristotle" },
+      { text: "A journey of a thousand miles begins with a single step.", author: "Lao Tzu" },
+      { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+      { text: "The world breaks everyone, and afterward, many are strong at the broken places.", author: "Ernest Hemingway" },
+      { text: "Watch with glittering eyes the whole world around you, because the greatest secrets are hidden in the most unlikely places.", author: "Roald Dahl" },
+      { text: "You are never too old to set another goal or to dream a new dream.", author: "C.S. Lewis" },
+      // Practical wisdom
+      { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },
+      { text: "Our greatest weakness lies in giving up. The most certain way to succeed is always to try just one more time.", author: "Thomas Edison" },
       { text: "Don't watch the clock; do what it does. Keep going.", author: "Sam Levenson" },
-      { text: "The only bad ride is the one you didn't take.", author: "Unknown" },
+      { text: "Nothing will work unless you do.", author: "Maya Angelou" },
+      { text: "All our dreams can come true, if we have the courage to pursue them.", author: "Walt Disney" },
+      { text: "The people who are crazy enough to think they can change the world are the ones who do.", author: "Steve Jobs" },
     ];
+
+    // Deterministic daily shuffle using the date as a seed (LCG)
+    function dailySeed() {
+      const d = new Date();
+      return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+    }
+    function seededShuffle(arr, seed) {
+      const a = [...arr];
+      let s = seed >>> 0;
+      for (let i = a.length - 1; i > 0; i--) {
+        s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+        const j = s % (i + 1);
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    const QUOTES = seededShuffle(ALL_QUOTES, dailySeed());
     let qi = 0, timer = null;
     const textEl = document.getElementById('quote-text');
     const authEl = document.getElementById('quote-author');
@@ -211,12 +261,13 @@
     QUOTES.forEach((_, i) => {
       const d = document.createElement('button');
       d.className = 'quote-dot' + (i === 0 ? ' active' : '');
+      d.setAttribute('aria-label', `Quote ${i + 1}`);
       d.addEventListener('click', () => { clearInterval(timer); showQuote(i); startTimer(); });
       dotsEl.appendChild(d);
     });
 
     function showQuote(idx) {
-      qi = (idx + QUOTES.length) % QUOTES.length;
+      qi = ((idx % QUOTES.length) + QUOTES.length) % QUOTES.length;
       textEl.style.opacity = '0'; authEl.style.opacity = '0';
       setTimeout(() => {
         textEl.textContent = QUOTES[qi].text;
@@ -227,8 +278,16 @@
     }
 
     function startTimer() {
-      timer = setInterval(() => showQuote(qi + 1), 7000);
+      timer = setInterval(() => showQuote(qi + 1), 8000);
     }
+
+    // Touch swipe
+    let touchX = 0;
+    card.addEventListener('touchstart', e => { touchX = e.changedTouches[0].clientX; }, { passive: true });
+    card.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - touchX;
+      if (Math.abs(dx) > 40) { clearInterval(timer); showQuote(qi + (dx < 0 ? 1 : -1)); startTimer(); }
+    }, { passive: true });
 
     card.addEventListener('mouseenter', () => clearInterval(timer));
     card.addEventListener('mouseleave', startTimer);
