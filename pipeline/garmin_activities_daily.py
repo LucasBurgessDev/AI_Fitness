@@ -518,6 +518,38 @@ def extract_hr_zones(detail: Dict[str, Any]) -> list:
     return zones
 
 
+def extract_hr_from_metrics(detail: Dict[str, Any]) -> tuple:
+    """Compute (avg_hr, max_hr) from the activity detail metrics timeseries.
+
+    get_activity_details returns metricDescriptors (index→type map) and
+    activityDetailMetrics (array of samples, each with a metrics[] array).
+    Zwift/virtual rides often omit averageHR from the summary fields but
+    always have per-second HR samples here if the watch was recording HR.
+    Returns (None, None) if HR metrics are absent.
+    """
+    descriptors = detail.get("metricDescriptors") or []
+    hr_idx = None
+    for d in descriptors:
+        mt = str(d.get("metricsType") or "").upper()
+        if "HEART_RATE" in mt:
+            hr_idx = d.get("metricsIndex")
+            break
+    if hr_idx is None:
+        return None, None
+
+    hr_vals = []
+    for sample in (detail.get("activityDetailMetrics") or []):
+        row = sample.get("metrics") or []
+        if hr_idx < len(row) and row[hr_idx] is not None:
+            v = safe_float(row[hr_idx])
+            if v and 30 <= v <= 250:
+                hr_vals.append(v)
+
+    if not hr_vals:
+        return None, None
+    return round(sum(hr_vals) / len(hr_vals), 1), max(hr_vals)
+
+
 def fetch_hr_zones_endpoint(api: Garmin, activity_id: str) -> list:
     """Fetch HR zone breakdown via dedicated endpoint (fallback)."""
     zones = [None] * 5
@@ -791,13 +823,23 @@ def to_row(
     detail = detail or {}
     summary_dto = detail.get("summaryDTO") or {}
 
-    # summaryDTO fallbacks — Garmin list API often omits HR and power for indoor/virtual rides.
+    # summaryDTO fallbacks — Garmin list API often omits HR for indoor/virtual rides.
     if avg_hr is None:
         avg_hr = safe_float(
             summary_dto.get("averageHR") or summary_dto.get("avgHR")
         )
     if max_hr is None:
         max_hr = safe_float(summary_dto.get("maxHR"))
+
+    # Final fallback: compute avg/max HR from the per-second metrics timeseries.
+    # Zwift activities synced to Garmin often have no HR in summary fields but
+    # do have the raw sample data from the watch recording alongside.
+    if avg_hr is None or max_hr is None:
+        ts_avg, ts_max = extract_hr_from_metrics(detail)
+        if avg_hr is None:
+            avg_hr = ts_avg
+        if max_hr is None:
+            max_hr = ts_max
 
     if avg_power is None:
         avg_power = _bounded_power(safe_float(
