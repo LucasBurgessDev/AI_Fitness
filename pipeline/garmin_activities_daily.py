@@ -430,8 +430,8 @@ def fetch_activity_detail(api: Garmin, activity_id: str) -> Dict[str, Any]:
     return result
 
 
-_POWER_MIN_W = 30.0    # below this is noise / sensor error
-_POWER_MAX_W = 3000.0  # above this is a timestamp/ID masquerading as watts
+_POWER_MIN_W = 30.0     # below this is noise / sensor error
+_POWER_MAX_W = 2500.0  # above this is almost certainly a unit error or a timestamp
 
 
 def _bounded_power(val: Optional[float]) -> Optional[float]:
@@ -772,6 +772,7 @@ def to_row(
 
     elev_gain_m = safe_float(act.get("totalElevationGain") or act.get("elevationGain"))
 
+    # List API sometimes omits HR for virtual/indoor rides; fall through to summaryDTO below.
     avg_hr = safe_float(act.get("averageHR"))
     max_hr = safe_float(act.get("maxHR"))
 
@@ -790,8 +791,14 @@ def to_row(
     detail = detail or {}
     summary_dto = detail.get("summaryDTO") or {}
 
-    # Garmin often omits averagePower/maxPower from the list API for virtual rides;
-    # fall back to the detail summaryDTO before giving up.
+    # summaryDTO fallbacks — Garmin list API often omits HR and power for indoor/virtual rides.
+    if avg_hr is None:
+        avg_hr = safe_float(
+            summary_dto.get("averageHR") or summary_dto.get("avgHR")
+        )
+    if max_hr is None:
+        max_hr = safe_float(summary_dto.get("maxHR"))
+
     if avg_power is None:
         avg_power = _bounded_power(safe_float(
             summary_dto.get("averagePower") or summary_dto.get("avgPower")

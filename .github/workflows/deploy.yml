@@ -228,7 +228,7 @@ jobs:
           gcloud scheduler jobs create http cycling-coach-reminders \
             --location="$REGION" \
             --project="$PROJECT_ID" \
-            --schedule="*/30 * * * *" \
+            --schedule="*/5 * * * *" \
             --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
             --http-method=POST \
             --time-zone="Europe/London" >/dev/null 2>&1

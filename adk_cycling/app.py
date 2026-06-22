@@ -902,6 +902,9 @@ async def api_cycling_stats(request: Request, weeks: int = 8):
       'indoor_cycling','virtual_ride','spinning'
     )
     AND date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+    -- Filter out rows with clearly erroneous power readings (data artifact protection)
+    AND (normalized_power_w IS NULL OR normalized_power_w <= 2500)
+    AND (avg_power_w IS NULL OR avg_power_w <= 2500)
     QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
     ORDER BY date DESC
     """
@@ -944,7 +947,9 @@ async def api_cycling_stats(request: Request, weeks: int = 8):
         for r in rows
     ]
 
-    return JSONResponse({"activities": activities})
+    profile_ftp = profile_store.load().get("ftp")
+
+    return JSONResponse({"activities": activities, "profile_ftp": profile_ftp})
 
 
 @app.get("/api/analytics/goals")

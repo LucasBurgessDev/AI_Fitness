@@ -126,7 +126,7 @@
 {% block page_script %}
 <script>
   const charts = {};
-  let _acts = [], _weeks = 8;
+  let _acts = [], _weeks = 8, _ftp = null;
 
   function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
   function isDark() { return document.documentElement.getAttribute('data-theme') !== 'light'; }
@@ -185,22 +185,37 @@
     return Object.values(buckets).sort((a, b) => a.ws.localeCompare(b.ws));
   }
 
+  function _sanePower(w) {
+    // Exclude if it looks like a data artifact (> 2× FTP if known, or > 900W absolute)
+    if (w == null) return false;
+    if (_ftp && w > _ftp * 2) return false;
+    if (!_ftp && w > 900) return false;
+    return true;
+  }
+
   function renderSummary(acts) {
     const totalRides = acts.length;
     const totalKm    = acts.reduce((s, a) => s + (a.distance_m || 0) / 1000, 0);
     const totalDur   = acts.reduce((s, a) => s + (a.duration_s || 0), 0);
     const totalElev  = acts.reduce((s, a) => s + (a.elevation_gain_m || 0), 0);
     const totalTSS   = acts.reduce((s, a) => s + (a.tss || 0), 0);
-    const npActs     = acts.filter(a => a.normalized_power_w);
-    const avgNP      = npActs.length ? npActs.reduce((s, a) => s + a.normalized_power_w, 0) / npActs.length : null;
+    // Use NP where available and sane, fall back to avg_power_w
+    const pwrActs = acts.filter(a => {
+      const p = a.normalized_power_w || a.avg_power_w;
+      return p && _sanePower(p);
+    });
+    const avgPwr = pwrActs.length
+      ? pwrActs.reduce((s, a) => s + (a.normalized_power_w || a.avg_power_w), 0) / pwrActs.length
+      : null;
+    const pwrLabel = pwrActs.some(a => a.normalized_power_w) ? 'Avg NP' : 'Avg Power';
 
     const tiles = [
-      { label: 'Rides',     val: totalRides,                             color: cssVar('--accent') },
-      { label: 'Distance',  val: totalKm.toFixed(1) + ' km',             color: cssVar('--accent') },
-      { label: 'Time',      val: fmtDur(totalDur),                       color: cssVar('--text') },
-      { label: 'Elevation', val: Math.round(totalElev).toLocaleString() + ' m', color: cssVar('--green') },
-      { label: 'TSS',       val: Math.round(totalTSS),                   color: cssVar('--purple') },
-      { label: 'Avg NP',    val: avgNP ? Math.round(avgNP) + ' W' : '—', color: cssVar('--amber') },
+      { label: 'Rides',     val: totalRides,                                        color: cssVar('--accent') },
+      { label: 'Distance',  val: totalKm.toFixed(1) + ' km',                        color: cssVar('--accent') },
+      { label: 'Time',      val: fmtDur(totalDur),                                  color: cssVar('--text') },
+      { label: 'Elevation', val: Math.round(totalElev).toLocaleString() + ' m',     color: cssVar('--green') },
+      { label: 'TSS',       val: Math.round(totalTSS),                              color: cssVar('--purple') },
+      { label: pwrLabel,    val: avgPwr ? Math.round(avgPwr) + ' W' : '—',         color: cssVar('--amber') },
     ];
     document.getElementById('summary-strip').innerHTML = tiles.map(t => `
       <div class="stat-tile">
@@ -210,7 +225,7 @@
   }
 
   function renderBests(acts) {
-    const best20m  = acts.reduce((b, a) => (a.best_20m_watts && a.best_20m_watts > (b || 0)) ? a.best_20m_watts : b, null);
+    const best20m  = acts.reduce((b, a) => (a.best_20m_watts && _sanePower(a.best_20m_watts) && a.best_20m_watts > (b || 0)) ? a.best_20m_watts : b, null);
     const longest  = acts.reduce((b, a) => (a.distance_m && a.distance_m > (b ? b.distance_m : 0)) ? a : b, null);
     const biggestE = acts.reduce((b, a) => (a.elevation_gain_m && a.elevation_gain_m > (b ? b.elevation_gain_m : 0)) ? a : b, null);
     const topTSS   = acts.reduce((b, a) => (a.tss && a.tss > (b ? b.tss : 0)) ? a : b, null);
@@ -323,7 +338,8 @@
       const badge = isIndoor(a.activity_type)
         ? `<span class="badge badge-indoor">${a.activity_type.replace(/_/g, ' ')}</span>`
         : `<span class="badge badge-outdoor">${a.activity_type.replace(/_/g, ' ')}</span>`;
-      const np  = a.normalized_power_w ? Math.round(a.normalized_power_w) + ' W' : '—';
+      const npRaw = (_sanePower(a.normalized_power_w) ? a.normalized_power_w : null) || (_sanePower(a.avg_power_w) ? a.avg_power_w : null);
+      const np  = npRaw ? Math.round(npRaw) + ' W' : '—';
       const ifv = a.intensity_factor    ? a.intensity_factor.toFixed(2)           : '—';
       const tss = a.tss                 ? Math.round(a.tss)                       : '—';
       const hr  = a.avg_hr              ? Math.round(a.avg_hr) + ' bpm'           : '—';
@@ -359,6 +375,7 @@
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       _acts = data.activities || [];
+      _ftp  = data.profile_ftp || null;
       const weekly = aggregateWeekly(_acts);
       renderSummary(_acts);
       renderBests(_acts);

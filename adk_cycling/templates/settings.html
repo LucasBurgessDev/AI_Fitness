@@ -326,12 +326,24 @@
   }
 
   async function sendTestNotification() {
-    testBtn.disabled = true; setStatus('Sending test…', true);
+    testBtn.disabled = true; setStatus('Syncing subscription…', true);
     try {
+      // Always re-sync the browser subscription to the server before testing.
+      // This recovers from the case where the original subscribe call failed silently.
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) { setStatus('No push subscription found. Enable notifications first.', false); return; }
+      const syncResp = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      if (!syncResp.ok) { setStatus(`Subscription sync failed (${syncResp.status}). Try re-enabling notifications.`, false); return; }
+      setStatus('Sending test…', true);
       const resp = await fetch('/api/push/test', { method: 'POST' });
       const data = await resp.json();
-      setStatus(data.message || `Test sent to ${data.sent} subscription(s).`, true);
-    } catch { setStatus('Error sending test notification.', false); }
+      setStatus(data.message || `Test sent to ${data.sent} subscription(s).`, (data.sent || 0) > 0);
+    } catch (e) { setStatus('Error: ' + e.message, false); }
     finally { testBtn.disabled = false; }
   }
 

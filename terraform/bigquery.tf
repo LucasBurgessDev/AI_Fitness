@@ -125,7 +125,7 @@ resource "google_project_iam_member" "sa_cloudscheduler_admin" {
 resource "google_cloud_scheduler_job" "reminders" {
   name      = "cycling-coach-reminders"
   region    = var.region
-  schedule  = "*/30 * * * *"
+  schedule  = "*/5 * * * *"
   time_zone = "Europe/London"
 
   http_target {
