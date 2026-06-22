@@ -125,8 +125,10 @@
   }
   .quote-dots {
     display: flex; gap: 0.25rem; justify-content: center; margin-top: 0.9rem;
-    flex-wrap: wrap; max-width: 100%;
+    flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px;
+    -ms-overflow-style: none; scrollbar-width: none;
   }
+  .quote-dots::-webkit-scrollbar { display: none; }
   .quote-dot {
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--border); cursor: pointer; transition: background 0.2s, transform 0.2s;
@@ -286,7 +288,10 @@
         authEl.textContent = '— ' + QUOTES[qi].author;
         textEl.style.opacity = '1'; authEl.style.opacity = '1';
       }, 250);
-      dotsEl.querySelectorAll('.quote-dot').forEach((d, i) => d.classList.toggle('active', i === qi));
+      const dots = dotsEl.querySelectorAll('.quote-dot');
+      dots.forEach((d, i) => d.classList.toggle('active', i === qi));
+      // Keep the active dot visible in the single scrollable row
+      if (dots[qi]) dots[qi].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
     }
 
     function startTimer() {
