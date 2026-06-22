@@ -115,8 +115,8 @@ def main():
 
     # ── Connect to Garmin ────────────────────────────────────────────────────
     from garminconnect import Garmin
-    api = Garmin()
-    api.login(GARTH_DIR)
+    api = Garmin(os.environ.get("GARMIN_EMAIL", ""), os.environ.get("GARMIN_PASSWORD", ""))
+    api.login(tokenstore=GARTH_DIR)
     LOGGER.info("Garmin login OK")
 
     # ── Connect to BigQuery ──────────────────────────────────────────────────
@@ -125,11 +125,12 @@ def main():
 
     types_sql = ", ".join(f"'{t}'" for t in CYCLING_TYPES)
     query = f"""
-    SELECT DISTINCT activity_id
+    SELECT activity_id
     FROM `{PROJECT_ID}.garmin.garmin_activities`
     WHERE activity_type IN ({types_sql})
       AND avg_hr IS NULL
-    ORDER BY date DESC
+    GROUP BY activity_id
+    ORDER BY MAX(date) DESC
     LIMIT {args.limit}
     """
     rows = list(bq.query(query).result())
