@@ -368,6 +368,14 @@ async def training_analytics_page(request: Request):
     return templates.TemplateResponse(request, "training_analytics.html", {"email": session["email"]})
 
 
+@app.get("/cycling", response_class=HTMLResponse)
+async def cycling_stats_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(request, "cycling_stats.html", {"email": session["email"]})
+
+
 @app.get("/goals", response_class=HTMLResponse)
 async def goals_page(request: Request):
     session = _get_session(request)
@@ -868,6 +876,75 @@ async def api_training_analytics(request: Request, days: int = 180):
         "latest_atl": pmc["atl"][-1] if pmc["atl"] else None,
         "latest_tsb": pmc["tsb"][-1] if pmc["tsb"] else None,
     })
+
+
+@app.get("/api/cycling/stats")
+async def api_cycling_stats(request: Request, weeks: int = 8):
+    """Return cycling-specific activities for the last N weeks."""
+    _require_session(request)
+    from google.cloud import bigquery
+    client = bigquery.Client(project=PROJECT_ID)
+    days = weeks * 7
+
+    sql = f"""
+    SELECT
+      date, title, activity_type,
+      duration_s, distance_m, elevation_gain_m,
+      avg_speed_mps, avg_power_w, normalized_power_w, best_20m_watts,
+      ftp_watts, intensity_factor, tss,
+      avg_hr, max_hr, calories, cycling_cadence_rpm,
+      hr_zone_1_secs, hr_zone_2_secs, hr_zone_3_secs, hr_zone_4_secs, hr_zone_5_secs,
+      power_zone_1_secs, power_zone_2_secs, power_zone_3_secs, power_zone_4_secs, power_zone_5_secs,
+      aerobic_te, anaerobic_te, aerobic_decoupling_pct
+    FROM `{PROJECT_ID}.garmin.garmin_activities`
+    WHERE activity_type IN (
+      'cycling','road_cycling','gravel_cycling','mountain_biking',
+      'indoor_cycling','virtual_ride','spinning'
+    )
+    AND date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    ORDER BY date DESC
+    """
+
+    try:
+        import bq_cache
+        rows = bq_cache.query(client, sql)
+    except Exception as exc:
+        LOGGER.exception("Cycling stats BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    def _f(v):
+        return float(v) if v is not None else None
+
+    activities = [
+        {
+            "date": str(r["date"]),
+            "title": r["title"] or "",
+            "activity_type": (r["activity_type"] or "").lower(),
+            "duration_s": _f(r["duration_s"]),
+            "distance_m": _f(r["distance_m"]),
+            "elevation_gain_m": _f(r["elevation_gain_m"]),
+            "avg_speed_mps": _f(r["avg_speed_mps"]),
+            "avg_power_w": _f(r["avg_power_w"]),
+            "normalized_power_w": _f(r["normalized_power_w"]),
+            "best_20m_watts": _f(r["best_20m_watts"]),
+            "ftp_watts": _f(r["ftp_watts"]),
+            "intensity_factor": _f(r["intensity_factor"]),
+            "tss": _f(r["tss"]),
+            "avg_hr": _f(r["avg_hr"]),
+            "max_hr": _f(r["max_hr"]),
+            "calories": _f(r["calories"]),
+            "cadence": _f(r["cycling_cadence_rpm"]),
+            "hr_zones": [_f(r[f"hr_zone_{i}_secs"]) for i in range(1, 6)],
+            "power_zones": [_f(r[f"power_zone_{i}_secs"]) for i in range(1, 6)],
+            "aerobic_te": _f(r["aerobic_te"]),
+            "anaerobic_te": _f(r["anaerobic_te"]),
+            "decoupling": _f(r["aerobic_decoupling_pct"]),
+        }
+        for r in rows
+    ]
+
+    return JSONResponse({"activities": activities})
 
 
 @app.get("/api/analytics/goals")

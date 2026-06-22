@@ -237,6 +237,8 @@
 
     @media (max-width: 640px) {
       .bottom-nav { display: flex; }
+      .bottom-nav a { font-size: 0.62rem; padding-left: 0.15rem; padding-right: 0.15rem; }
+      .bottom-nav a .bn-icon { font-size: 1.2rem; }
       .bottom-nav-spacer {
         display: block;
         height: calc(72px + env(safe-area-inset-bottom, 0px));
@@ -289,6 +291,7 @@
     <nav class="hdr-nav">
       <a href="/goals" class="{{ 'active' if request.url.path == '/goals' else '' }}">Goals</a>
       <a href="/training" class="{{ 'active' if request.url.path == '/training' else '' }}">Training</a>
+      <a href="/cycling" class="{{ 'active' if request.url.path == '/cycling' else '' }}">Cycling</a>
       <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">Health</a>
       <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">Check-in</a>
       <a href="/calories" class="{{ 'active' if request.url.path == '/calories' else '' }}">Calories</a>
@@ -311,6 +314,9 @@
       </a>
       <a href="/health" class="{{ 'active' if request.url.path == '/health' else '' }}">
         <span class="bn-icon">♥</span>Health
+      </a>
+      <a href="/cycling" class="{{ 'active' if request.url.path == '/cycling' else '' }}">
+        <span class="bn-icon">🚴</span>Cycling
       </a>
       <a href="/checkin" class="{{ 'active' if request.url.path == '/checkin' else '' }}">
         <span class="bn-icon">✓</span>Check-in

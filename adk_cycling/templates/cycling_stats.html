@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% block title %}Cycling · Health Coach{% endblock %}
+
+{% block head_extra %}<script src="/static/chart.min.js"></script>{% endblock %}
+
+{% block page_style %}
+<style>
+  .page-main { flex: 1; max-width: 960px; margin: 0 auto; width: 100%; padding: 1.5rem 1rem 4rem; }
+  .page-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1.25rem; }
+
+  /* Period tabs */
+  .period-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; }
+  .period-tab { padding: 0.35rem 0.9rem; border-radius: 7px; border: 1px solid var(--border); font-size: 0.8rem; font-weight: 600; cursor: pointer; background: var(--surface-2); color: var(--text-muted); transition: background 0.15s, color 0.15s; }
+  .period-tab.active { background: var(--accent); color: var(--ground); border-color: var(--accent); }
+
+  /* Summary strip — 6 cols */
+  .summary-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.85rem; margin-bottom: 1.5rem; }
+  .stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 0.85rem 1rem; }
+  .stat-tile-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem; }
+  .stat-tile-val { font-family: 'JetBrains Mono', monospace; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+
+  /* Bests row — 4 cols */
+  .bests-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem; margin-bottom: 1.5rem; }
+  .best-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
+  .best-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .best-val { font-family: 'JetBrains Mono', monospace; font-size: 1.45rem; font-weight: 700; letter-spacing: -0.04em; line-height: 1.1; }
+  .best-sub { font-size: 0.7rem; color: var(--text-muted); }
+
+  /* Chart grid */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+  .chart-card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow); padding: 1rem 1.1rem; }
+  .chart-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem; }
+  .chart-wrap { height: 200px; position: relative; }
+  .chart-wrap.tall { height: 240px; }
+
+  /* Table */
+  .table-card { background: var(--surface); border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-md); overflow: hidden; margin-bottom: 1.25rem; }
+  .table-hdr { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { background: var(--surface-2); padding: 0.45rem 0.7rem; text-align: left; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-2); }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
+  .badge { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 20px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; }
+  .badge-outdoor { background: rgba(0,224,155,0.12); color: var(--green); }
+  .badge-indoor  { background: rgba(0,200,255,0.12); color: var(--accent); }
+
+  /* Loading / empty */
+  .loading-state { display: flex; align-items: center; justify-content: center; padding: 3rem; color: var(--text-muted); gap: 0.5rem; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state { text-align: center; padding: 3rem 1.5rem; color: var(--text-muted); font-size: 0.9rem; }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .page-main { padding: 1rem 0.875rem 4rem; }
+    .summary-strip { grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+    .bests-strip { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+    .chart-grid { grid-template-columns: 1fr; }
+    .stat-tile-val { font-size: 1.1rem; }
+    .best-val { font-size: 1.2rem; }
+    .chart-wrap { height: 170px; }
+    .chart-wrap.tall { height: 200px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-main">
+  <div class="page-title">Cycling Stats</div>
+
+  <div class="period-tabs">
+    <button class="period-tab" id="tab-4" onclick="setPeriod(4)">4 weeks</button>
+    <button class="period-tab active" id="tab-8" onclick="setPeriod(8)">8 weeks</button>
+    <button class="period-tab" id="tab-16" onclick="setPeriod(16)">16 weeks</button>
+  </div>
+
+  <div id="page-loading" class="loading-state"><div class="spinner"></div>&nbsp;Loading rides…</div>
+
+  <div id="page-content" style="display:none">
+    <div class="summary-strip" id="summary-strip"></div>
+    <div class="bests-strip" id="bests-strip"></div>
+
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Weekly distance &amp; elevation</div>
+        <div class="chart-wrap tall"><canvas id="chart-dist"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Weekly training load (TSS)</div>
+        <div class="chart-wrap tall"><canvas id="chart-tss"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">Power zone distribution</div>
+        <div class="chart-wrap"><canvas id="chart-pz"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">HR zone distribution</div>
+        <div class="chart-wrap"><canvas id="chart-hrz"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-hdr">Recent rides</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Ride</th><th>Type</th><th>Time</th>
+            <th>Dist</th><th>Elev</th><th>NP</th><th>IF</th><th>TSS</th><th>HR</th>
+          </tr></thead>
+          <tbody id="rides-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="empty-rides" class="empty-state" style="display:none">No cycling rides found for this period.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  const charts = {};
+  let _acts = [], _weeks = 8;
+
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function isDark() { return document.documentElement.getAttribute('data-theme') !== 'light'; }
+
+  function weekStart(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function fmtDur(s) {
+    if (!s) return '—';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+  function fmtDist(m) { return m ? (m / 1000).toFixed(1) : '—'; }
+  function fmtElev(m) { return m ? Math.round(m) + ' m' : '—'; }
+  function fmtShort(d) {
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+  function fmtWeekLabel(d) {
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+
+  function makeChart(id, cfg) {
+    if (charts[id]) charts[id].destroy();
+    const c = document.getElementById(id);
+    if (c) charts[id] = new Chart(c, cfg);
+  }
+
+  function chartBase() {
+    const muted = cssVar('--text-muted');
+    const grid = isDark() ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    return {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+      scales: {
+        x: { ticks: { color: muted, font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 }, grid: { color: grid } },
+        y: { ticks: { color: muted, font: { size: 10 } }, grid: { color: grid } },
+      },
+    };
+  }
+
+  function aggregateWeekly(acts) {
+    const buckets = {};
+    acts.forEach(a => {
+      const ws = weekStart(a.date);
+      if (!buckets[ws]) buckets[ws] = { ws, rides: 0, km: 0, elev: 0, dur_s: 0, tss: 0 };
+      buckets[ws].rides += 1;
+      buckets[ws].km    += (a.distance_m || 0) / 1000;
+      buckets[ws].elev  += a.elevation_gain_m || 0;
+      buckets[ws].dur_s += a.duration_s || 0;
+      buckets[ws].tss   += a.tss || 0;
+    });
+    return Object.values(buckets).sort((a, b) => a.ws.localeCompare(b.ws));
+  }
+
+  function renderSummary(acts) {
+    const totalRides = acts.length;
+    const totalKm    = acts.reduce((s, a) => s + (a.distance_m || 0) / 1000, 0);
+    const totalDur   = acts.reduce((s, a) => s + (a.duration_s || 0), 0);
+    const totalElev  = acts.reduce((s, a) => s + (a.elevation_gain_m || 0), 0);
+    const totalTSS   = acts.reduce((s, a) => s + (a.tss || 0), 0);
+    const npActs     = acts.filter(a => a.normalized_power_w);
+    const avgNP      = npActs.length ? npActs.reduce((s, a) => s + a.normalized_power_w, 0) / npActs.length : null;
+
+    const tiles = [
+      { label: 'Rides',     val: totalRides,                             color: cssVar('--accent') },
+      { label: 'Distance',  val: totalKm.toFixed(1) + ' km',             color: cssVar('--accent') },
+      { label: 'Time',      val: fmtDur(totalDur),                       color: cssVar('--text') },
+      { label: 'Elevation', val: Math.round(totalElev).toLocaleString() + ' m', color: cssVar('--green') },
+      { label: 'TSS',       val: Math.round(totalTSS),                   color: cssVar('--purple') },
+      { label: 'Avg NP',    val: avgNP ? Math.round(avgNP) + ' W' : '—', color: cssVar('--amber') },
+    ];
+    document.getElementById('summary-strip').innerHTML = tiles.map(t => `
+      <div class="stat-tile">
+        <div class="stat-tile-label">${t.label}</div>
+        <div class="stat-tile-val" style="color:${t.color}">${t.val}</div>
+      </div>`).join('');
+  }
+
+  function renderBests(acts) {
+    const best20m  = acts.reduce((b, a) => (a.best_20m_watts && a.best_20m_watts > (b || 0)) ? a.best_20m_watts : b, null);
+    const longest  = acts.reduce((b, a) => (a.distance_m && a.distance_m > (b ? b.distance_m : 0)) ? a : b, null);
+    const biggestE = acts.reduce((b, a) => (a.elevation_gain_m && a.elevation_gain_m > (b ? b.elevation_gain_m : 0)) ? a : b, null);
+    const topTSS   = acts.reduce((b, a) => (a.tss && a.tss > (b ? b.tss : 0)) ? a : b, null);
+
+    const cards = [
+      { label: 'Best 20-min Power', val: best20m ? Math.round(best20m) + ' W' : '—',                              sub: 'peak effort',                          color: cssVar('--amber') },
+      { label: 'Longest Ride',      val: longest  ? (longest.distance_m / 1000).toFixed(1) + ' km' : '—',         sub: longest  ? fmtShort(longest.date)  : '', color: cssVar('--accent') },
+      { label: 'Highest Climb',     val: biggestE ? Math.round(biggestE.elevation_gain_m) + ' m' : '—',            sub: biggestE ? fmtShort(biggestE.date) : '', color: cssVar('--green') },
+      { label: 'Peak TSS Ride',     val: topTSS   ? Math.round(topTSS.tss) : '—',                                 sub: topTSS   ? fmtShort(topTSS.date)   : '', color: cssVar('--purple') },
+    ];
+    document.getElementById('bests-strip').innerHTML = cards.map(c => `
+      <div class="best-card">
+        <div class="best-label">${c.label}</div>
+        <div class="best-val" style="color:${c.color}">${c.val}</div>
+        <div class="best-sub">${c.sub}</div>
+      </div>`).join('');
+  }
+
+  function renderWeeklyCharts(weekly) {
+    const labels  = weekly.map(w => fmtWeekLabel(w.ws));
+    const kms     = weekly.map(w => Math.round(w.km * 10) / 10);
+    const elevs   = weekly.map(w => Math.round(w.elev));
+    const tssList = weekly.map(w => Math.round(w.tss));
+    const accent  = isDark() ? 'rgba(0,200,255,0.65)' : 'rgba(0,127,168,0.75)';
+    const purple  = isDark() ? 'rgba(155,109,255,0.65)' : 'rgba(120,80,220,0.75)';
+    const green   = '#00E09B';
+    const base    = chartBase();
+
+    makeChart('chart-dist', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'km', data: kms, backgroundColor: accent, yAxisID: 'y', barPercentage: 0.7 },
+          { label: 'Elev (m)', data: elevs, type: 'line', borderColor: green, backgroundColor: 'transparent',
+            tension: 0.3, pointRadius: 2, borderWidth: 1.5, yAxisID: 'y1' },
+        ],
+      },
+      options: {
+        ...base,
+        plugins: {
+          ...base.plugins,
+          legend: { display: true, labels: { color: cssVar('--text'), font: { size: 10 }, boxWidth: 10 } },
+        },
+        scales: {
+          x: base.scales.x,
+          y:  { ...base.scales.y, position: 'left' },
+          y1: { ...base.scales.y, position: 'right', grid: { drawOnChartArea: false },
+                ticks: { color: green, font: { size: 9 } } },
+        },
+      },
+    });
+
+    makeChart('chart-tss', {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'TSS', data: tssList, backgroundColor: purple, barPercentage: 0.7 }] },
+      options: base,
+    });
+  }
+
+  function renderZoneCharts(acts) {
+    const zoneColors = [
+      'rgba(0,200,255,0.7)', 'rgba(0,224,155,0.7)',
+      'rgba(255,184,48,0.7)', 'rgba(255,79,31,0.7)', 'rgba(155,109,255,0.7)',
+    ];
+    const zoneLabels = ['Z1 Recovery', 'Z2 Endurance', 'Z3 Tempo', 'Z4 Threshold', 'Z5 VO2max'];
+    const muted = cssVar('--text-muted');
+    const grid  = isDark() ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+
+    const pz = [0,0,0,0,0], hrz = [0,0,0,0,0];
+    acts.forEach(a => {
+      (a.power_zones || []).forEach((v, i) => { if (v) pz[i] += v; });
+      (a.hr_zones    || []).forEach((v, i) => { if (v) hrz[i] += v; });
+    });
+    const pzH  = pz.map(v  => Math.round(v  / 360) / 10);
+    const hrzH = hrz.map(v => Math.round(v  / 360) / 10);
+
+    const zoneOpts = {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.raw + ' hrs' } },
+      },
+      scales: {
+        x: { ticks: { color: muted, font: { size: 10 } }, grid: { color: grid } },
+        y: { ticks: { color: muted, font: { size: 10 } }, grid: { color: grid } },
+      },
+    };
+
+    makeChart('chart-pz', {
+      type: 'bar',
+      data: { labels: zoneLabels, datasets: [{ data: pzH, backgroundColor: zoneColors, barPercentage: 0.75 }] },
+      options: zoneOpts,
+    });
+    makeChart('chart-hrz', {
+      type: 'bar',
+      data: { labels: zoneLabels, datasets: [{ data: hrzH, backgroundColor: zoneColors, barPercentage: 0.75 }] },
+      options: zoneOpts,
+    });
+  }
+
+  function renderTable(acts) {
+    const tbody = document.getElementById('rides-tbody');
+    const isEmpty = !acts.length;
+    document.getElementById('empty-rides').style.display = isEmpty ? '' : 'none';
+    if (isEmpty) { tbody.innerHTML = ''; return; }
+
+    const isIndoor = t => ['indoor_cycling', 'virtual_ride', 'spinning'].includes(t);
+    tbody.innerHTML = acts.slice(0, 20).map(a => {
+      const badge = isIndoor(a.activity_type)
+        ? `<span class="badge badge-indoor">${a.activity_type.replace(/_/g, ' ')}</span>`
+        : `<span class="badge badge-outdoor">${a.activity_type.replace(/_/g, ' ')}</span>`;
+      const np  = a.normalized_power_w ? Math.round(a.normalized_power_w) + ' W' : '—';
+      const ifv = a.intensity_factor    ? a.intensity_factor.toFixed(2)           : '—';
+      const tss = a.tss                 ? Math.round(a.tss)                       : '—';
+      const hr  = a.avg_hr              ? Math.round(a.avg_hr) + ' bpm'           : '—';
+      return `<tr>
+        <td class="mono">${fmtShort(a.date)}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${a.title || '—'}</td>
+        <td>${badge}</td>
+        <td class="mono">${fmtDur(a.duration_s)}</td>
+        <td class="mono">${fmtDist(a.distance_m)} km</td>
+        <td class="mono">${fmtElev(a.elevation_gain_m)}</td>
+        <td class="mono">${np}</td>
+        <td class="mono">${ifv}</td>
+        <td class="mono">${tss}</td>
+        <td class="mono">${hr}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function setPeriod(w) {
+    _weeks = w;
+    [4, 8, 16].forEach(n => {
+      document.getElementById(`tab-${n}`).classList.toggle('active', n === w);
+    });
+    loadData();
+  }
+
+  async function loadData() {
+    document.getElementById('page-loading').style.display = '';
+    document.getElementById('page-content').style.display = 'none';
+    try {
+      const res = await fetch(`/api/cycling/stats?weeks=${_weeks}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      _acts = data.activities || [];
+      const weekly = aggregateWeekly(_acts);
+      renderSummary(_acts);
+      renderBests(_acts);
+      renderWeeklyCharts(weekly);
+      renderZoneCharts(_acts);
+      renderTable(_acts);
+      document.getElementById('page-loading').style.display = 'none';
+      document.getElementById('page-content').style.display = '';
+    } catch (err) {
+      document.getElementById('page-loading').innerHTML =
+        `<span style="color:var(--watts)">&#9888; ${err.message}</span>`;
+    }
+  }
+
+  function reloadCharts() {
+    if (!_acts.length) return;
+    const weekly = aggregateWeekly(_acts);
+    renderWeeklyCharts(weekly);
+    renderZoneCharts(_acts);
+  }
+
+  document.addEventListener('DOMContentLoaded', loadData);
+</script>
+{% endblock %}

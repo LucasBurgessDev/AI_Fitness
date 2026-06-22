@@ -290,6 +290,15 @@
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
       if (sub) {
+        // Re-sync subscription to server on every page load — guards against
+        // the case where the GCS save failed silently when first subscribing.
+        try {
+          await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sub.toJSON()),
+          });
+        } catch (_) { /* non-fatal — best-effort re-sync */ }
         notifBtn.textContent = 'Disable notifications'; testBtn.disabled = false;
         setStatus('Push notifications are active on this device.', true); return;
       }
