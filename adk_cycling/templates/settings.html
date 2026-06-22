@@ -217,6 +217,15 @@
           <input type="time" name="evening_checkin_time" step="1800"
                  value="{{ (profile.reminders or {}).get('evening_checkin_time', '21:00') }}" />
         </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" name="weekly_digest_enabled" value="true"
+                   {% if profile.reminders and profile.reminders.weekly_digest_enabled %}checked{% endif %} />
+            Weekly digest (Sunday) 📊
+          </label>
+          <input type="time" name="weekly_digest_time" step="1800"
+                 value="{{ (profile.reminders or {}).get('weekly_digest_time', '19:00') }}" />
+        </div>
       </div>
       <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem;">Times are Europe/London. Use 30-minute intervals (07:00, 07:30).</p>
     </div>
@@ -245,6 +254,13 @@
               style="background:var(--text-muted);" disabled>Send test</button>
     </div>
     <p id="notif-status" style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;"></p>
+  </div>
+
+  <div class="card" style="margin-top:1.1rem;" id="memory-card">
+    <h3>Coach Memory</h3>
+    <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.85rem;">Insights your coach has noted over time.</p>
+    <div id="memory-filters" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.9rem;"></div>
+    <div id="memory-list"><div style="display:flex;align-items:center;gap:0.5rem;color:var(--text-muted);font-size:0.84rem"><div class="spinner"></div> Loading…</div></div>
   </div>
 </main>
 {% endblock %}
@@ -350,6 +366,67 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').then(initNotifState);
   } else { initNotifState(); }
+
+  // ---- Coach Memory ----
+  const MEMORY_CATS = [
+    { label: 'All', cat: '' },
+    { label: 'PRs', cat: 'PR' },
+    { label: 'Tips', cat: 'recommendation' },
+    { label: 'Observations', cat: 'observation' },
+    { label: 'Goals', cat: 'goal_progress' },
+  ];
+  const CAT_COLORS = {
+    PR: 'var(--accent)',
+    recommendation: '#4fa6ff',
+    observation: 'var(--text-muted)',
+    goal_progress: 'var(--green)',
+  };
+
+  function buildMemoryFilters(activeCat) {
+    const container = document.getElementById('memory-filters');
+    container.innerHTML = MEMORY_CATS.map(c => {
+      const isActive = c.cat === activeCat;
+      return `<button onclick="loadMemory('${c.cat}')" style="
+        padding:0.28rem 0.65rem;border-radius:20px;border:1px solid var(--border);
+        font-size:0.76rem;font-weight:600;cursor:pointer;font-family:inherit;
+        background:${isActive ? 'var(--accent)' : 'var(--surface-2)'};
+        color:${isActive ? 'var(--ground)' : 'var(--text-muted)'};
+        transition:background 0.15s,color 0.15s;">${c.label}</button>`;
+    }).join('');
+  }
+
+  async function loadMemory(cat = '') {
+    buildMemoryFilters(cat);
+    const list = document.getElementById('memory-list');
+    list.innerHTML = '<div style="display:flex;align-items:center;gap:0.5rem;color:var(--text-muted);font-size:0.84rem"><div class="spinner"></div> Loading…</div>';
+    try {
+      const url = '/api/coaching-log' + (cat ? `?category=${encodeURIComponent(cat)}` : '');
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { entries, error } = await res.json();
+      if (error) throw new Error(error);
+      if (!entries || !entries.length) {
+        list.innerHTML = '<p style="color:var(--text-muted);font-size:0.84rem">No entries found.</p>';
+        return;
+      }
+      list.innerHTML = entries.map(e => {
+        const color = CAT_COLORS[e.category] || 'var(--text-muted)';
+        const ctx = e.context ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;font-style:italic">${e.context}</div>` : '';
+        return `<div style="padding:0.6rem 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.2rem">
+            <span style="font-size:0.72rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace">${e.date}</span>
+            <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;padding:0.1rem 0.45rem;border-radius:20px;letter-spacing:0.05em;background:${color}22;color:${color}">${e.category.replace(/_/g,' ')}</span>
+          </div>
+          <div style="font-size:0.84rem;color:var(--text);line-height:1.45">${e.content}</div>
+          ${ctx}
+        </div>`;
+      }).join('');
+    } catch (err) {
+      list.innerHTML = `<p style="color:var(--watts);font-size:0.84rem">⚠ ${err.message}</p>`;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => loadMemory(''));
 
   // ---- Garmin sync ----
   const syncBtn = document.getElementById('sync-btn');

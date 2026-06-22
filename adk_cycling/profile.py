@@ -41,6 +41,8 @@ DEFAULTS: dict[str, Any] = {
         "training_reminder_time": "17:00",
         "evening_checkin_enabled": False,
         "evening_checkin_time": "21:00",
+        "weekly_digest_enabled": False,
+        "weekly_digest_time": "19:00",
     },
     "kpis": {
         "weekly_cycling_km":   {"target": 0.0, "enabled": False},

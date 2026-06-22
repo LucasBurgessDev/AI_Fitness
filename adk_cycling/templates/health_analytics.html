@@ -190,6 +190,16 @@
         <div id="mood-summary-inner" style="color:var(--text-muted);font-size:0.82rem">Loading…</div>
       </div>
     </div>
+    <div class="chart-grid" style="margin-top:1rem">
+      <div class="chart-card">
+        <div class="chart-title">Weekly Check-in Completion</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-completion"><div class="spinner"></div> Loading…</div><canvas id="chart-completion"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Mood &amp; Sleep Score</div>
+        <div class="chart-wrap"><div class="loading-state" id="load-mood-sleep"><div class="spinner"></div> Loading…</div><canvas id="chart-mood-sleep"></canvas></div>
+      </div>
+    </div>
   </div>
 
   <div style="margin-top:1.75rem">
@@ -567,6 +577,106 @@
     }
   }
 
+  function renderCompletion(d) {
+    hideLoader('completion');
+    const wc = d.weekly_completion;
+    if (!wc || !wc.length) {
+      const wrap = document.getElementById('chart-completion')?.parentElement;
+      if (wrap) wrap.innerHTML = '<div class="no-data">📋 No check-in data yet</div>';
+      return;
+    }
+    const def = chartDefaults();
+    const accent = cssVar('--accent');
+    const muted = cssVar('--text-muted');
+    makeChart('chart-completion', {
+      type: 'bar',
+      data: {
+        labels: wc.map(w => {
+          const d = new Date(w.week_start + 'T00:00:00');
+          return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        }),
+        datasets: [
+          { label: 'Morning', data: wc.map(w => w.morning_days), backgroundColor: accent + '99', borderRadius: 3 },
+          { label: 'Evening', data: wc.map(w => w.evening_days), backgroundColor: muted + '66', borderRadius: 3 },
+        ],
+      },
+      options: {
+        ...def,
+        scales: {
+          x: { ...def.scales.x, stacked: false },
+          y: { ...def.scales.y, min: 0, max: 7, ticks: { ...def.scales.y.ticks, stepSize: 1 } },
+        },
+      },
+    });
+  }
+
+  function renderMoodSleep(d) {
+    hideLoader('mood-sleep');
+    const hasMood = (d.morning_mood || []).some(v => v != null) || (d.evening_mood || []).some(v => v != null);
+    const hasSleep = (d.sleep_scores || []).length > 0;
+    if (!hasMood && !hasSleep) {
+      const wrap = document.getElementById('chart-mood-sleep')?.parentElement;
+      if (wrap) wrap.innerHTML = '<div class="no-data">📋 No data yet</div>';
+      return;
+    }
+    const def = chartDefaults();
+    const accent = cssVar('--accent');
+    const purple = cssVar('--purple') || '#9b59b6';
+
+    const combined = d.dates.map((_, i) => {
+      const m = d.morning_mood?.[i], e = d.evening_mood?.[i];
+      if (m != null && e != null) return (m + e) / 2;
+      return m ?? e ?? null;
+    });
+
+    const sleepByDate = {};
+    (d.sleep_dates || []).forEach((dt, i) => { sleepByDate[dt] = d.sleep_scores[i]; });
+    const sleepAligned = d.dates.map(dt => sleepByDate[dt] ?? null);
+
+    const datasets = [];
+    if (hasMood) datasets.push({
+      label: 'Mood (avg)',
+      data: rollingAvg(combined, 7),
+      borderColor: accent,
+      backgroundColor: 'transparent',
+      tension: 0.3, pointRadius: 0, borderWidth: 2,
+      yAxisID: 'yMood', spanGaps: true,
+    });
+    if (hasSleep) datasets.push({
+      label: 'Sleep score',
+      data: sleepAligned,
+      borderColor: purple,
+      backgroundColor: 'transparent',
+      tension: 0.3, pointRadius: 0, borderWidth: 2, borderDash: [4, 3],
+      yAxisID: 'ySleep', spanGaps: true,
+    });
+
+    const MOOD_LABELS = ['','😫','😕','😐','🙂','😄'];
+    makeChart('chart-mood-sleep', {
+      type: 'line',
+      data: { labels: d.dates, datasets },
+      options: {
+        ...def,
+        scales: {
+          x: def.scales.x,
+          yMood: {
+            ...def.scales.y,
+            position: 'left',
+            min: 0.8, max: 5.2,
+            ticks: { ...def.scales.y.ticks, stepSize: 1, callback: v => MOOD_LABELS[Math.round(v)] || '' },
+          },
+          ySleep: {
+            ...def.scales.y,
+            position: 'right',
+            min: 0, max: 100,
+            grid: { drawOnChartArea: false },
+            ticks: { ...def.scales.y.ticks, callback: v => v },
+          },
+        },
+      },
+    });
+  }
+
   async function loadCheckinData(days) {
     try {
       const res = await fetch(`/api/analytics/checkin?days=${days}`);
@@ -574,10 +684,16 @@
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       renderMood(data);
+      renderCompletion(data);
+      renderMoodSleep(data);
     } catch (err) {
       console.error('Checkin analytics error:', err);
       const el = document.getElementById('load-mood');
       if (el) el.innerHTML = `<div class="error-msg">⚠ ${err.message}</div>`;
+      ['completion', 'mood-sleep'].forEach(id => {
+        const el2 = document.getElementById(`load-${id}`);
+        if (el2) el2.innerHTML = `<div class="error-msg">⚠ ${err.message}</div>`;
+      });
     }
   }
 

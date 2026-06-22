@@ -136,6 +136,30 @@
     .quote-card { padding: 1.1rem 1.25rem; min-height: 90px; }
     .quote-text { font-size: 0.88rem; }
   }
+
+  /* ── Streak strip ── */
+  .streak-strip { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; }
+  .streak-widget {
+    flex: 1; background: var(--surface); border-radius: 10px;
+    border: 1px solid var(--border); padding: 0.75rem 0.5rem; text-align: center;
+  }
+  .streak-icon { font-size: 1.1rem; line-height: 1; margin-bottom: 0.2rem; }
+  .streak-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 1.7rem;
+    font-weight: 700; color: var(--accent); line-height: 1;
+  }
+  .streak-unit { font-size: 0.6rem; color: var(--text-muted); font-weight: 600; display: block; margin-top: 0.05rem; }
+  .streak-label {
+    font-size: 0.58rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--text-muted); margin-top: 0.3rem;
+  }
+  .streak-best { font-size: 0.58rem; color: var(--text-muted); margin-top: 0.1rem; }
+  @media (max-width: 480px) {
+    .streak-strip { gap: 0.4rem; }
+    .streak-widget { padding: 0.6rem 0.3rem; }
+    .streak-num { font-size: 1.35rem; }
+    .streak-label { font-size: 0.52rem; }
+  }
 </style>
 {% endblock %}
 
@@ -157,6 +181,9 @@
   <div id="content" style="display:none">
     <!-- Week summary bar -->
     <div class="week-bar" id="week-bar"></div>
+
+    <!-- Streak strip -->
+    <div class="streak-strip" id="streak-strip" style="display:none"></div>
 
     <!-- Calorie summary -->
     <div class="cal-strip" id="cal-strip" style="display:none"></div>
@@ -514,6 +541,30 @@
     return `<span class="badge badge-other">${(type||'unknown').replace(/_/g,' ')}</span>`;
   }
 
+  function renderStreaks(streaks) {
+    const strip = document.getElementById('streak-strip');
+    if (!streaks) { strip.style.display = 'none'; return; }
+
+    const WIDGETS = [
+      { key: 'active_days', icon: '🏃', label: 'Active Days' },
+      { key: 'sleep_goal',  icon: '💤', label: 'Sleep Goal' },
+      { key: 'step_goal',   icon: '👟', label: 'Steps' },
+      { key: 'checkin',     icon: '✓',  label: 'Check-ins' },
+    ];
+
+    strip.innerHTML = WIDGETS.map(w => {
+      const s = streaks[w.key] || { current: 0, best: 0 };
+      return `<div class="streak-widget">
+        <div class="streak-icon">${w.icon}</div>
+        <div class="streak-num">${s.current}</div>
+        <span class="streak-unit">day streak</span>
+        <div class="streak-label">${w.label}</div>
+        <div class="streak-best">best ${s.best}</div>
+      </div>`;
+    }).join('');
+    strip.style.display = 'flex';
+  }
+
   function renderActivities(acts) {
     const card = document.getElementById('acts-card');
     const tbody = document.getElementById('acts-tbody');
@@ -535,6 +586,7 @@
   function renderAll(data) {
     _data = data;
     renderWeekBar(data.actuals, data.prev_week || {}, data.weight_latest, data.week_start, data.week_end);
+    renderStreaks(data.streaks);
     renderCalorieStrip(data.calories_week);
     renderRings(data.kpis, data.actuals, data.weight_latest, data.history);
     renderActivities(data.this_week_activities);

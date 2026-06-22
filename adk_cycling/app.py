@@ -357,6 +357,8 @@ async def settings_post(request: Request):
             "training_reminder_time": form.get("training_reminder_time", "17:00"),
             "evening_checkin_enabled": form.get("evening_checkin_enabled") == "true",
             "evening_checkin_time": form.get("evening_checkin_time", "21:00"),
+            "weekly_digest_enabled": form.get("weekly_digest_enabled") == "true",
+            "weekly_digest_time": form.get("weekly_digest_time", "19:00"),
         },
         "kpis": kpis,
     }
@@ -753,10 +755,12 @@ async def api_health_analytics(request: Request, days: int = 180):
 @app.get("/api/analytics/checkin")
 async def api_checkin_analytics(request: Request, days: int = 180):
     _require_session(request)
+    import asyncio
     from google.cloud import bigquery
 
     client = bigquery.Client(project=PROJECT_ID)
-    sql = f"""
+
+    mood_sql = f"""
     WITH morning AS (
         SELECT date, ROUND(AVG(CAST(mood_score AS FLOAT64)), 1) AS morning_mood
         FROM `{PROJECT_ID}.garmin.morning_checkin`
@@ -780,17 +784,64 @@ async def api_checkin_analytics(request: Request, days: int = 180):
     LEFT JOIN evening e USING (date)
     ORDER BY date
     """
+
+    completion_sql = f"""
+    WITH wk_m AS (
+        SELECT FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CAST(date AS DATE), WEEK(MONDAY))) AS week_start,
+               COUNT(DISTINCT date) AS morning_days
+        FROM `{PROJECT_ID}.garmin.morning_checkin`
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+        GROUP BY week_start
+    ),
+    wk_e AS (
+        SELECT FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CAST(date AS DATE), WEEK(MONDAY))) AS week_start,
+               COUNT(DISTINCT date) AS evening_days
+        FROM `{PROJECT_ID}.garmin.evening_checkin`
+        WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+        GROUP BY week_start
+    ),
+    all_weeks AS (
+        SELECT week_start FROM wk_m UNION DISTINCT SELECT week_start FROM wk_e
+    )
+    SELECT a.week_start,
+           COALESCE(m.morning_days, 0) AS morning_days,
+           COALESCE(e.evening_days, 0) AS evening_days
+    FROM all_weeks a
+    LEFT JOIN wk_m m USING (week_start)
+    LEFT JOIN wk_e e USING (week_start)
+    ORDER BY week_start
+    """
+
+    sleep_sql = f"""
+    SELECT date, sleep_score
+    FROM `{PROJECT_ID}.garmin.garmin_stats`
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+      AND sleep_score IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ORDER BY date
+    """
+
     try:
         import bq_cache
-        rows = bq_cache.query(client, sql)
+        mood_rows, completion_rows, sleep_rows = await asyncio.gather(
+            asyncio.to_thread(bq_cache.query, client, mood_sql),
+            asyncio.to_thread(bq_cache.query, client, completion_sql),
+            asyncio.to_thread(bq_cache.query, client, sleep_sql),
+        )
     except Exception as exc:
         LOGGER.exception("Checkin analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
 
     return JSONResponse({
-        "dates": [str(r["date"]) for r in rows],
-        "morning_mood": [float(r["morning_mood"]) if r["morning_mood"] is not None else None for r in rows],
-        "evening_mood": [float(r["evening_mood"]) if r["evening_mood"] is not None else None for r in rows],
+        "dates": [str(r["date"]) for r in mood_rows],
+        "morning_mood": [float(r["morning_mood"]) if r["morning_mood"] is not None else None for r in mood_rows],
+        "evening_mood": [float(r["evening_mood"]) if r["evening_mood"] is not None else None for r in mood_rows],
+        "weekly_completion": [
+            {"week_start": str(r["week_start"]), "morning_days": int(r["morning_days"]), "evening_days": int(r["evening_days"])}
+            for r in completion_rows
+        ],
+        "sleep_dates": [str(r["date"]) for r in sleep_rows],
+        "sleep_scores": [int(r["sleep_score"]) for r in sleep_rows],
     })
 
 
@@ -982,6 +1033,40 @@ async def api_cycling_stats(request: Request, weeks: int = 8):
     return JSONResponse({"activities": activities, "profile_ftp": profile_ftp})
 
 
+@app.get("/api/coaching-log")
+async def api_coaching_log(request: Request, weeks: int = 52, category: str = ""):
+    session = _require_session(request)
+    from google.cloud import bigquery
+    client = bigquery.Client(project=PROJECT_ID)
+    cat_filter = "AND category = @cat" if category else ""
+    sql = f"""
+        SELECT date, category, content, context
+        FROM `{PROJECT_ID}.garmin.coaching_log`
+        WHERE email = @email
+          AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL {weeks * 7} DAY)
+          {cat_filter}
+        ORDER BY timestamp DESC LIMIT 100
+    """
+    params = [bigquery.ScalarQueryParameter("email", "STRING", session["email"])]
+    if category:
+        params.append(bigquery.ScalarQueryParameter("cat", "STRING", category))
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
+    try:
+        rows = list(client.query(sql, job_config=job_config).result())
+    except Exception as exc:
+        LOGGER.exception("coaching-log BQ error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse({"entries": [
+        {
+            "date": str(r["date"]),
+            "category": r["category"],
+            "content": r["content"],
+            "context": r.get("context") or "",
+        }
+        for r in rows
+    ]})
+
+
 @app.get("/api/analytics/goals")
 async def api_goals_analytics(request: Request):
     _require_session(request)
@@ -1087,12 +1172,35 @@ async def api_goals_analytics(request: Request):
     ORDER BY date DESC
     """
 
+    streak_activity_sql = f"""
+    SELECT DISTINCT date FROM `{PROJECT_ID}.garmin.garmin_activities`
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY))
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC) = 1
+    """
+
+    streak_stats_sql = f"""
+    SELECT date, sleep_total_hr, steps, step_goal
+    FROM `{PROJECT_ID}.garmin.garmin_stats`
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY))
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ORDER BY date DESC
+    """
+
+    streak_checkin_sql = f"""
+    SELECT date FROM `{PROJECT_ID}.garmin.morning_checkin`
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY))
+    UNION DISTINCT
+    SELECT date FROM `{PROJECT_ID}.garmin.evening_checkin`
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY))
+    """
+
     try:
         import asyncio
         import bq_cache
         (
             actuals_rows, prev_week_rows, history_rows,
             weight_rows, cal_week_rows, week_act_rows,
+            streak_act_rows, streak_stats_rows, streak_ci_rows,
         ) = await asyncio.gather(
             asyncio.to_thread(bq_cache.query, client, actuals_sql),
             asyncio.to_thread(bq_cache.query, client, prev_week_sql),
@@ -1100,6 +1208,9 @@ async def api_goals_analytics(request: Request):
             asyncio.to_thread(bq_cache.query, client, weight_sql),
             asyncio.to_thread(bq_cache.query, client, cal_week_sql),
             asyncio.to_thread(bq_cache.query, client, this_week_sql),
+            asyncio.to_thread(bq_cache.query, client, streak_activity_sql),
+            asyncio.to_thread(bq_cache.query, client, streak_stats_sql),
+            asyncio.to_thread(bq_cache.query, client, streak_checkin_sql),
         )
     except Exception as exc:
         LOGGER.exception("Goals analytics BQ error: %s", exc)
@@ -1173,6 +1284,42 @@ async def api_goals_analytics(request: Request):
         for r in week_act_rows
     ]
 
+    def _compute_streak_ordered(dates_set: set, n_days: int = 60) -> dict:
+        current = 0
+        best = 0
+        run = 0
+        in_current = True
+        for i in range(n_days):
+            d = (today_date - timedelta(days=i)).isoformat()
+            if d in dates_set:
+                run += 1
+                best = max(best, run)
+                if in_current:
+                    current = run
+            else:
+                in_current = False
+                run = 0
+        return {"current": current, "best": best}
+
+    activity_dates = {str(r["date"]) for r in streak_act_rows}
+    checkin_dates = {str(r["date"]) for r in streak_ci_rows}
+
+    sleep_goal_dates = set()
+    step_goal_dates = set()
+    for r in streak_stats_rows:
+        d = str(r["date"])
+        if r["sleep_total_hr"] is not None and float(r["sleep_total_hr"]) >= 7.0:
+            sleep_goal_dates.add(d)
+        if r["steps"] is not None and r["step_goal"] is not None and int(r["steps"]) >= int(r["step_goal"]):
+            step_goal_dates.add(d)
+
+    streaks = {
+        "active_days": _compute_streak_ordered(activity_dates),
+        "sleep_goal": _compute_streak_ordered(sleep_goal_dates),
+        "step_goal": _compute_streak_ordered(step_goal_dates),
+        "checkin": _compute_streak_ordered(checkin_dates),
+    }
+
     return JSONResponse({
         "kpis": kpis,
         "actuals": actuals,
@@ -1183,6 +1330,7 @@ async def api_goals_analytics(request: Request):
         "this_week_activities": this_week_activities,
         "week_start": week_start_date.isoformat(),
         "week_end": week_end_date.isoformat(),
+        "streaks": streaks,
     })
 
 
@@ -1418,6 +1566,72 @@ async def push_test(request: Request):
     return JSONResponse({"sent": sent})
 
 
+async def _build_weekly_digest(project_id: str) -> tuple[str, str]:
+    """Query BQ for a week summary and return (title, body) for a push notification."""
+    import asyncio
+    import bq_cache
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=project_id)
+
+    activity_sql = f"""
+    WITH deduped AS (
+      SELECT date, distance_m, duration_s
+      FROM `{project_id}.garmin.garmin_activities`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 0 WEEK), WEEK(MONDAY)))
+        AND date < CURRENT_DATE()
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY activity_id ORDER BY run_date DESC) = 1
+    )
+    SELECT COUNT(DISTINCT date) AS active_days,
+           ROUND(COALESCE(SUM(distance_m),0)/1000, 1) AS total_km,
+           ROUND(COALESCE(SUM(duration_s),0)/3600, 1) AS total_hours
+    FROM deduped
+    """
+
+    weight_sql = f"""
+    SELECT weight_lbs FROM `{project_id}.garmin.garmin_stats`
+    WHERE weight_lbs IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    ORDER BY date DESC LIMIT 1
+    """
+
+    sleep_sql = f"""
+    SELECT ROUND(AVG(sleep_total_hr), 1) AS avg_sleep
+    FROM `{project_id}.garmin.garmin_stats`
+    WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 0 WEEK), WEEK(MONDAY)))
+      AND date < CURRENT_DATE()
+      AND sleep_total_hr IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    """
+
+    try:
+        act_rows, weight_rows, sleep_rows = await asyncio.gather(
+            asyncio.to_thread(bq_cache.query, client, activity_sql),
+            asyncio.to_thread(bq_cache.query, client, weight_sql),
+            asyncio.to_thread(bq_cache.query, client, sleep_sql),
+        )
+    except Exception as exc:
+        LOGGER.error("_build_weekly_digest BQ error: %s", exc)
+        return "Your weekly summary 📊", "Check the app for this week's highlights."
+
+    _LBS_TO_KG = 1 / 2.20462
+    active_days = int(act_rows[0]["active_days"]) if act_rows else 0
+    total_hours = round(float(act_rows[0]["total_hours"]), 1) if act_rows else 0.0
+    avg_sleep = round(float(sleep_rows[0]["avg_sleep"]), 1) if sleep_rows and sleep_rows[0]["avg_sleep"] else None
+    weight_kg = round(float(weight_rows[0]["weight_lbs"]) * _LBS_TO_KG, 1) if weight_rows and weight_rows[0]["weight_lbs"] else None
+
+    parts = [f"{active_days} active day{'s' if active_days != 1 else ''}"]
+    if total_hours:
+        parts.append(f"{total_hours}h activity")
+    if avg_sleep:
+        parts.append(f"avg sleep {avg_sleep}h")
+    if weight_kg:
+        parts.append(f"weight {weight_kg} kg")
+
+    body = " · ".join(parts) if parts else "Check the app for this week's highlights."
+    return "Your weekly summary 📊", body
+
+
 @app.post("/api/send-reminders")
 async def send_reminders():
     """Called by Cloud Scheduler every 30 min. Sends due reminder notifications."""
@@ -1468,6 +1682,12 @@ async def send_reminders():
                 private_key,
                 url="/checkin",
             )
+
+        is_sunday = now.weekday() == 6
+        if is_sunday and reminders.get("weekly_digest_enabled") and \
+                current_hhmm == reminders.get("weekly_digest_time", "19:00"):
+            title, body = await _build_weekly_digest(PROJECT_ID)
+            total_sent += _send_push_to_subs(subs, email, title, body, private_key, url="/health")
 
     LOGGER.info("send-reminders: sent %d notifications at %s", total_sent, current_hhmm)
     return JSONResponse({"sent": total_sent, "time": current_hhmm})
