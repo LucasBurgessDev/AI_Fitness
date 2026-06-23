@@ -1704,6 +1704,13 @@ def _send_push_to_subs(
     """Send a push notification to all subscriptions. Returns count of successful sends."""
     import json as _json
     import push_store
+    from py_vapid import Vapid
+
+    try:
+        vapid = Vapid.from_pem(private_key_pem.encode("utf-8"))
+    except Exception as exc:
+        LOGGER.error("Push: failed to load VAPID private key: %s", exc)
+        return 0
 
     sent = 0
     expired = []
@@ -1716,7 +1723,7 @@ def _send_push_to_subs(
                     "keys": {"p256dh": sub["keys"]["p256dh"], "auth": sub["keys"]["auth"]},
                 },
                 data=_json.dumps({"title": title, "body": body, "url": url}),
-                vapid_private_key=private_key_pem,
+                vapid_private_key=vapid,
                 vapid_claims={"sub": "mailto:coach@cycling-coach.app"},
             )
             sent += 1
