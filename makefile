@@ -5,7 +5,6 @@ REGION     ?= europe-west2
 
 AR_REPO    ?= health-jobs
 IMAGE_NAME ?= garmin-fitness-daily
-JOB_NAME   ?= garmin-fitness-daily
 
 SA_EMAIL   ?= garmin-fitness-daily-sa@health-data-482722.iam.gserviceaccount.com
 
@@ -14,25 +13,32 @@ TOKENS_OBJ  ?= garmin/token_cache.tar.gz
 
 DRIVE_FOLDER_ID ?= 1hTPk71hZmqLk8RNPggjZOfIRY9Ax1op-
 
-IMAGE_URI           := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(AR_REPO)/$(IMAGE_NAME):latest
+# Environment: dev (default) or prod
+ENV        ?= dev
+ENV_SUFFIX := $(if $(filter prod,$(ENV)),,$(addprefix -,$(ENV)))
+
+JOB_NAME         ?= garmin-fitness-daily$(ENV_SUFFIX)
+ADK_SERVICE_NAME ?= cycling-coach$(ENV_SUFFIX)
+
+IMAGE_URI           := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(AR_REPO)/$(IMAGE_NAME)$(ENV_SUFFIX):latest
 TOKEN_CACHE_GCS_URI := gs://$(BUCKET)/$(TOKENS_OBJ)
 
 # BigQuery datasets
-BQ_DATASET_GARMIN  ?= garmin
-BQ_DATASET_CONTROL ?= data_control
+BQ_DATASET_GARMIN  ?= $(if $(filter prod,$(ENV)),garmin,garmin_dev)
+BQ_DATASET_CONTROL ?= $(if $(filter prod,$(ENV)),data_control,data_control_dev)
 
 # ADK cycling service
-ADK_SERVICE_NAME    ?= cycling-coach
-ADK_IMAGE_URI       := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(AR_REPO)/$(ADK_SERVICE_NAME):latest
+ADK_IMAGE_URI := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(AR_REPO)/$(ADK_SERVICE_NAME):latest
 MORNING_SHEET_ID    ?= 1OPsqSwgD1K-C6R3plk1qF9XRuvvv2LJWlEKsf5kimNs
 EVENING_SHEET_ID    ?= 1UzwE5TdlcijU44e7W0jHGWhusXWD42-fMWA4Ay9lZnU
 
-.PHONY: show enable-apis infra bootstrap-tokens build deploy run logs \
+.PHONY: show tofu-apply enable-apis infra bootstrap-tokens build deploy run logs \
         bq-create-datasets bq-iam backfill-bq \
         build-adk deploy-adk oauth-setup load-checkin-history \
         scheduler-enable scheduler-iam scheduler-create scheduler-now scheduler-list
 
 show:
+	@echo "ENV=$(ENV)  (ENV_SUFFIX='$(ENV_SUFFIX)')"
 	@echo "PROJECT_ID=$(PROJECT_ID)"
 	@echo "REGION=$(REGION)"
 	@echo "IMAGE_URI=$(IMAGE_URI)"
@@ -41,6 +47,10 @@ show:
 	@echo "TOKEN_CACHE_GCS_URI=$(TOKEN_CACHE_GCS_URI)"
 	@echo "DRIVE_FOLDER_ID=$(DRIVE_FOLDER_ID)"
 	@echo "ADK_IMAGE_URI=$(ADK_IMAGE_URI)"
+
+tofu-apply:
+	tofu -chdir=terraform init -backend-config="prefix=terraform/state/$(ENV)"
+	tofu -chdir=terraform apply -var="env=$(ENV)" -auto-approve
 
 enable-apis:
 	gcloud config set project "$(PROJECT_ID)"
@@ -126,7 +136,7 @@ deploy-adk:
 	  --region "$(REGION)" \
 	  --service-account "$(SA_EMAIL)" \
 	  --set-env-vars "PROJECT_ID=$(PROJECT_ID),DRIVE_FOLDER_ID=$(DRIVE_FOLDER_ID),GCS_PROFILE_BUCKET=$(BUCKET),REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$(PROJECT_ID),GOOGLE_CLOUD_LOCATION=us-central1,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=$(MORNING_SHEET_ID),EVENING_SHEET_ID=$(EVENING_SHEET_ID)" \
-	  --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
+	  --set-secrets "GOOGLE_CLIENT_ID=cycling-coach$(ENV_SUFFIX)-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach$(ENV_SUFFIX)-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach$(ENV_SUFFIX)-allowed-email:latest,SECRET_KEY=cycling-coach$(ENV_SUFFIX)-secret-key:latest" \
 	  --allow-unauthenticated \
 	  --memory 1Gi \
 	  --cpu 1 \

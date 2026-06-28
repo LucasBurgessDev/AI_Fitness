@@ -1,5 +1,5 @@
 resource "google_bigquery_dataset" "garmin" {
-  dataset_id  = "garmin"
+  dataset_id  = var.env == "prod" ? "garmin" : "garmin_dev"
   description = "Garmin activity and stats data"
   location    = var.region
 
@@ -7,7 +7,7 @@ resource "google_bigquery_dataset" "garmin" {
 }
 
 resource "google_bigquery_dataset" "data_control" {
-  dataset_id  = "data_control"
+  dataset_id  = var.env == "prod" ? "data_control" : "data_control_dev"
   description = "Pipeline batch control"
   location    = var.region
 
@@ -123,14 +123,14 @@ resource "google_project_iam_member" "sa_cloudscheduler_admin" {
 }
 
 resource "google_cloud_scheduler_job" "reminders" {
-  name      = "cycling-coach-reminders"
+  name      = "cycling-coach${local.env_suffix}-reminders"
   region    = var.region
   schedule  = "*/5 * * * *"
   time_zone = "Europe/London"
 
   http_target {
     http_method = "POST"
-    uri         = "https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders"
+    uri         = "https://cycling-coach${local.env_suffix}-l3h3kcxbia-nw.a.run.app/api/send-reminders"
   }
 
   depends_on = [

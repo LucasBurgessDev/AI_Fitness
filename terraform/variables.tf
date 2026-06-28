@@ -1,3 +1,7 @@
+variable "env" {
+  default = "prod"
+}
+
 variable "project_id" {
   default = "health-data-482722"
 }

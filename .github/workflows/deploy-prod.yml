@@ -1,4 +1,4 @@
-name: Deploy Cloud Run Job + ADK Cycling Service
+name: Deploy to Production
 
 on:
   push:
@@ -12,11 +12,12 @@ env:
   SA_EMAIL: garmin-fitness-daily-sa@health-data-482722.iam.gserviceaccount.com
   BUCKET: garmin-fitness-health-data-482722
   DRIVE_FOLDER_ID: 1hTPk71hZmqLk8RNPggjZOfIRY9Ax1op-
+  JOB_NAME: garmin-fitness-daily
+  SERVICE_NAME: cycling-coach
+  MORNING_SHEET_ID: 1OPsqSwgD1K-C6R3plk1qF9XRuvvv2LJWlEKsf5kimNs
+  EVENING_SHEET_ID: 1UzwE5TdlcijU44e7W0jHGWhusXWD42-fMWA4Ay9lZnU
 
 jobs:
-  # -----------------------------------------------------------------------
-  # Job 0: Detect which paths changed so we can skip unchanged services
-  # -----------------------------------------------------------------------
   detect-changes:
     name: Detect Changed Paths
     runs-on: ubuntu-latest
@@ -37,9 +38,6 @@ jobs:
             adk:
               - 'adk_cycling/**'
 
-  # -----------------------------------------------------------------------
-  # Job 1: Provision infrastructure with OpenTofu (only when terraform/ changes)
-  # -----------------------------------------------------------------------
   provision-infra:
     name: Provision Infrastructure (OpenTofu)
     runs-on: ubuntu-latest
@@ -78,14 +76,12 @@ jobs:
       - name: Enable Google Calendar API
         run: gcloud services enable calendar-json.googleapis.com --project "$PROJECT_ID" || true
 
-      - name: OpenTofu Init
-        run: tofu -chdir=terraform init
+      - name: OpenTofu Init (prod state)
+        run: tofu -chdir=terraform init -backend-config="prefix=terraform/state/prod"
 
       - name: Import existing resources
         working-directory: terraform
         run: |
-          # set +e so intermediate non-zero exits don't generate GitHub annotations.
-          # All output suppressed — these are idempotent; failure = resource already managed.
           set +e
           tofu import google_storage_bucket.pipeline_bucket "$BUCKET" >/dev/null 2>&1
           tofu import "google_artifact_registry_repository.health_jobs" \
@@ -118,12 +114,9 @@ jobs:
             "projects/$PROJECT_ID/locations/$REGION/jobs/cycling-coach-reminders" >/dev/null 2>&1
           exit 0
 
-      - name: OpenTofu Apply
-        run: tofu -chdir=terraform apply -auto-approve
+      - name: OpenTofu Apply (prod)
+        run: tofu -chdir=terraform apply -var="env=prod" -auto-approve
 
-  # -----------------------------------------------------------------------
-  # Job 2: Build & deploy the Garmin data pipeline (only when pipeline/ changes)
-  # -----------------------------------------------------------------------
   deploy-pipeline:
     name: Deploy Garmin Pipeline
     runs-on: ubuntu-latest
@@ -156,7 +149,7 @@ jobs:
 
       - name: Deploy Cloud Run Job
         run: |
-          gcloud run jobs deploy garmin-fitness-daily \
+          gcloud run jobs deploy "$JOB_NAME" \
             --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily:latest" \
             --service-account "$SA_EMAIL" \
             --set-env-vars "TOKEN_CACHE_GCS_URI=gs://$BUCKET/garmin/token_cache.tar.gz,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,SAVE_PATH=/tmp,LOOKBACK_DAYS=3,FTP_LOOKBACK_DAYS=60,BQ_PROJECT_ID=$PROJECT_ID" \
@@ -166,9 +159,13 @@ jobs:
             --cpu 1 \
             --region "$REGION"
 
-  # -----------------------------------------------------------------------
-  # Job 3: Build & deploy the ADK Cycling Coach (only when adk_cycling/ changes)
-  # -----------------------------------------------------------------------
+      - name: Grant SA permission to trigger job
+        run: |
+          gcloud run jobs add-iam-policy-binding "$JOB_NAME" \
+            --region "$REGION" \
+            --member "serviceAccount:$SA_EMAIL" \
+            --role "roles/run.invoker" || true
+
   deploy-cycling-coach:
     name: Deploy ADK Cycling Coach
     runs-on: ubuntu-latest
@@ -201,35 +198,20 @@ jobs:
 
       - name: Remove sheet-ID secret refs (converted to plain env vars)
         run: |
-          gcloud run services update cycling-coach \
+          gcloud run services update "$SERVICE_NAME" \
             --remove-secrets=MORNING_SHEET_ID,EVENING_SHEET_ID \
             --region "$REGION" || true
 
       - name: Deploy Cloud Run Service
         run: |
-          gcloud run deploy cycling-coach \
+          gcloud run deploy "$SERVICE_NAME" \
             --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach:latest" \
             --region "$REGION" \
             --service-account "$SA_EMAIL" \
-            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=1OPsqSwgD1K-C6R3plk1qF9XRuvvv2LJWlEKsf5kimNs,EVENING_SHEET_ID=1UzwE5TdlcijU44e7W0jHGWhusXWD42-fMWA4Ay9lZnU" \
+            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=$MORNING_SHEET_ID,EVENING_SHEET_ID=$EVENING_SHEET_ID" \
             --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
             --allow-unauthenticated \
             --memory 1Gi \
             --cpu 1 \
             --timeout 3600 \
             --port 8080
-
-      - name: Create/update reminder Cloud Scheduler job
-        run: |
-          # Managed by Terraform (provision-infra); this is a fallback only.
-          set +e
-          gcloud scheduler jobs describe cycling-coach-reminders \
-            --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1 || \
-          gcloud scheduler jobs create http cycling-coach-reminders \
-            --location="$REGION" \
-            --project="$PROJECT_ID" \
-            --schedule="*/5 * * * *" \
-            --uri="https://cycling-coach-l3h3kcxbia-nw.a.run.app/api/send-reminders" \
-            --http-method=POST \
-            --time-zone="Europe/London" >/dev/null 2>&1
-          exit 0

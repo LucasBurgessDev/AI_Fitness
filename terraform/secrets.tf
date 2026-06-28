@@ -9,7 +9,7 @@ resource "random_password" "secret_key" {
 }
 
 resource "google_secret_manager_secret" "secret_key" {
-  secret_id = "cycling-coach-secret-key"
+  secret_id = "cycling-coach${local.env_suffix}-secret-key"
 
   replication {
     auto {}
@@ -35,7 +35,7 @@ resource "google_secret_manager_secret_version" "secret_key" {
 # ---------------------------------------------------------------------------
 
 resource "google_secret_manager_secret" "oauth_client_id" {
-  secret_id = "cycling-coach-oauth-client-id"
+  secret_id = "cycling-coach${local.env_suffix}-oauth-client-id"
 
   replication {
     auto {}
@@ -45,7 +45,7 @@ resource "google_secret_manager_secret" "oauth_client_id" {
 }
 
 resource "google_secret_manager_secret" "oauth_client_secret" {
-  secret_id = "cycling-coach-oauth-client-secret"
+  secret_id = "cycling-coach${local.env_suffix}-oauth-client-secret"
 
   replication {
     auto {}
@@ -55,7 +55,7 @@ resource "google_secret_manager_secret" "oauth_client_secret" {
 }
 
 resource "google_secret_manager_secret" "allowed_email" {
-  secret_id = "cycling-coach-allowed-email"
+  secret_id = "cycling-coach${local.env_suffix}-allowed-email"
 
   replication {
     auto {}
