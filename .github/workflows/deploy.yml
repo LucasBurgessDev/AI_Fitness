@@ -166,6 +166,13 @@ jobs:
             --cpu 1 \
             --region "$REGION"
 
+      - name: Grant SA permission to trigger job
+        run: |
+          gcloud run jobs add-iam-policy-binding garmin-fitness-daily \
+            --region "$REGION" \
+            --member "serviceAccount:$SA_EMAIL" \
+            --role "roles/run.invoker" || true
+
   # -----------------------------------------------------------------------
   # Job 3: Build & deploy the ADK Cycling Coach (only when adk_cycling/ changes)
   # -----------------------------------------------------------------------

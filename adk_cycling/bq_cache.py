@@ -14,7 +14,7 @@ from typing import Optional
 
 LOGGER = logging.getLogger(__name__)
 
-_TTL_SECONDS: int = int(os.getenv("BQ_CACHE_TTL", "14400"))  # default 4 hours
+_TTL_SECONDS: int = int(os.getenv("BQ_CACHE_TTL", "3600"))  # default 1 hour
 
 _lock = threading.Lock()
 _store: dict[str, tuple[str, float]] = {}  # key → (result, expires_at)

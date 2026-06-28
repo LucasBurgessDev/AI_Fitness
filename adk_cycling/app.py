@@ -1364,33 +1364,43 @@ async def garmin_sync(request: Request):
 
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        # Check for an already-running execution
-        list_resp = await client.get(f"{base}/executions", headers=headers, params={"pageSize": 10})
-        if list_resp.status_code == 200:
-            executions = list_resp.json().get("executions", [])
-            for ex in executions:
-                if ex.get("completionTime") is None and ex.get("runningCount", 0) > 0:
-                    return JSONResponse({"status": "running", "message": "A sync is already in progress. Check back in a few minutes."})
-        elif list_resp.status_code != 404:
-            LOGGER.warning("Could not list executions: %s %s", list_resp.status_code, list_resp.text)
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            # Check for an already-running execution
+            list_resp = await client.get(f"{base}/executions", headers=headers, params={"pageSize": 10})
+            if list_resp.status_code == 200:
+                executions = list_resp.json().get("executions", [])
+                for ex in executions:
+                    if ex.get("completionTime") is None and ex.get("runningCount", 0) > 0:
+                        return JSONResponse({"status": "running", "message": "A sync is already in progress. Check back in a few minutes."})
+            elif list_resp.status_code == 403:
+                LOGGER.error("Permission denied listing executions: %s", list_resp.text)
+                return JSONResponse({"status": "error", "message": "Permission denied (403). Run: make scheduler-iam"}, status_code=500)
+            elif list_resp.status_code != 404:
+                LOGGER.warning("Could not list executions: %s %s", list_resp.status_code, list_resp.text)
 
-        # Trigger a new execution
-        run_resp = await client.post(f"{base}:run", headers=headers, json={})
-        if run_resp.status_code in (200, 202):
-            import threading
-            import bq_cache
-            from agent import warm_bq_cache
-            bq_cache.clear()
-            # Re-warm the cache ~3 minutes later, once the pipeline has finished
-            threading.Thread(target=warm_bq_cache, kwargs={"delay_seconds": 180}, daemon=True).start()
-            return JSONResponse({"status": "triggered", "message": "Garmin data sync started. This usually takes 1–2 minutes."})
-        else:
-            LOGGER.error("Cloud Run job trigger failed: %s %s", run_resp.status_code, run_resp.text)
-            return JSONResponse(
-                {"status": "error", "message": f"Failed to start job ({run_resp.status_code}). Check Cloud Run permissions."},
-                status_code=500,
-            )
+            # Trigger a new execution
+            run_resp = await client.post(f"{base}:run", headers=headers, json={})
+            if run_resp.status_code in (200, 202):
+                import threading
+                import bq_cache
+                from agent import warm_bq_cache
+                bq_cache.clear()
+                # Re-warm the cache ~3 minutes later, once the pipeline has finished
+                threading.Thread(target=warm_bq_cache, kwargs={"delay_seconds": 180}, daemon=True).start()
+                return JSONResponse({"status": "triggered", "message": "Garmin data sync started. This usually takes 1–2 minutes."})
+            else:
+                LOGGER.error("Cloud Run job trigger failed: %s %s", run_resp.status_code, run_resp.text)
+                return JSONResponse(
+                    {"status": "error", "message": f"Failed to start job ({run_resp.status_code}). Check Cloud Run permissions."},
+                    status_code=500,
+                )
+    except httpx.TimeoutException:
+        LOGGER.error("Cloud Run API timed out during garmin sync")
+        return JSONResponse({"status": "error", "message": "Request timed out — the Cloud Run API was slow. Try again."}, status_code=500)
+    except Exception as exc:
+        LOGGER.error("Unexpected error in garmin_sync: %s", exc)
+        return JSONResponse({"status": "error", "message": f"Unexpected error: {exc}"}, status_code=500)
 
 
 # ---------------------------------------------------------------------------

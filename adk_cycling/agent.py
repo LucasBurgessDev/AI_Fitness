@@ -605,6 +605,8 @@ def warm_bq_cache(delay_seconds: int = 0) -> None:
     """
     if delay_seconds:
         time.sleep(delay_seconds)
+    import bq_cache as _bq_cache
+    _bq_cache.clear()
     LOGGER.info("Warming BQ cache...")
     p = profile_store.load()
     ftp = float(p.get("ftp") or 0)
