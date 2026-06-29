@@ -177,7 +177,7 @@ jobs:
             --region "$REGION" \
             --service-account "$SA_EMAIL" \
             --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=${REDIRECT_URI},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=$MORNING_SHEET_ID,EVENING_SHEET_ID=$EVENING_SHEET_ID" \
-            --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-dev-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-dev-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-dev-allowed-email:latest,SECRET_KEY=cycling-coach-dev-secret-key:latest" \
+            --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-dev-secret-key:latest" \
             --allow-unauthenticated \
             --memory 1Gi \
             --cpu 1 \
