@@ -78,7 +78,7 @@ jobs:
         run: gcloud services enable calendar-json.googleapis.com --project "$PROJECT_ID" || true
 
       - name: OpenTofu Init (dev state)
-        run: tofu -chdir=terraform init -backend-config="prefix=terraform/state/dev"
+        run: tofu -chdir=terraform init -reconfigure -backend-config="prefix=terraform/state/dev"
 
       - name: OpenTofu Apply (dev)
         run: tofu -chdir=terraform apply -var="env=dev" -auto-approve
