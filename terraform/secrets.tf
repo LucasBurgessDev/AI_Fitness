@@ -1,5 +1,6 @@
 # ---------------------------------------------------------------------------
-# Auto-generated secret: session signing key
+# Auto-generated secret: session signing key (one per env — dev and prod
+# have independent signing keys so sessions don't cross-contaminate)
 # The initial value is set once and never rotated (ignore_changes).
 # ---------------------------------------------------------------------------
 
@@ -9,7 +10,7 @@ resource "random_password" "secret_key" {
 }
 
 resource "google_secret_manager_secret" "secret_key" {
-  secret_id = "cycling-coach-secret-key"
+  secret_id = "cycling-coach${local.env_suffix}-secret-key"
 
   replication {
     auto {}
@@ -29,12 +30,19 @@ resource "google_secret_manager_secret_version" "secret_key" {
   }
 }
 
+resource "google_secret_manager_secret_iam_member" "sa_accessor_secret_key" {
+  secret_id = google_secret_manager_secret.secret_key.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${var.sa_email}"
+}
+
 # ---------------------------------------------------------------------------
-# User-provided secrets: Terraform creates the resource and manages IAM.
+# User-provided secrets: prod-only — dev reuses these directly.
 # Secret versions (actual values) must be set manually via gcloud.
 # ---------------------------------------------------------------------------
 
 resource "google_secret_manager_secret" "oauth_client_id" {
+  count     = var.env == "prod" ? 1 : 0
   secret_id = "cycling-coach-oauth-client-id"
 
   replication {
@@ -45,6 +53,7 @@ resource "google_secret_manager_secret" "oauth_client_id" {
 }
 
 resource "google_secret_manager_secret" "oauth_client_secret" {
+  count     = var.env == "prod" ? 1 : 0
   secret_id = "cycling-coach-oauth-client-secret"
 
   replication {
@@ -55,6 +64,7 @@ resource "google_secret_manager_secret" "oauth_client_secret" {
 }
 
 resource "google_secret_manager_secret" "allowed_email" {
+  count     = var.env == "prod" ? 1 : 0
   secret_id = "cycling-coach-allowed-email"
 
   replication {
@@ -65,20 +75,20 @@ resource "google_secret_manager_secret" "allowed_email" {
 }
 
 # ---------------------------------------------------------------------------
-# Grant the pipeline SA accessor rights on all secrets
+# Grant the pipeline SA accessor rights on the prod-only secrets.
+# (The SA already has access in prod state; dev inherits it — same SA.)
 # ---------------------------------------------------------------------------
 
 locals {
-  managed_secrets = {
-    secret_key          = google_secret_manager_secret.secret_key.secret_id
-    oauth_client_id     = google_secret_manager_secret.oauth_client_id.secret_id
-    oauth_client_secret = google_secret_manager_secret.oauth_client_secret.secret_id
-    allowed_email       = google_secret_manager_secret.allowed_email.secret_id
-  }
+  prod_secrets = var.env == "prod" ? {
+    oauth_client_id     = google_secret_manager_secret.oauth_client_id[0].secret_id
+    oauth_client_secret = google_secret_manager_secret.oauth_client_secret[0].secret_id
+    allowed_email       = google_secret_manager_secret.allowed_email[0].secret_id
+  } : {}
 }
 
 resource "google_secret_manager_secret_iam_member" "sa_accessor" {
-  for_each  = local.managed_secrets
+  for_each  = local.prod_secrets
   secret_id = each.value
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${var.sa_email}"

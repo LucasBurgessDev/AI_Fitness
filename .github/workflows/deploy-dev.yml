@@ -1,0 +1,193 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches:
+      - dev
+
+env:
+  PROJECT_ID: health-data-482722
+  REGION: europe-west2
+  AR_REPO: health-jobs
+  SA_EMAIL: garmin-fitness-daily-sa@health-data-482722.iam.gserviceaccount.com
+  BUCKET: garmin-fitness-health-data-482722
+  DRIVE_FOLDER_ID: 1hTPk71hZmqLk8RNPggjZOfIRY9Ax1op-
+  ENV: dev
+  JOB_NAME: garmin-fitness-daily-dev
+  SERVICE_NAME: cycling-coach-dev
+  MORNING_SHEET_ID: 1OPsqSwgD1K-C6R3plk1qF9XRuvvv2LJWlEKsf5kimNs
+  EVENING_SHEET_ID: 1UzwE5TdlcijU44e7W0jHGWhusXWD42-fMWA4Ay9lZnU
+
+jobs:
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+      pipeline:  ${{ steps.filter.outputs.pipeline }}
+      adk:       ${{ steps.filter.outputs.adk }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            terraform:
+              - 'terraform/**'
+            pipeline:
+              - 'pipeline/**'
+            adk:
+              - 'adk_cycling/**'
+
+  provision-infra:
+    name: Provision Dev Infrastructure (OpenTofu)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.9.0"
+
+      - name: Cache OpenTofu providers
+        uses: actions/cache@v4
+        with:
+          path: terraform/.terraform
+          key: tofu-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
+          restore-keys: tofu-${{ runner.os }}-
+
+      - name: Bootstrap state bucket
+        run: |
+          gcloud storage buckets create "gs://$BUCKET" \
+            --location="$REGION" \
+            --uniform-bucket-level-access || true
+
+      - name: Enable Google Calendar API
+        run: gcloud services enable calendar-json.googleapis.com --project "$PROJECT_ID" || true
+
+      - name: OpenTofu Init (dev state)
+        run: tofu -chdir=terraform init -reconfigure -backend-config="prefix=terraform/state/dev"
+
+      - name: OpenTofu Apply (dev)
+        run: tofu -chdir=terraform apply -var="env=dev" -auto-approve
+
+  deploy-pipeline:
+    name: Deploy Garmin Pipeline (dev)
+    runs-on: ubuntu-latest
+    needs: [detect-changes, provision-infra]
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.pipeline == 'true' &&
+      (needs.provision-infra.result == 'success' || needs.provision-infra.result == 'skipped')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build pipeline image (dev)
+        run: |
+          gcloud builds submit pipeline/ \
+            --project "$PROJECT_ID" \
+            --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily-dev:latest" \
+            --service-account "projects/$PROJECT_ID/serviceAccounts/$SA_EMAIL" \
+            --gcs-source-staging-dir="gs://$BUCKET/cloudbuild_source" \
+            --gcs-log-dir="gs://$BUCKET/cloudbuild_logs"
+
+      - name: Deploy Cloud Run Job (dev)
+        run: |
+          gcloud run jobs deploy "$JOB_NAME" \
+            --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily-dev:latest" \
+            --service-account "$SA_EMAIL" \
+            --set-env-vars "TOKEN_CACHE_GCS_URI=gs://$BUCKET/garmin/token_cache.tar.gz,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,SAVE_PATH=/tmp,LOOKBACK_DAYS=3,FTP_LOOKBACK_DAYS=60,BQ_PROJECT_ID=$PROJECT_ID" \
+            --max-retries 1 \
+            --task-timeout 900 \
+            --memory 1Gi \
+            --cpu 1 \
+            --region "$REGION"
+
+      - name: Grant SA permission to trigger job
+        run: |
+          gcloud run jobs add-iam-policy-binding "$JOB_NAME" \
+            --region "$REGION" \
+            --member "serviceAccount:$SA_EMAIL" \
+            --role "roles/run.invoker" || true
+
+  deploy-cycling-coach:
+    name: Deploy ADK Cycling Coach (dev)
+    runs-on: ubuntu-latest
+    needs: [detect-changes, provision-infra]
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.adk == 'true' &&
+      (needs.provision-infra.result == 'success' || needs.provision-infra.result == 'skipped')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build ADK cycling coach image (dev)
+        run: |
+          gcloud builds submit adk_cycling/ \
+            --project "$PROJECT_ID" \
+            --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach-dev:latest" \
+            --service-account "projects/$PROJECT_ID/serviceAccounts/$SA_EMAIL" \
+            --gcs-source-staging-dir="gs://$BUCKET/cloudbuild_source" \
+            --gcs-log-dir="gs://$BUCKET/cloudbuild_logs"
+
+      - name: Get existing dev service URL (for REDIRECT_URI)
+        id: existing-url
+        run: |
+          URL=$(gcloud run services describe "$SERVICE_NAME" \
+            --region "$REGION" --format='value(status.url)' 2>/dev/null || echo "")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Cloud Run Service (dev)
+        run: |
+          REDIRECT_URI="${{ steps.existing-url.outputs.url }}/auth/callback"
+          gcloud run deploy "$SERVICE_NAME" \
+            --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach-dev:latest" \
+            --region "$REGION" \
+            --service-account "$SA_EMAIL" \
+            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=${REDIRECT_URI},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=$MORNING_SHEET_ID,EVENING_SHEET_ID=$EVENING_SHEET_ID" \
+            --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-dev-secret-key:latest" \
+            --allow-unauthenticated \
+            --memory 1Gi \
+            --cpu 1 \
+            --timeout 3600 \
+            --port 8080
+
+      - name: Update REDIRECT_URI with final dev service URL
+        run: |
+          FINAL_URL=$(gcloud run services describe "$SERVICE_NAME" \
+            --region "$REGION" --format='value(status.url)')
+          gcloud run services update "$SERVICE_NAME" \
+            --region "$REGION" \
+            --update-env-vars "REDIRECT_URI=${FINAL_URL}/auth/callback"
