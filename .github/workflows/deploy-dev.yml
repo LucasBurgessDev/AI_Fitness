@@ -80,6 +80,15 @@ jobs:
       - name: OpenTofu Init (dev state)
         run: tofu -chdir=terraform init -reconfigure -backend-config="prefix=terraform/state/dev"
 
+      - name: Import shared resources (idempotent)
+        working-directory: terraform
+        run: |
+          set +e
+          tofu import -var="env=dev" google_storage_bucket.pipeline_bucket "$BUCKET" >/dev/null 2>&1
+          tofu import -var="env=dev" "google_artifact_registry_repository.health_jobs" \
+            "projects/$PROJECT_ID/locations/$REGION/repositories/health-jobs" >/dev/null 2>&1
+          exit 0
+
       - name: OpenTofu Apply (dev)
         run: tofu -chdir=terraform apply -var="env=dev" -auto-approve
 
