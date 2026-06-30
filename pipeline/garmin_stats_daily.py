@@ -162,8 +162,19 @@ def _fetch_hrv(api, today):
             h = api.get_hrv_data(today)
         else:
             h = api.connectapi(f"/hrv-service/hrv/daily/{today}")
-        hrv_status = get_safe(h, "hrvSummary", "status")
-        raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
+        raw_status = get_safe(h, "hrvSummary", "status")
+        # API sometimes returns a numeric timestamp in status instead of a string label.
+        # Fall back to feedbackPhrase (e.g. "HRV_BALANCED_3") if status is not a string.
+        if isinstance(raw_status, str) and not raw_status.lstrip("-").replace(".", "").isdigit():
+            hrv_status = raw_status
+        else:
+            fb = get_safe(h, "hrvSummary", "feedbackPhrase") or ""
+            # feedbackPhrase looks like "HRV_BALANCED_3" — strip the trailing _N
+            if fb and isinstance(fb, str):
+                hrv_status = "_".join(fb.split("_")[1:-1]) if fb.count("_") >= 2 else fb
+            else:
+                hrv_status = None
+        raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage") or get_safe(h, "hrvSummary", "weeklyAvg")
         hrv_avg = None
         if raw_hrv is not None:
             v = float(raw_hrv)
