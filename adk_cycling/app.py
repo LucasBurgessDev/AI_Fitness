@@ -29,6 +29,10 @@ ALLOWED_EMAILS = {e.strip().lower() for e in os.environ["ALLOWED_EMAIL"].split("
 SECRET_KEY = os.environ["SECRET_KEY"]
 PROJECT_ID = os.environ.get("PROJECT_ID", "health-data-482722")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8080/auth/callback")
+# Only mark cookies Secure when actually served over HTTPS — local dev uses plain http://localhost
+# and browsers silently drop Secure cookies there, which would break login entirely.
+_COOKIE_SECURE = REDIRECT_URI.startswith("https://")
+SESSION_MAX_AGE = 86400 * 7
 GARMIN_JOB_NAME = os.getenv("GARMIN_JOB_NAME", "garmin-fitness-daily")
 GARMIN_JOB_REGION = os.getenv("GARMIN_JOB_REGION", "europe-west2")
 MORNING_SHEET_ID = os.getenv("MORNING_SHEET_ID", "")
@@ -44,7 +48,7 @@ SCOPES = [
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Cycling Coach AI")
+app = FastAPI(title="Health Coach")
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 # Jinja2 3.1.4+ uses (name, globals_dict) as cache key — dict is unhashable.
@@ -89,6 +93,26 @@ def _require_session(request: Request) -> dict:
     return session
 
 
+@app.middleware("http")
+async def _renew_session_cookie(request: Request, call_next):
+    """Slide the session cookie's expiry forward on every authenticated request.
+
+    Without this, the cookie set once at login expires exactly 7 days later no matter
+    how often the user is actively using the app — this turns that hard cutoff into an
+    inactivity timeout instead.
+    """
+    response = await call_next(request)
+    if request.url.path == "/logout":
+        return response
+    session = _get_session(request)
+    if session:
+        response.set_cookie(
+            "session", signer.dumps(session), httponly=True, samesite="lax",
+            secure=_COOKIE_SECURE, max_age=SESSION_MAX_AGE,
+        )
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -125,6 +149,7 @@ async def auth_start():
         signer.dumps(code_verifier),
         httponly=True,
         samesite="lax",
+        secure=_COOKIE_SECURE,
         max_age=600,
     )
     return redirect
@@ -163,7 +188,10 @@ async def auth_callback(request: Request, code: str):
 
     session_cookie = signer.dumps({"email": email})
     response = RedirectResponse("/")
-    response.set_cookie("session", session_cookie, httponly=True, samesite="lax", max_age=86400 * 7)
+    response.set_cookie(
+        "session", session_cookie, httponly=True, samesite="lax",
+        secure=_COOKIE_SECURE, max_age=SESSION_MAX_AGE,
+    )
     response.delete_cookie("pkce_cv")
     return response
 
@@ -593,7 +621,7 @@ async def api_calories(request: Request, days: int = 35):
       QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
     ),
     eaten AS (
-      SELECT date, calories_eaten, notes
+      SELECT date, calories_eaten, sugar_g, protein_g, notes
       FROM `{PROJECT_ID}.garmin.calorie_entries`
       WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
     )
@@ -602,6 +630,8 @@ async def api_calories(request: Request, days: int = 35):
       g.calories_burned,
       g.calories_active,
       e.calories_eaten,
+      e.sugar_g,
+      e.protein_g,
       e.notes,
       CASE WHEN g.calories_burned IS NOT NULL AND e.calories_eaten IS NOT NULL
            THEN g.calories_burned - e.calories_eaten ELSE NULL END AS net_calories
@@ -620,6 +650,8 @@ async def api_calories(request: Request, days: int = 35):
         "calories_burned": [],
         "calories_active": [],
         "calories_eaten": [],
+        "sugar_g": [],
+        "protein_g": [],
         "net_calories": [],
         "notes": [],
     }
@@ -628,6 +660,8 @@ async def api_calories(request: Request, days: int = 35):
         data["calories_burned"].append(int(row["calories_burned"]) if row["calories_burned"] else None)
         data["calories_active"].append(int(row["calories_active"]) if row["calories_active"] else None)
         data["calories_eaten"].append(int(row["calories_eaten"]) if row["calories_eaten"] else None)
+        data["sugar_g"].append(float(row["sugar_g"]) if row["sugar_g"] is not None else None)
+        data["protein_g"].append(float(row["protein_g"]) if row["protein_g"] is not None else None)
         data["net_calories"].append(int(row["net_calories"]) if row["net_calories"] else None)
         data["notes"].append(row["notes"] or "")
 
@@ -644,6 +678,8 @@ async def api_calories_entry(request: Request):
     body = await request.json()
     date_str = body.get("date", "")
     calories_eaten = body.get("calories_eaten")
+    sugar_g = body.get("sugar_g")
+    protein_g = body.get("protein_g")
     notes = body.get("notes", "") or ""
 
     if not date_str:
@@ -655,18 +691,22 @@ async def api_calories_entry(request: Request):
     # MERGE upsert — one authoritative row per date
     sql = f"""
     MERGE `{PROJECT_ID}.garmin.calorie_entries` T
-    USING (SELECT @date AS date, @calories AS calories_eaten, @notes AS notes, @updated AS updated_at) S
+    USING (SELECT @date AS date, @calories AS calories_eaten, @sugar AS sugar_g, @protein AS protein_g,
+                  @notes AS notes, @updated AS updated_at) S
     ON T.date = S.date
     WHEN MATCHED THEN
-      UPDATE SET calories_eaten = S.calories_eaten, notes = S.notes, updated_at = S.updated_at
+      UPDATE SET calories_eaten = S.calories_eaten, sugar_g = S.sugar_g, protein_g = S.protein_g,
+                 notes = S.notes, updated_at = S.updated_at
     WHEN NOT MATCHED THEN
-      INSERT (date, calories_eaten, notes, updated_at)
-      VALUES (S.date, S.calories_eaten, S.notes, S.updated_at)
+      INSERT (date, calories_eaten, sugar_g, protein_g, notes, updated_at)
+      VALUES (S.date, S.calories_eaten, S.sugar_g, S.protein_g, S.notes, S.updated_at)
     """
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
             bigquery.ScalarQueryParameter("date",     "STRING",    date_str),
             bigquery.ScalarQueryParameter("calories", "INT64",     int(calories_eaten) if calories_eaten is not None else None),
+            bigquery.ScalarQueryParameter("sugar",    "FLOAT64",   float(sugar_g) if sugar_g is not None else None),
+            bigquery.ScalarQueryParameter("protein",  "FLOAT64",   float(protein_g) if protein_g is not None else None),
             bigquery.ScalarQueryParameter("notes",    "STRING",    notes),
             bigquery.ScalarQueryParameter("updated",  "TIMESTAMP", now_ts),
         ]
@@ -679,7 +719,10 @@ async def api_calories_entry(request: Request):
 
     import bq_cache
     bq_cache.clear()
-    return JSONResponse({"ok": True, "date": date_str, "calories_eaten": calories_eaten})
+    return JSONResponse({
+        "ok": True, "date": date_str, "calories_eaten": calories_eaten,
+        "sugar_g": sugar_g, "protein_g": protein_g,
+    })
 
 
 @app.get("/api/analytics/health")
@@ -1444,9 +1487,9 @@ def _make_png(size: int) -> bytes:
 @app.get("/manifest.json")
 async def manifest():
     data = {
-        "name": "Cycling Coach AI",
-        "short_name": "CycleCoach",
-        "description": "Your personal data-driven cycling coach",
+        "name": "Health Coach",
+        "short_name": "HealthCoach",
+        "description": "Your personal AI health and wellness coach, with a cycling specialty.",
         "id": "/",
         "start_url": "/",
         "scope": "/",
@@ -1507,7 +1550,7 @@ self.addEventListener('fetch', e => {
 });
 
 self.addEventListener('push', e => {
-  let payload = { title: 'Cycling Coach AI', body: 'Tap to open your coaching dashboard.', url: '/' };
+  let payload = { title: 'Health Coach', body: 'Tap to open your coaching dashboard.', url: '/' };
   try { payload = { ...payload, ...e.data.json() }; } catch (_) {}
   e.waitUntil(
     self.registration.showNotification(payload.title, {
@@ -1570,7 +1613,7 @@ async def push_test(request: Request):
     sent = _send_push_to_subs(
         subs, session["email"],
         "Test notification",
-        "Push notifications are working for Cycling Coach AI!",
+        "Push notifications are working for Health Coach!",
         private_key,
     )
     return JSONResponse({"sent": sent})
@@ -1678,8 +1721,8 @@ async def send_reminders():
                 current_hhmm == reminders.get("training_reminder_time", "17:00"):
             total_sent += _send_push_to_subs(
                 subs, email,
-                "Training Reminder",
-                "Time to train! Open your coaching dashboard to see today's plan.",
+                "Time to move",
+                "Open your coaching dashboard to see today's plan.",
                 private_key,
             )
 
@@ -1743,7 +1786,9 @@ def _send_push_to_subs(
             if status in (404, 410):
                 expired.append(sub.get("endpoint", ""))
             else:
-                LOGGER.error("Push send error for %s: %s", email, exc)
+                # Log the status explicitly (e.g. 401/403 = VAPID key mismatch) so a
+                # future silent-failure mode is diagnosable instead of invisible.
+                LOGGER.error("Push send error for %s (status=%s): %s", email, status, exc)
 
     for endpoint in expired:
         push_store.remove_subscription(email, endpoint)

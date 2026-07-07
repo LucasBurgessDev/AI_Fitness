@@ -58,16 +58,28 @@ def get_keys() -> Tuple[str, str]:
     ).decode()
 
     data = {"public": public_b64, "private": private_pem}
-    _cache = data
 
     if _GCS_BUCKET:
         try:
             from google.cloud import storage
+            from google.api_core.exceptions import PreconditionFailed
+
             client = storage.Client()
             blob = client.bucket(_GCS_BUCKET).blob(_GCS_OBJECT)
-            blob.upload_from_string(json.dumps(data), content_type="application/json")
-            LOGGER.info("VAPID keys saved to GCS")
+            try:
+                # if_generation_match=0 only succeeds if the object doesn't exist yet,
+                # making first-write-wins atomic across concurrently cold-starting instances.
+                blob.upload_from_string(
+                    json.dumps(data), content_type="application/json", if_generation_match=0,
+                )
+                LOGGER.info("VAPID keys saved to GCS")
+            except PreconditionFailed:
+                # Another instance already won the race — adopt its keys instead of our
+                # own, so every instance signs/verifies pushes with the same keypair.
+                LOGGER.info("VAPID keys already created by another instance — adopting them")
+                data = json.loads(blob.download_as_text())
         except Exception as exc:
-            LOGGER.warning("Could not save VAPID keys to GCS: %s", exc)
+            LOGGER.warning("Could not save/sync VAPID keys via GCS: %s", exc)
 
-    return public_b64, private_pem
+    _cache = data
+    return data["public"], data["private"]

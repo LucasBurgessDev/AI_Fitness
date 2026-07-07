@@ -120,20 +120,12 @@
     <div class="card">
       <h3>Weekly Targets</h3>
       <div class="kpi-row">
-        <input type="checkbox" name="kpi_weekly_cycling_km_enabled" value="true"
-          {% if profile.kpis and profile.kpis.weekly_cycling_km and profile.kpis.weekly_cycling_km.enabled %}checked{% endif %} />
-        <label class="kpi-label">Cycling distance</label>
-        <input type="number" name="kpi_weekly_cycling_km_target" min="0" max="5000" step="1"
-          value="{{ (profile.kpis or {}).get('weekly_cycling_km', {}).get('target', 0) or 0 | int }}" />
-        <span class="kpi-unit">km/wk</span>
-      </div>
-      <div class="kpi-row">
-        <input type="checkbox" name="kpi_weekly_running_km_enabled" value="true"
-          {% if profile.kpis and profile.kpis.weekly_running_km and profile.kpis.weekly_running_km.enabled %}checked{% endif %} />
-        <label class="kpi-label">Running distance</label>
-        <input type="number" name="kpi_weekly_running_km_target" min="0" max="1000" step="1"
-          value="{{ (profile.kpis or {}).get('weekly_running_km', {}).get('target', 0) or 0 | int }}" />
-        <span class="kpi-unit">km/wk</span>
+        <input type="checkbox" name="kpi_weekly_active_days_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_active_days and profile.kpis.weekly_active_days.enabled %}checked{% endif %} />
+        <label class="kpi-label">Active days</label>
+        <input type="number" name="kpi_weekly_active_days_target" min="0" max="7" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_active_days', {}).get('target', 5) }}" />
+        <span class="kpi-unit">days/wk</span>
       </div>
       <div class="kpi-row">
         <input type="checkbox" name="kpi_weekly_hours_enabled" value="true"
@@ -142,14 +134,6 @@
         <input type="number" name="kpi_weekly_hours_target" min="0" max="100" step="0.5"
           value="{{ (profile.kpis or {}).get('weekly_hours', {}).get('target', 0) }}" />
         <span class="kpi-unit">hrs/wk</span>
-      </div>
-      <div class="kpi-row">
-        <input type="checkbox" name="kpi_weekly_active_days_enabled" value="true"
-          {% if profile.kpis and profile.kpis.weekly_active_days and profile.kpis.weekly_active_days.enabled %}checked{% endif %} />
-        <label class="kpi-label">Active days</label>
-        <input type="number" name="kpi_weekly_active_days_target" min="0" max="7" step="1"
-          value="{{ (profile.kpis or {}).get('weekly_active_days', {}).get('target', 5) }}" />
-        <span class="kpi-unit">days/wk</span>
       </div>
       <div class="kpi-row">
         <input type="checkbox" name="kpi_target_weight_kg_enabled" value="true"
@@ -167,6 +151,22 @@
           value="{{ (profile.kpis or {}).get('target_body_fat_pct', {}).get('target', 20) }}" />
         <span class="kpi-unit">%</span>
       </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_cycling_km_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_cycling_km and profile.kpis.weekly_cycling_km.enabled %}checked{% endif %} />
+        <label class="kpi-label">Cycling distance</label>
+        <input type="number" name="kpi_weekly_cycling_km_target" min="0" max="5000" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_cycling_km', {}).get('target', 0) or 0 | int }}" />
+        <span class="kpi-unit">km/wk</span>
+      </div>
+      <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_running_km_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_running_km and profile.kpis.weekly_running_km.enabled %}checked{% endif %} />
+        <label class="kpi-label">Running distance</label>
+        <input type="number" name="kpi_weekly_running_km_target" min="0" max="1000" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_running_km', {}).get('target', 0) or 0 | int }}" />
+        <span class="kpi-unit">km/wk</span>
+      </div>
     </div>
 
     <div class="card">
@@ -183,7 +183,7 @@
       <div class="field">
         <label for="equipment">Your kit</label>
         <textarea id="equipment" name="equipment" rows="3"
-          placeholder="Zwift, Wahoo Kickr Core, Trek Domane, Garmin Vivoactive 4…">{{ profile.equipment }}</textarea>
+          placeholder="Running shoes, gym membership, resistance bands, Zwift + turbo trainer…">{{ profile.equipment }}</textarea>
       </div>
     </div>
 
@@ -370,13 +370,14 @@
   // ---- Coach Memory ----
   const MEMORY_CATS = [
     { label: 'All', cat: '' },
-    { label: 'PRs', cat: 'PR' },
+    { label: 'Milestones', cat: 'milestone' },
     { label: 'Tips', cat: 'recommendation' },
     { label: 'Observations', cat: 'observation' },
     { label: 'Goals', cat: 'goal_progress' },
   ];
   const CAT_COLORS = {
-    PR: 'var(--accent)',
+    milestone: 'var(--accent)',
+    PR: 'var(--accent)', // legacy category from before the health-coach rewrite
     recommendation: '#4fa6ff',
     observation: 'var(--text-muted)',
     goal_progress: 'var(--green)',

@@ -366,6 +366,28 @@
     })();
   </script>
 
+  <script>
+    // Register the service worker and heal any push-subscription drift on every
+    // authenticated page load, not just Settings/Chat — otherwise subscriptions that
+    // silently fail to persist server-side can go unnoticed until the user happens to
+    // revisit Settings.
+    (function() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      navigator.serviceWorker.register('/sw.js').then(async function(reg) {
+        if (Notification.permission !== 'granted') return;
+        try {
+          const sub = await reg.pushManager.getSubscription();
+          if (!sub) return;
+          await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sub.toJSON()),
+          });
+        } catch (_) { /* non-fatal — best-effort background resync */ }
+      }).catch(function() { /* SW registration failed — nothing to resync */ });
+    })();
+  </script>
+
   {% block page_script %}{% endblock %}
 </body>
 </html>

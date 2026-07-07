@@ -31,7 +31,8 @@ def save_insight(
         project_id: GCP project ID.
         session_id: Current conversation session ID.
         email: User email.
-        category: One of "PR", "recommendation", "observation", "goal_progress".
+        category: One of "milestone", "recommendation", "observation", "goal_progress"
+                  (older entries may also carry the legacy "PR" category).
         content: The insight text.
         context: Optional supporting context or data snippet.
 
@@ -76,7 +77,7 @@ def get_insights(
         project_id: GCP project ID.
         email: User email to filter by.
         weeks: How many weeks back to look (default 52).
-        category: Optional category filter (e.g. "PR", "recommendation").
+        category: Optional category filter (e.g. "milestone", "recommendation").
 
     Returns:
         Formatted string of coaching log entries, or a "no entries" message.

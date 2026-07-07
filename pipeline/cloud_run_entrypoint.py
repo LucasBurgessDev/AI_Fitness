@@ -175,6 +175,18 @@ def main() -> None:
             batch_control.end_batch(project_id, batch_id, total_rows, "SUCCESS")
             LOGGER.info("BigQuery write complete: %d rows", total_rows)
 
+            # Fill in HRV/sleep-score estimates for rows Garmin didn't report (e.g. the
+            # current watch lacks an HRV sensor). Best-effort — a failure here shouldn't
+            # mark the whole batch as failed since the real data write already succeeded.
+            try:
+                from google.cloud import bigquery
+                bigquery.Client(project=project_id).query(
+                    f"CALL `{project_id}.garmin.fill_missing_biometrics`()"
+                ).result()
+                LOGGER.info("fill_missing_biometrics procedure completed")
+            except Exception as proc_err:
+                LOGGER.warning("fill_missing_biometrics procedure failed (non-fatal): %s", proc_err)
+
         except Exception as bq_err:
             LOGGER.error("BigQuery write failed: %s", bq_err)
             try:

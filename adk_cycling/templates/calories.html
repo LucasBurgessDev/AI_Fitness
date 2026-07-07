@@ -151,6 +151,14 @@
       <label>Calories eaten</label>
       <input type="number" id="entry-cals" min="0" max="9999" step="50" placeholder="e.g. 2000" />
     </div>
+    <div class="entry-field" style="max-width:140px">
+      <label>Sugar (g)</label>
+      <input type="number" id="entry-sugar" min="0" max="999" step="1" placeholder="e.g. 45" />
+    </div>
+    <div class="entry-field" style="max-width:140px">
+      <label>Protein (g)</label>
+      <input type="number" id="entry-protein" min="0" max="999" step="1" placeholder="e.g. 120" />
+    </div>
     <div class="entry-field">
       <label>Notes <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
       <textarea id="entry-notes" rows="1" placeholder="What did you eat? Any comments…"></textarea>
@@ -188,7 +196,7 @@
       <div class="history-hdr">Recent entries — click a row to edit</div>
       <div class="history-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Burned</th><th>Eaten</th><th>Net</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Date</th><th>Burned</th><th>Eaten</th><th>Sugar (g)</th><th>Protein (g)</th><th>Net</th><th>Notes</th></tr></thead>
           <tbody id="history-tbody"></tbody>
         </table>
       </div>
@@ -233,6 +241,8 @@
     const eaten   = idx >= 0 ? _data.calories_eaten[idx]   : null;
     const active  = idx >= 0 ? _data.calories_active[idx]  : null;
     const net     = idx >= 0 ? _data.net_calories[idx]     : null;
+    const sugar   = idx >= 0 ? _data.sugar_g[idx]          : null;
+    const protein = idx >= 0 ? _data.protein_g[idx]        : null;
     const notes   = idx >= 0 ? _data.notes[idx]            : '';
 
     document.getElementById('day-burned').textContent  = burned  != null ? burned.toLocaleString()  : '—';
@@ -254,14 +264,22 @@
 
     // Populate form
     document.getElementById('entry-cals').value = eaten != null ? eaten : '';
+    document.getElementById('entry-sugar').value = sugar != null ? sugar : '';
+    document.getElementById('entry-protein').value = protein != null ? protein : '';
     document.getElementById('entry-notes').value = notes || '';
     document.getElementById('entry-saved').style.display = 'none';
   }
 
   async function saveEntry() {
     const cals = parseInt(document.getElementById('entry-cals').value, 10);
+    const sugarRaw = document.getElementById('entry-sugar').value;
+    const proteinRaw = document.getElementById('entry-protein').value;
+    const sugar = sugarRaw === '' ? null : parseFloat(sugarRaw);
+    const protein = proteinRaw === '' ? null : parseFloat(proteinRaw);
     const notes = document.getElementById('entry-notes').value.trim();
     if (isNaN(cals) || cals < 0) { alert('Enter a valid calorie count'); return; }
+    if (sugar != null && (isNaN(sugar) || sugar < 0)) { alert('Enter a valid sugar amount'); return; }
+    if (protein != null && (isNaN(protein) || protein < 0)) { alert('Enter a valid protein amount'); return; }
 
     const btn = document.querySelector('.btn-save-entry');
     btn.disabled = true; btn.textContent = 'Saving…';
@@ -269,13 +287,15 @@
       const res = await fetch('/api/calories/entry', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ date: _selectedDate, calories_eaten: cals, notes }),
+        body: JSON.stringify({ date: _selectedDate, calories_eaten: cals, sugar_g: sugar, protein_g: protein, notes }),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Save failed'); }
       // Update local data
       const idx = _data.dates.indexOf(_selectedDate);
       if (idx >= 0) {
         _data.calories_eaten[idx] = cals;
+        _data.sugar_g[idx] = sugar;
+        _data.protein_g[idx] = protein;
         _data.notes[idx] = notes;
         if (_data.calories_burned[idx] != null) {
           _data.net_calories[idx] = _data.calories_burned[idx] - cals;
@@ -285,6 +305,8 @@
         _data.calories_burned.push(null);
         _data.calories_active.push(null);
         _data.calories_eaten.push(cals);
+        _data.sugar_g.push(sugar);
+        _data.protein_g.push(protein);
         _data.net_calories.push(null);
         _data.notes.push(notes);
         _data.dates.sort();
@@ -432,7 +454,11 @@
     // History table (last 14 rows, newest first)
     const tbody = document.getElementById('history-tbody');
     const rows = _data.dates
-      .map((d, i) => ({ d, burned: _data.calories_burned[i], eaten: _data.calories_eaten[i], net: _data.net_calories[i], notes: _data.notes[i] }))
+      .map((d, i) => ({
+        d, burned: _data.calories_burned[i], eaten: _data.calories_eaten[i],
+        sugar: _data.sugar_g[i], protein: _data.protein_g[i],
+        net: _data.net_calories[i], notes: _data.notes[i],
+      }))
       .filter(r => r.burned != null || r.eaten != null)
       .reverse().slice(0, 14);
     tbody.innerHTML = rows.map(r => {
@@ -443,6 +469,8 @@
         <td class="mono">${fmtShort(r.d)}</td>
         <td class="mono">${r.burned != null ? r.burned.toLocaleString() : '—'}</td>
         <td class="mono">${r.eaten  != null ? r.eaten.toLocaleString()  : '—'}</td>
+        <td class="mono">${r.sugar   != null ? r.sugar   : '—'}</td>
+        <td class="mono">${r.protein != null ? r.protein : '—'}</td>
         <td class="mono">${net}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted)">${r.notes || ''}</td>
       </tr>`;
