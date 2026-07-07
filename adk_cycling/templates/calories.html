@@ -40,6 +40,13 @@
   .surplus { color: var(--watts); }
   .deficit { color: var(--green); }
 
+  /* ── Rolling balance ── */
+  .balance-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.85rem; }
+  .balance-message {
+    font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;
+    padding: 0 0.1rem;
+  }
+
   /* ── Entry form ── */
   .entry-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -120,6 +127,21 @@
     <button class="date-nav-btn" onclick="shiftDate(1)">›</button>
     <span class="date-nav-today" onclick="goToday()">Today</span>
   </div>
+
+  <!-- Rolling balance — one bad day doesn't undo your week -->
+  <div class="balance-strip" id="balance-strip">
+    <div class="day-card">
+      <div class="day-card-label">Last 3 Days</div>
+      <div class="day-card-val" id="balance-3d">—</div>
+      <div class="day-card-sub">rolling balance</div>
+    </div>
+    <div class="day-card">
+      <div class="day-card-label">Last 7 Days</div>
+      <div class="day-card-val" id="balance-7d">—</div>
+      <div class="day-card-sub">rolling balance</div>
+    </div>
+  </div>
+  <div class="balance-message" id="balance-message"></div>
 
   <!-- Day summary -->
   <div class="day-strip" id="day-strip">
@@ -239,8 +261,48 @@
     updateDayPanel();
   }
 
+  // Trailing rolling sum, skipping nulls — unlike a rolling average we don't gate on a
+  // minimum count, so the balance is meaningful from day 1 instead of waiting to fill window.
+  function rollingSum(arr, window) {
+    return arr.map((_, i) => {
+      let sum = null;
+      for (let j = Math.max(0, i - window + 1); j <= i; j++) {
+        if (arr[j] != null) sum = (sum || 0) + arr[j];
+      }
+      return sum;
+    });
+  }
+
+  function updateBalance() {
+    if (!_data) return;
+    const bal3 = rollingSum(_data.net_calories, 3).at(-1);
+    const bal7 = rollingSum(_data.net_calories, 7).at(-1);
+
+    for (const [id, val] of [['balance-3d', bal3], ['balance-7d', bal7]]) {
+      const el = document.getElementById(id);
+      if (val == null) {
+        el.textContent = '—'; el.className = 'day-card-val';
+      } else {
+        el.textContent = (val > 0 ? '+' : '') + val.toLocaleString();
+        el.className = 'day-card-val ' + (val > 0 ? 'deficit' : 'surplus');
+      }
+    }
+
+    const msgEl = document.getElementById('balance-message');
+    if (bal7 == null) {
+      msgEl.textContent = "Log a few days to see your rolling balance — one heavy day won't undo your week.";
+    } else if (bal7 >= 300) {
+      msgEl.textContent = "You're comfortably in deficit this week — nice work.";
+    } else if (bal7 >= -300) {
+      msgEl.textContent = "Pretty balanced this week — right on track, no stress.";
+    } else {
+      msgEl.textContent = "A lighter day or two will bring this back in line — one big day won't undo your progress.";
+    }
+  }
+
   function updateDayPanel() {
     if (!_data || !_selectedDate) return;
+    updateBalance();
     const idx = _data.dates.indexOf(_selectedDate);
     const burned  = idx >= 0 ? _data.calories_burned[idx]  : null;
     const goal    = idx >= 0 ? _data.calories_goal[idx]    : null;

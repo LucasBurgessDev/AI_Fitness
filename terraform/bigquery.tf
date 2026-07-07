@@ -116,6 +116,10 @@ resource "google_bigquery_table" "calorie_entries" {
 # since there is only one physical Garmin watch/user and biometric history isn't
 # environment-scoped the way app state (calorie_entries, coaching_log, etc.) is. This
 # routine's home dataset follows the same convention for consistency.
+#
+# Both deploy-dev.yml and deploy-prod.yml now idempotently `tofu import` this routine
+# before apply (see those workflows) — this is a real shared GCP object between the two
+# environments' Terraform states, same as the shared GCS bucket / Artifact Registry repo.
 resource "google_bigquery_routine" "fill_missing_biometrics" {
   dataset_id   = "garmin"
   routine_id   = "fill_missing_biometrics"
