@@ -48,6 +48,7 @@ _STATS_SCHEMA = [
     bigquery.SchemaField("floors_climbed", "INT64"),
     bigquery.SchemaField("cals_total", "INT64"),
     bigquery.SchemaField("cals_active", "INT64"),
+    bigquery.SchemaField("cals_goal", "INT64"),
     bigquery.SchemaField("intensity_moderate_mins", "INT64"),
     bigquery.SchemaField("intensity_vigorous_mins", "INT64"),
     bigquery.SchemaField("race_5k_secs", "INT64"),
@@ -160,6 +161,7 @@ _CSV_TO_STATS_COLS = {
     "Floors Climbed": "floors_climbed",
     "Cals Total": "cals_total",
     "Cals Active": "cals_active",
+    "Cals Goal": "cals_goal",
     "Intensity Moderate Mins": "intensity_moderate_mins",
     "Intensity Vigorous Mins": "intensity_vigorous_mins",
     "Race 5K Secs": "race_5k_secs",
@@ -317,7 +319,7 @@ def write_stats_range(
                                   "body_battery", "body_battery_high", "body_battery_low",
                                   "training_readiness", "fitness_age",
                                   "steps", "step_goal", "floors_climbed",
-                                  "cals_total", "cals_active",
+                                  "cals_total", "cals_active", "cals_goal",
                                   "intensity_moderate_mins", "intensity_vigorous_mins",
                                   "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs",
                                   "lactate_threshold_hr"})
@@ -452,7 +454,7 @@ def write_stats(
                                   "body_battery", "body_battery_high", "body_battery_low",
                                   "training_readiness", "fitness_age",
                                   "steps", "step_goal", "floors_climbed",
-                                  "cals_total", "cals_active",
+                                  "cals_total", "cals_active", "cals_goal",
                                   "intensity_moderate_mins", "intensity_vigorous_mins",
                                   "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs",
                                   "lactate_threshold_hr"})

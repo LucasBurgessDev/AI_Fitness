@@ -87,6 +87,11 @@ jobs:
           tofu import -var="env=dev" google_storage_bucket.pipeline_bucket "$BUCKET" >/dev/null 2>&1
           tofu import -var="env=dev" "google_artifact_registry_repository.health_jobs" \
             "projects/$PROJECT_ID/locations/$REGION/repositories/health-jobs" >/dev/null 2>&1
+          # garmin_stats always lives in the literal "garmin" dataset (never "garmin_dev"),
+          # so this routine is a real shared resource between dev and prod, same as the
+          # bucket/AR repo above — import it here too so dev doesn't try to recreate it.
+          tofu import -var="env=dev" "google_bigquery_routine.fill_missing_biometrics" \
+            "projects/$PROJECT_ID/datasets/garmin/routines/fill_missing_biometrics" >/dev/null 2>&1
           exit 0
 
       - name: OpenTofu Apply (dev)

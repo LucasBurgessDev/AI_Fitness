@@ -57,6 +57,7 @@ HEADERS = [
     "ATL", "CTL", "TSB", "Training Load Focus Aerobic %",
     "Lactate Threshold HR", "Lactate Threshold Pace",
     "Activities",
+    "Cals Goal",
 ]
 
 
@@ -399,8 +400,14 @@ def main():
             cals_total = get_safe(user_stats, "totalKilocalories")
             cals_active = get_safe(user_stats, "activeKilocalories")
             step_goal = get_safe(user_stats, "dailyStepGoal")
+            # Only populated if the user has an active weight/calorie goal set in
+            # Garmin Connect — null otherwise. Try a couple of known field names
+            # since Garmin's daily-summary payload has varied across API versions.
+            cals_goal = (get_safe(user_stats, "netCalorieGoal")
+                         or get_safe(user_stats, "calorieGoal")
+                         or get_safe(user_stats, "dailyCalorieGoal"))
         except Exception:
-            rhr = min_hr = max_hr = stress_avg = body_battery = body_battery_high = body_battery_low = steps = vo2_max = spo2_avg = respiration_avg = cals_total = cals_active = step_goal = None
+            rhr = min_hr = max_hr = stress_avg = body_battery = body_battery_high = body_battery_low = steps = vo2_max = spo2_avg = respiration_avg = cals_total = cals_active = step_goal = cals_goal = None
 
         # --- FALLBACKS FOR PARTIAL DAY ---
         if steps is None:
@@ -514,6 +521,7 @@ def main():
             atl, ctl, tsb, tl_aerobic_pct,
             lt_hr, lt_pace,
             activity_str,
+            cals_goal,
         ]
 
         # --- SMART SAVE: APPEND NEW ROW (and migrate schema if needed) ---
