@@ -100,6 +100,11 @@ jobs:
             "projects/$PROJECT_ID/datasets/garmin/tables/morning_checkin" >/dev/null 2>&1
           tofu import "google_bigquery_table.evening_checkin" \
             "projects/$PROJECT_ID/datasets/garmin/tables/evening_checkin" >/dev/null 2>&1
+          # garmin_stats always lives in the literal "garmin" dataset (never "garmin_dev"),
+          # so this routine is a real shared resource between dev and prod — import it so
+          # prod doesn't try to recreate a routine dev already created (or vice versa).
+          tofu import "google_bigquery_routine.fill_missing_biometrics" \
+            "projects/$PROJECT_ID/datasets/garmin/routines/fill_missing_biometrics" >/dev/null 2>&1
           tofu import "google_secret_manager_secret.oauth_client_id[0]" \
             "projects/$PROJECT_ID/secrets/cycling-coach-oauth-client-id" >/dev/null 2>&1
           tofu import "google_secret_manager_secret.oauth_client_secret[0]" \

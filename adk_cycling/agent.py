@@ -107,7 +107,7 @@ def get_recent_stats(days: int = 30) -> str:
                sleep_total_hr, sleep_deep_hr, sleep_rem_hr, sleep_score,
                rhr, min_hr, max_hr, avg_stress, body_battery, respiration, spo2,
                vo2_max, training_status, hrv_status, hrv_avg,
-               steps, step_goal, cals_total, cals_active, activities
+               steps, step_goal, cals_total, cals_active, cals_goal, activities
         FROM `{PROJECT_ID}.garmin.garmin_stats`
         WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
         QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1

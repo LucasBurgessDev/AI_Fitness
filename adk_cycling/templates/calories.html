@@ -27,7 +27,7 @@
 
   /* ── Day summary strip ── */
   .day-strip {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 1.5rem;
   }
   .day-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -129,6 +129,11 @@
       <div class="day-card-sub">kcal total from activity</div>
     </div>
     <div class="day-card">
+      <div class="day-card-label">Goal (Garmin)</div>
+      <div class="day-card-val" id="day-goal" style="color:var(--watts)">—</div>
+      <div class="day-card-sub">Garmin's daily calorie budget</div>
+    </div>
+    <div class="day-card">
       <div class="day-card-label">Eaten</div>
       <div class="day-card-val" id="day-eaten" style="color:var(--accent)">—</div>
       <div class="day-card-sub">kcal consumed</div>
@@ -196,7 +201,7 @@
       <div class="history-hdr">Recent entries — click a row to edit</div>
       <div class="history-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Burned</th><th>Eaten</th><th>Sugar (g)</th><th>Protein (g)</th><th>Net</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Date</th><th>Burned</th><th>Goal</th><th>Eaten</th><th>Sugar (g)</th><th>Protein (g)</th><th>Net</th><th>Notes</th></tr></thead>
           <tbody id="history-tbody"></tbody>
         </table>
       </div>
@@ -238,6 +243,7 @@
     if (!_data || !_selectedDate) return;
     const idx = _data.dates.indexOf(_selectedDate);
     const burned  = idx >= 0 ? _data.calories_burned[idx]  : null;
+    const goal    = idx >= 0 ? _data.calories_goal[idx]    : null;
     const eaten   = idx >= 0 ? _data.calories_eaten[idx]   : null;
     const active  = idx >= 0 ? _data.calories_active[idx]  : null;
     const net     = idx >= 0 ? _data.net_calories[idx]     : null;
@@ -246,6 +252,7 @@
     const notes   = idx >= 0 ? _data.notes[idx]            : '';
 
     document.getElementById('day-burned').textContent  = burned  != null ? burned.toLocaleString()  : '—';
+    document.getElementById('day-goal').textContent    = goal    != null ? goal.toLocaleString()    : '—';
     document.getElementById('day-eaten').textContent   = eaten   != null ? eaten.toLocaleString()   : '—';
     document.getElementById('day-active').textContent  = active  != null ? active.toLocaleString()  : '—';
 
@@ -304,6 +311,7 @@
         _data.dates.push(_selectedDate);
         _data.calories_burned.push(null);
         _data.calories_active.push(null);
+        _data.calories_goal.push(null);
         _data.calories_eaten.push(cals);
         _data.sugar_g.push(sugar);
         _data.protein_g.push(protein);
@@ -455,7 +463,7 @@
     const tbody = document.getElementById('history-tbody');
     const rows = _data.dates
       .map((d, i) => ({
-        d, burned: _data.calories_burned[i], eaten: _data.calories_eaten[i],
+        d, burned: _data.calories_burned[i], goal: _data.calories_goal[i], eaten: _data.calories_eaten[i],
         sugar: _data.sugar_g[i], protein: _data.protein_g[i],
         net: _data.net_calories[i], notes: _data.notes[i],
       }))
@@ -468,6 +476,7 @@
       return `<tr onclick="setSelectedDate('${r.d}')">
         <td class="mono">${fmtShort(r.d)}</td>
         <td class="mono">${r.burned != null ? r.burned.toLocaleString() : '—'}</td>
+        <td class="mono">${r.goal   != null ? r.goal.toLocaleString()   : '—'}</td>
         <td class="mono">${r.eaten  != null ? r.eaten.toLocaleString()  : '—'}</td>
         <td class="mono">${r.sugar   != null ? r.sugar   : '—'}</td>
         <td class="mono">${r.protein != null ? r.protein : '—'}</td>
