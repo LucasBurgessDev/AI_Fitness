@@ -153,10 +153,19 @@ def main():
             # Sleep
             try:
                 sleep_data = api.get_sleep_data(day_str)
-                s_tot = get_safe(sleep_data, "dailySleepDTO", "sleepTimeSeconds")
                 s_deep = get_safe(sleep_data, "dailySleepDTO", "deepSleepSeconds")
                 s_rem = get_safe(sleep_data, "dailySleepDTO", "remSleepSeconds")
+                s_light = get_safe(sleep_data, "dailySleepDTO", "lightSleepSeconds")
+                # totalSleepSeconds/totalSleepTime is the real total; sleepTimeSeconds is
+                # actually "time awake during sleep" on newer firmware — don't use it here.
+                s_tot = (get_safe(sleep_data, "dailySleepDTO", "totalSleepSeconds")
+                         or get_safe(sleep_data, "dailySleepDTO", "totalSleepTime"))
+                if not s_tot:
+                    stages = [s for s in [s_deep, s_rem, s_light] if s]
+                    s_tot = sum(stages) if stages else None
                 s_score = get_safe(sleep_data, "dailySleepDTO", "sleepScores", "overall", "value")
+                if s_score is None:
+                    s_score = get_safe(sleep_data, "dailySleepDTO", "sleepScore")
                 if s_tot:
                     s_tot = round(s_tot / 3600, 2)
                 if s_deep:
@@ -197,7 +206,17 @@ def main():
                     h = api.get_hrv_data(day_str)
                 else:
                     h = api.connectapi(f"/hrv-service/hrv/daily/{day_str}")
-                hrv_s = get_safe(h, "hrvSummary", "status")
+                raw_status = get_safe(h, "hrvSummary", "status")
+                # API sometimes returns a numeric timestamp in status instead of a string
+                # label. Fall back to feedbackPhrase (e.g. "HRV_BALANCED_3") if not a string.
+                if isinstance(raw_status, str) and not raw_status.lstrip("-").replace(".", "").isdigit():
+                    hrv_s = raw_status
+                else:
+                    fb = get_safe(h, "hrvSummary", "feedbackPhrase") or ""
+                    if fb and isinstance(fb, str):
+                        hrv_s = "_".join(fb.split("_")[1:-1]) if fb.count("_") >= 2 else fb
+                    else:
+                        hrv_s = None
                 raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
                 if raw_hrv is not None:
                     v = float(raw_hrv)

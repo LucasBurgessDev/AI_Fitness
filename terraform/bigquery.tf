@@ -99,9 +99,83 @@ resource "google_bigquery_table" "calorie_entries" {
   schema = jsonencode([
     { name = "date",           type = "STRING",    mode = "REQUIRED" },
     { name = "calories_eaten", type = "INT64",     mode = "NULLABLE" },
+    { name = "sugar_g",        type = "FLOAT64",   mode = "NULLABLE" },
+    { name = "protein_g",      type = "FLOAT64",   mode = "NULLABLE" },
     { name = "notes",          type = "STRING",    mode = "NULLABLE" },
     { name = "updated_at",     type = "TIMESTAMP", mode = "NULLABLE" },
   ])
+}
+
+# Estimates hrv_status/hrv_avg/sleep_score for rows where Garmin didn't report them
+# (e.g. an older watch with no HRV sensor). Estimates are heuristic, not real Garmin
+# readings — every row it touches gets is_estimated_biometrics = TRUE so downstream
+# consumers (dashboard, chat agent) can tell real data from filled-in data.
+#
+# NOTE: garmin_stats always lives in the literal "garmin" dataset, never "garmin_dev" —
+# pipeline/bigquery_writer.py hardcodes that dataset name regardless of environment,
+# since there is only one physical Garmin watch/user and biometric history isn't
+# environment-scoped the way app state (calorie_entries, coaching_log, etc.) is. This
+# routine's home dataset follows the same convention for consistency.
+resource "google_bigquery_routine" "fill_missing_biometrics" {
+  dataset_id   = "garmin"
+  routine_id   = "fill_missing_biometrics"
+  routine_type = "PROCEDURE"
+  language     = "SQL"
+
+  definition_body = <<-EOSQL
+    BEGIN
+      ALTER TABLE `${var.project_id}.garmin.garmin_stats`
+        ADD COLUMN IF NOT EXISTS is_estimated_biometrics BOOL;
+
+      -- Sleep score: derive a 0-100 score from total sleep duration (peaks near 8h)
+      -- and the deep+REM share of that sleep, when Garmin reported sleep stages but
+      -- no overall score for the day.
+      UPDATE `${var.project_id}.garmin.garmin_stats` t
+      SET
+        sleep_score = CAST(ROUND(GREATEST(0, LEAST(100,
+          0.5 * GREATEST(0, 100 - ABS(t.sleep_total_hr - 8) * 12)
+          + 0.5 * GREATEST(0, LEAST(100, SAFE_DIVIDE(t.sleep_deep_hr + t.sleep_rem_hr, t.sleep_total_hr) * 100))
+        ))) AS INT64),
+        is_estimated_biometrics = TRUE
+      WHERE t.sleep_score IS NULL
+        AND t.sleep_total_hr IS NOT NULL
+        AND t.sleep_total_hr > 0;
+
+      -- HRV status/avg: no real HRV sensor reading exists to estimate from, so instead
+      -- derive a recovery-direction proxy from how today's resting HR compares to a
+      -- trailing 14-day baseline, combined with stress and body battery.
+      UPDATE `${var.project_id}.garmin.garmin_stats` t
+      SET
+        hrv_status = CASE WHEN e.recovery_score >= 0 THEN 'BALANCED' ELSE 'UNBALANCED' END,
+        hrv_avg = CAST(GREATEST(10, LEAST(200, 50 + e.recovery_score)) AS FLOAT64),
+        is_estimated_biometrics = TRUE
+      FROM (
+        WITH baseline AS (
+          SELECT
+            date,
+            rhr,
+            avg_stress,
+            body_battery,
+            hrv_status,
+            AVG(rhr) OVER (
+              ORDER BY date
+              ROWS BETWEEN 14 PRECEDING AND 1 PRECEDING
+            ) AS rhr_baseline
+          FROM `${var.project_id}.garmin.garmin_stats`
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+        )
+        SELECT
+          date,
+          (COALESCE(rhr_baseline - rhr, 0) * 2)
+            - COALESCE(avg_stress - 35, 0) * 0.5
+            + COALESCE(body_battery - 50, 0) * 0.3 AS recovery_score
+        FROM baseline
+        WHERE hrv_status IS NULL AND rhr_baseline IS NOT NULL AND rhr IS NOT NULL
+      ) e
+      WHERE t.date = e.date
+        AND t.hrv_status IS NULL;
+    END
+  EOSQL
 }
 
 resource "google_project_iam_member" "sa_bq_data_editor" {

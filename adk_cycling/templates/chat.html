@@ -315,8 +315,7 @@
 {% block page_script %}
 <script>
   // ---- PWA ----
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
-
+  // Service worker registration + push-subscription resync now happens once in base.html.
   let _deferredInstallPrompt = null;
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); _deferredInstallPrompt = e; });
   window.addEventListener('appinstalled', () => { _deferredInstallPrompt = null; });

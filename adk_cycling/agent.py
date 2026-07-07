@@ -19,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 
 PROJECT_ID = os.environ.get("PROJECT_ID", "health-data-482722")
 
-_APP_NAME = "cycling_coach"
+_APP_NAME = "health_coach"
 _session_service = InMemorySessionService()
 
 # Per-session runner cache: session_id → (runner, profile_snapshot)
@@ -38,7 +38,10 @@ def query_garmin_data(sql: str) -> str:
     Args:
         sql: A valid BigQuery SQL query. Available tables:
              - `garmin.garmin_stats`: daily biometrics (weight, sleep, HRV, VO2 max, steps, etc.)
-             - `garmin.garmin_activities`: activities with power, HR, TSS, FTP, cadence, distance.
+             - `garmin.garmin_activities`: activities (distance, duration, HR, calories). Power,
+               normalized power, TSS, and FTP columns only have values for indoor cycling/Zwift
+               rides — don't select or surface them unless the user is specifically asking about
+               a cycling workout.
              Both tables are in project health-data-482722 and partitioned on run_date (DATE).
 
     Returns:
@@ -141,19 +144,23 @@ def get_intraday_stats(date: str = "") -> str:
 
 
 def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
-    """Compute daily ATL, CTL, and TSB (training load metrics) from activity TSS data.
+    """Compute daily ATL, CTL, and TSB (cycling training-load metrics) from activity TSS data.
+
+    This is a cycling-specialty tool — only call it when the user explicitly asks about their
+    cycling training load, fitness/fatigue balance, or FTP progress. Don't volunteer ATL/CTL/TSB
+    jargon in general health conversations.
 
     ATL (Acute Training Load) = 7-day rolling average TSS — represents short-term fatigue.
     CTL (Chronic Training Load) = 42-day rolling average TSS — represents long-term fitness base.
     TSB (Training Stress Balance) = CTL − ATL — positive means fresh, negative means fatigued.
 
-    Always pass ftp_watts from the athlete's current profile so that TSS can be computed on
+    Always pass ftp_watts from the user's current profile so that TSS can be computed on
     the fly for any activities where it was not pre-calculated by the pipeline.
 
     Args:
         weeks: Number of weeks of results to return (default 8). An extra 42-day buffer is
                fetched automatically to seed the CTL window accurately.
-        ftp_watts: Athlete's current FTP in watts (e.g. 191). When provided, activities that
+        ftp_watts: User's current cycling FTP in watts (e.g. 191). When provided, activities that
                    have stored power data but a NULL tss column will have TSS computed as
                    (duration_s × (NP or avg_power / FTP)²) / 3600 × 100. Pass 0 to disable.
 
@@ -366,22 +373,22 @@ def _auto_save_insights(
         from google import genai
 
         prompt = (
-            "Review this cycling coach AI conversation and extract any insights worth saving "
+            "Review this health coach AI conversation and extract any insights worth saving "
             "to a long-term coaching log. Return JSON only — no markdown, no explanation.\n\n"
             f"USER: {user_message[:600]}\n\n"
             f"COACH: {response_text[:2500]}\n\n"
             'If nothing save-worthy, return: {"insights": []}\n\n'
-            'Format: {"insights": [{"category": "PR|recommendation|observation|goal_progress", '
+            'Format: {"insights": [{"category": "milestone|recommendation|observation|goal_progress", '
             '"content": "1-2 sentence self-contained insight", "context": "optional data snippet or empty string"}]}\n\n'
             "SAVE when the coach:\n"
-            "- Identified a new power PR, best effort, or FTP update\n"
-            "- Made a specific training recommendation the user agreed to act on\n"
-            "- Created or confirmed a training plan (summarise it in 1-2 sentences)\n"
-            "- Spotted a significant trend (weight direction, CTL ramp, HRV pattern, RHR shift)\n"
-            "- Noted a goal milestone (longest ride, target CTL hit, event completed)\n"
-            "- Recorded illness, injury, or a major life event affecting training\n\n"
-            "DO NOT save: routine Q&A, data lookups with no new finding, general cycling advice, "
-            "or any response that doesn't contain a specific memorable insight about this athlete."
+            "- Noted a fitness milestone (longest run/ride, new personal best, consistency streak, "
+            "weight goal hit, event completed)\n"
+            "- Made a specific recommendation the user agreed to act on (activity, sleep, nutrition, rest)\n"
+            "- Created or confirmed a plan (summarise it in 1-2 sentences)\n"
+            "- Spotted a significant trend (weight direction, sleep pattern, HRV pattern, RHR shift, stress)\n"
+            "- Recorded illness, injury, or a major life event affecting activity or wellbeing\n\n"
+            "DO NOT save: routine Q&A, data lookups with no new finding, general advice, "
+            "or any response that doesn't contain a specific memorable insight about this person."
         )
 
         client = genai.Client()
@@ -548,7 +555,7 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
 
         Args:
             weeks: How many weeks back to look (default 52 = one year).
-            category: Optional filter — "PR", "recommendation", "observation", "goal_progress".
+            category: Optional filter — "milestone", "recommendation", "observation", "goal_progress".
 
         Returns:
             Formatted log entries or "No coaching log entries found."
@@ -563,7 +570,7 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
 
     agent = LlmAgent(
         model="gemini-2.5-flash",
-        name="cycling_expert",
+        name="health_coach",
         instruction=instruction,
         tools=[
             FunctionTool(func=query_garmin_data),
@@ -656,7 +663,7 @@ async def _prepare_session(session_id: str, user_email: str, message: str) -> st
         preamble_parts.append(restore_ctx)
     try:
         log_ctx = coaching_log_mod.get_insights(
-            project_id=PROJECT_ID, email=user_email, weeks=52
+            project_id=PROJECT_ID, email=user_email, weeks=8
         )
         if log_ctx and "No coaching log entries found" not in log_ctx and "Error" not in log_ctx:
             preamble_parts.append(log_ctx)

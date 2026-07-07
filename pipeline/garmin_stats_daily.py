@@ -2,11 +2,14 @@ from garminconnect import Garmin
 from concurrent.futures import ThreadPoolExecutor, Future
 from datetime import date, datetime
 import csv
+import logging
 import os
 import time
 from dotenv import load_dotenv
 
 from activity_filter import load_activity_filter
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _garmin_with_retry(fn, *args, max_retries=3, **kwargs):
@@ -116,6 +119,11 @@ def _fetch_sleep(api, today):
         sleep_score = get_safe(sleep_data, "dailySleepDTO", "sleepScores", "overall", "value")
         if sleep_score is None:
             sleep_score = dto.get("sleepScore") or dto.get("sleepQualityTypePK")
+        if sleep_score is None:
+            LOGGER.info(
+                "_fetch_sleep: Garmin returned no sleep score for %s (watch likely lacks sleep-score support)",
+                today,
+            )
         return {
             "sleep_total": round(sleep_total_raw / 3600, 2) if sleep_total_raw else None,
             "sleep_deep":  round(sleep_deep  / 3600, 2) if sleep_deep  else None,
@@ -124,7 +132,8 @@ def _fetch_sleep(api, today):
             "sleep_awake": round(sleep_awake / 3600, 2) if sleep_awake else None,
             "sleep_score": sleep_score,
         }
-    except Exception:
+    except Exception as exc:
+        LOGGER.warning("_fetch_sleep failed for %s: %s", today, exc)
         return {}
 
 
@@ -182,8 +191,14 @@ def _fetch_hrv(api, today):
                 v = round(v / 100, 1)
             if 10 <= v <= 200:
                 hrv_avg = v
+        if hrv_status is None and hrv_avg is None:
+            LOGGER.info(
+                "_fetch_hrv: Garmin returned no hrvSummary for %s (watch likely lacks HRV support)",
+                today,
+            )
         return {"hrv_status": hrv_status, "hrv_avg": hrv_avg}
-    except Exception:
+    except Exception as exc:
+        LOGGER.warning("_fetch_hrv failed for %s: %s", today, exc)
         return {}
 
 
