@@ -612,39 +612,54 @@ async def api_calories(request: Request, days: int = 35):
     from google.cloud import bigquery
 
     client = bigquery.Client(project=PROJECT_ID)
-    # Outer join: Garmin stats (burn) + our calorie entries (eaten)
-    sql = f"""
-    WITH garmin AS (
-      SELECT date, cals_total AS calories_burned, cals_active AS calories_active, cals_goal AS calories_goal
-      FROM `{PROJECT_ID}.garmin.garmin_stats`
-      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
-    ),
-    eaten AS (
-      SELECT date, calories_eaten, sugar_g, protein_g, notes
-      FROM `{PROJECT_ID}.garmin.calorie_entries`
-      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
-    )
-    SELECT
-      COALESCE(g.date, e.date) AS date,
-      g.calories_burned,
-      g.calories_active,
-      g.calories_goal,
-      e.calories_eaten,
-      e.sugar_g,
-      e.protein_g,
-      e.notes,
-      CASE WHEN g.calories_burned IS NOT NULL AND e.calories_eaten IS NOT NULL
-           THEN g.calories_burned - e.calories_eaten ELSE NULL END AS net_calories
-    FROM garmin g
-    FULL OUTER JOIN eaten e ON g.date = e.date
-    ORDER BY date
-    """
+
+    def _build_sql(goal_expr: str) -> str:
+        # Outer join: Garmin stats (burn) + our calorie entries (eaten)
+        return f"""
+        WITH garmin AS (
+          SELECT date, cals_total AS calories_burned, cals_active AS calories_active, {goal_expr} AS calories_goal
+          FROM `{PROJECT_ID}.garmin.garmin_stats`
+          WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+        ),
+        eaten AS (
+          SELECT date, calories_eaten, sugar_g, protein_g, notes
+          FROM `{PROJECT_ID}.garmin.calorie_entries`
+          WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
+        )
+        SELECT
+          COALESCE(g.date, e.date) AS date,
+          g.calories_burned,
+          g.calories_active,
+          g.calories_goal,
+          e.calories_eaten,
+          e.sugar_g,
+          e.protein_g,
+          e.notes,
+          CASE WHEN g.calories_burned IS NOT NULL AND e.calories_eaten IS NOT NULL
+               THEN g.calories_burned - e.calories_eaten ELSE NULL END AS net_calories
+        FROM garmin g
+        FULL OUTER JOIN eaten e ON g.date = e.date
+        ORDER BY date
+        """
+
     try:
-        rows = list(client.query(sql).result())
+        rows = list(client.query(_build_sql("cals_goal")).result())
     except Exception as exc:
-        LOGGER.exception("Calories BQ error: %s", exc)
-        return JSONResponse({"error": str(exc)}, status_code=500)
+        # cals_goal is added to garmin_stats via BigQuery's ALLOW_FIELD_ADDITION the next
+        # time the pipeline writes a row with that field — until the pipeline has run at
+        # least once after this column was introduced, the column may not exist yet.
+        # Fall back to NULL for it rather than 500ing the whole page.
+        if "Unrecognized name: cals_goal" in str(exc):
+            LOGGER.warning("garmin_stats.cals_goal not present yet — falling back to NULL: %s", exc)
+            try:
+                rows = list(client.query(_build_sql("CAST(NULL AS INT64)")).result())
+            except Exception as exc2:
+                LOGGER.exception("Calories BQ error (fallback): %s", exc2)
+                return JSONResponse({"error": str(exc2)}, status_code=500)
+        else:
+            LOGGER.exception("Calories BQ error: %s", exc)
+            return JSONResponse({"error": str(exc)}, status_code=500)
 
     data = {
         "dates": [],
