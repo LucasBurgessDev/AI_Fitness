@@ -27,7 +27,7 @@
 
   /* ── Day summary strip ── */
   .day-strip {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 1.5rem;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 1rem; margin-bottom: 1.5rem;
   }
   .day-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -169,6 +169,11 @@
       <div class="day-card-label">Deficit</div>
       <div class="day-card-val" id="day-net">—</div>
       <div class="day-card-sub" id="day-net-label">burned − consumed</div>
+    </div>
+    <div class="day-card">
+      <div class="day-card-label">Macros</div>
+      <div class="day-card-val" id="day-macros" style="font-size:1.3rem">—</div>
+      <div class="day-card-sub">sugar · protein (g)</div>
     </div>
   </div>
 
@@ -317,6 +322,9 @@
     document.getElementById('day-goal').textContent    = goal    != null ? goal.toLocaleString()    : '—';
     document.getElementById('day-eaten').textContent   = eaten   != null ? eaten.toLocaleString()   : '—';
     document.getElementById('day-active').textContent  = active  != null ? active.toLocaleString()  : '—';
+    document.getElementById('day-macros').textContent  = (sugar != null || protein != null)
+      ? `${sugar != null ? sugar : '—'}g · ${protein != null ? protein : '—'}g`
+      : '—';
 
     const netEl = document.getElementById('day-net');
     const netLbl = document.getElementById('day-net-label');
