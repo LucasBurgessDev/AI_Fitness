@@ -52,6 +52,11 @@ DEFAULTS: dict[str, Any] = {
         "target_weight_kg":    {"target": 85.0, "enabled": True},
         "target_body_fat_pct": {"target": 0.0, "enabled": False},
     },
+    "achievement_state": {
+        "initialized": False,
+        "kpi_hits": {},
+        "streak_bests": {},
+    },
 }
 
 _cache: dict[str, Any] | None = None

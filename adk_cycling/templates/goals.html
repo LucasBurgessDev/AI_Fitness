@@ -160,6 +160,68 @@
     .streak-num { font-size: 1.35rem; }
     .streak-label { font-size: 0.52rem; }
   }
+
+  /* ── Celebration: goal-hit ring glow + trophy corner badge ── */
+  @keyframes goal-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,224,155,0.35); }
+    50%      { box-shadow: 0 0 0 6px rgba(0,224,155,0); }
+  }
+  .kpi-card { position: relative; }
+  .kpi-card--hit { animation: goal-pulse 2.2s ease-in-out infinite; }
+  .kpi-card-trophy {
+    position: absolute; top: 0.55rem; right: 0.6rem; font-size: 0.95rem;
+    line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
+  }
+
+  /* ── Celebration: streak personal-best glow ── */
+  @keyframes streak-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,184,48,0.35); }
+    50%      { box-shadow: 0 0 0 6px rgba(255,184,48,0); }
+  }
+  .streak-widget--pb { animation: streak-pulse 2.2s ease-in-out infinite; border-color: rgba(255,184,48,0.4); }
+  .streak-widget--pb .streak-num { color: var(--amber); }
+
+  /* ── Badge shelf ── */
+  .badge-shelf-wrap { margin-bottom: 1.5rem; }
+  .badge-shelf-title {
+    font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-muted); margin-bottom: 0.6rem;
+  }
+  .badge-shelf {
+    display: flex; gap: 0.65rem; overflow-x: auto; padding-bottom: 0.3rem;
+    scrollbar-width: thin;
+  }
+  .badge-pill {
+    flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 0.55rem 0.8rem; min-width: 180px;
+  }
+  .badge-pill-icon { font-size: 1.3rem; line-height: 1; }
+  .badge-pill-label { font-size: 0.76rem; font-weight: 600; color: var(--text); line-height: 1.25; }
+  .badge-pill-date { font-size: 0.65rem; color: var(--text-muted); margin-top: 0.1rem; }
+  .badge-shelf-empty {
+    font-size: 0.82rem; color: var(--text-muted); background: var(--surface);
+    border: 1px dashed var(--border); border-radius: 12px; padding: 0.85rem 1rem;
+  }
+
+  /* ── Toast ── */
+  #toast-stack {
+    position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+    z-index: 500; display: flex; flex-direction: column; gap: 0.5rem;
+    align-items: center; pointer-events: none; width: 100%; padding: 0 1rem;
+  }
+  .toast {
+    background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-md);
+    border-radius: 12px; padding: 0.65rem 1.1rem; font-size: 0.85rem; font-weight: 600;
+    color: var(--text); display: flex; align-items: center; gap: 0.5rem;
+    opacity: 0; transform: translateY(-10px); transition: opacity 0.25s, transform 0.25s;
+    max-width: 360px;
+  }
+  .toast.toast-show { opacity: 1; transform: translateY(0); }
+
+  #confetti-canvas {
+    position: fixed; inset: 0; z-index: 400; pointer-events: none;
+  }
 </style>
 {% endblock %}
 
@@ -178,12 +240,21 @@
 
   <div id="loading" class="loading-state"><div class="spinner"></div> Loading your data…</div>
 
+  <div id="toast-stack"></div>
+  <canvas id="confetti-canvas"></canvas>
+
   <div id="content" style="display:none">
     <!-- Week summary bar -->
     <div class="week-bar" id="week-bar"></div>
 
     <!-- Streak strip -->
     <div class="streak-strip" id="streak-strip" style="display:none"></div>
+
+    <!-- Achievements / badge shelf -->
+    <div class="badge-shelf-wrap" id="badge-shelf-wrap" style="display:none">
+      <div class="badge-shelf-title">Achievements</div>
+      <div id="badge-shelf"></div>
+    </div>
 
     <!-- Calorie summary -->
     <div class="cal-strip" id="cal-strip" style="display:none"></div>
@@ -327,6 +398,8 @@
   })();
 
   const sparkCharts = {};
+  let anyGoalHitThisRender = false;
+  let anyStreakPbThisRender = false;
 
   function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
   function isDark() { return document.documentElement.getAttribute('data-theme') !== 'light'; }
@@ -427,6 +500,7 @@
   }
 
   function renderRings(kpis, actuals, weightLatest, history) {
+    anyGoalHitThisRender = false;
     const grid = document.getElementById('kpi-grid');
     const enabledKeys = Object.entries(kpis || {})
       .filter(([k, v]) => v.enabled && KPI_META[k])
@@ -479,26 +553,29 @@
 
       // For "target" KPIs (weight, body fat) show the actual value in the ring
       // and a delta label — the % fill still shows proximity to goal visually
-      let ringInner, ringSubLabel;
+      let ringInner, ringSubLabel, hitGoal;
       if (meta.isTarget && actual != null) {
         const delta = (actual - target).toFixed(meta.decimals);
         const absDelta = Math.abs(parseFloat(delta));
         const atGoal = absDelta < 0.1;
         const overGoal = parseFloat(delta) > 0;
+        hitGoal = atGoal;
         ringInner = `<div class="ring-pct" style="color:${color};font-size:1.1rem">${actualFmt}</div>
                      <div class="ring-actual">${meta.unit}</div>`;
         ringSubLabel = atGoal
           ? `<span style="color:var(--green)">At target ✓</span>`
           : `${overGoal ? '+' : ''}${delta} ${meta.unit} vs target`;
       } else {
+        hitGoal = pct >= 100;
         ringInner = `<div class="ring-pct" style="color:${color}">${pct}%</div>
                      <div class="ring-actual">${actualFmt} ${meta.unit}</div>`;
         ringSubLabel = `Target: ${targetFmt} ${meta.unit}`;
       }
 
       const card = document.createElement('div');
-      card.className = 'kpi-card';
+      card.className = 'kpi-card' + (hitGoal ? ' kpi-card--hit' : '');
       card.innerHTML = `
+        ${hitGoal ? '<span class="kpi-card-trophy">🏆</span>' : ''}
         <div class="kpi-label">${meta.label}</div>
         <div class="ring-wrap">
           <div class="ring" id="ring-${key}" style="--ring-deg:${deg}deg;--ring-color:${color};">
@@ -509,6 +586,7 @@
         ${hist.length > 1 ? `<div class="sparkline-wrap"><canvas id="${sparkId}"></canvas></div>` : ''}
       `;
       grid.appendChild(card);
+      if (hitGoal) anyGoalHitThisRender = true;
 
       if (hist.length > 1) {
         requestAnimationFrame(() => {
@@ -542,6 +620,7 @@
   }
 
   function renderStreaks(streaks) {
+    anyStreakPbThisRender = false;
     const strip = document.getElementById('streak-strip');
     if (!streaks) { strip.style.display = 'none'; return; }
 
@@ -554,8 +633,10 @@
 
     strip.innerHTML = WIDGETS.map(w => {
       const s = streaks[w.key] || { current: 0, best: 0 };
-      return `<div class="streak-widget">
-        <div class="streak-icon">${w.icon}</div>
+      const isPb = s.best > 0 && s.current === s.best;
+      if (isPb) anyStreakPbThisRender = true;
+      return `<div class="streak-widget${isPb ? ' streak-widget--pb' : ''}">
+        <div class="streak-icon">${isPb ? '🔥' : w.icon}</div>
         <div class="streak-num">${s.current}</div>
         <span class="streak-unit">day streak</span>
         <div class="streak-label">${w.label}</div>
@@ -581,6 +662,119 @@
       </tr>`).join('');
   }
 
+  function relDate(dateStr) {
+    const days = Math.round((new Date(today() + 'T00:00:00') - new Date(dateStr + 'T00:00:00')) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return `${days}d ago`;
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+  }
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  function renderBadgeShelf(list) {
+    const wrap = document.getElementById('badge-shelf-wrap');
+    const shelf = document.getElementById('badge-shelf');
+    wrap.style.display = '';
+    if (!list || !list.length) {
+      shelf.innerHTML = `<div class="badge-shelf-empty">Hit a weekly goal or beat a streak to earn your first badge.</div>`;
+      return;
+    }
+    shelf.innerHTML = list.map(a => `
+      <div class="badge-pill">
+        <div class="badge-pill-icon">${a.icon || '🏅'}</div>
+        <div>
+          <div class="badge-pill-label">${a.label}${a.value != null ? ` — ${a.value}${a.unit || ''}` : ''}</div>
+          <div class="badge-pill-date">${relDate(a.date)}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // ── Toast ──
+  function showToast(msg) {
+    const stack = document.getElementById('toast-stack');
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    stack.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('toast-show'));
+    setTimeout(() => {
+      el.classList.remove('toast-show');
+      setTimeout(() => el.remove(), 300);
+    }, 4200);
+  }
+
+  // ── Lightweight dependency-free confetti burst ──
+  function confettiBurst(count) {
+    const canvas = document.getElementById('confetti-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const colors = [cssVar('--accent'), cssVar('--green'), cssVar('--amber'), cssVar('--purple'), cssVar('--watts')];
+    const pieces = Array.from({length: count}, () => ({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.3,
+      w: 5 + Math.random() * 4,
+      h: 8 + Math.random() * 5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      vy: 2 + Math.random() * 3,
+      vx: -1.5 + Math.random() * 3,
+      rot: Math.random() * 360,
+      vrot: -6 + Math.random() * 12,
+    }));
+    const start = performance.now();
+    const durationMs = 2600;
+    function frame(now) {
+      const elapsed = now - start;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach(p => {
+        p.x += p.vx; p.y += p.vy; p.rot += p.vrot;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot * Math.PI / 180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      });
+      if (elapsed < durationMs) {
+        requestAnimationFrame(frame);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ── Celebration triggers ──
+  // Session-level: page is "alive" while a goal is currently met, but only bursts
+  // once per tab session so reloading the page doesn't replay it every time.
+  function triggerSessionCelebration() {
+    if (!(anyGoalHitThisRender || anyStreakPbThisRender)) return;
+    const flagKey = 'cc-session-confetti-' + today();
+    if (sessionStorage.getItem(flagKey)) return;
+    sessionStorage.setItem(flagKey, '1');
+    confettiBurst(70);
+  }
+
+  // Achievement-level: fires once per newly-earned badge, ever (localStorage-backed),
+  // regardless of how many times the page is reloaded afterwards.
+  function triggerAchievementCelebrations(list) {
+    if (!list || !list.length) return;
+    let seen;
+    try { seen = new Set(JSON.parse(localStorage.getItem('cc-seen-achievements') || '[]')); }
+    catch (_) { seen = new Set(); }
+    const fresh = list.filter(a => !seen.has(a.id));
+    if (!fresh.length) return;
+    fresh.forEach((a, i) => {
+      setTimeout(() => {
+        confettiBurst(140);
+        showToast(`🎉 New badge: ${a.label}`);
+      }, i * 900);
+      seen.add(a.id);
+    });
+    localStorage.setItem('cc-seen-achievements', JSON.stringify([...seen].slice(-200)));
+  }
+
   let _data = null;
 
   function renderAll(data) {
@@ -590,8 +784,11 @@
     renderCalorieStrip(data.calories_week);
     renderRings(data.kpis, data.actuals, data.weight_latest, data.history);
     renderActivities(data.this_week_activities);
+    renderBadgeShelf(data.achievements);
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = '';
+    triggerSessionCelebration();
+    triggerAchievementCelebrations(data.achievements);
   }
 
   function reloadCharts() { if (_data) renderRings(_data.kpis, _data.actuals, _data.weight_latest, _data.history); }

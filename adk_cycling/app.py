@@ -1128,9 +1128,54 @@ async def api_coaching_log(request: Request, weeks: int = 52, category: str = ""
     ]})
 
 
-@app.get("/api/analytics/goals")
-async def api_goals_analytics(request: Request):
-    _require_session(request)
+class _GoalsDataError(Exception):
+    pass
+
+
+def _load_recent_achievements(client, email: str, limit: int = 10) -> list[dict]:
+    """Structured badge history for the /goals badge shelf.
+
+    Only rule-based achievements (session_id='system-achievements') are
+    returned — ad-hoc LLM chat milestones lack structured `context` JSON and
+    are left for the coaching log's own free-text view instead.
+    """
+    import json as _json
+    from google.cloud import bigquery
+
+    sql = f"""
+        SELECT id, date, content, context
+        FROM `{PROJECT_ID}.garmin.coaching_log`
+        WHERE email = @email AND category = 'milestone' AND session_id = 'system-achievements'
+        ORDER BY timestamp DESC
+        LIMIT {limit}
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("email", "STRING", email),
+    ])
+    try:
+        rows = list(client.query(sql, job_config=job_config).result())
+    except Exception as exc:
+        LOGGER.warning("achievements query failed: %s", exc)
+        return []
+
+    out = []
+    for r in rows:
+        try:
+            ctx = _json.loads(r["context"]) if r["context"] else {}
+        except Exception:
+            ctx = {}
+        out.append({
+            "id": r["id"],
+            "date": str(r["date"]),
+            "icon": ctx.get("icon", "🏅"),
+            "label": ctx.get("label", r["content"]),
+            "value": ctx.get("value"),
+            "unit": ctx.get("unit", ""),
+        })
+    return out
+
+
+async def _compute_goals_data(email: str) -> dict:
     from google.cloud import bigquery
     from datetime import date, timedelta
 
@@ -1275,7 +1320,7 @@ async def api_goals_analytics(request: Request):
         )
     except Exception as exc:
         LOGGER.exception("Goals analytics BQ error: %s", exc)
-        return JSONResponse({"error": str(exc)}, status_code=500)
+        raise _GoalsDataError(str(exc)) from exc
 
     _LBS_TO_KG = 1 / 2.20462
 
@@ -1381,7 +1426,9 @@ async def api_goals_analytics(request: Request):
         "checkin": _compute_streak_ordered(checkin_dates),
     }
 
-    return JSONResponse({
+    achievements = _load_recent_achievements(client, email)
+
+    return {
         "kpis": kpis,
         "actuals": actuals,
         "prev_week": prev_week,
@@ -1392,7 +1439,18 @@ async def api_goals_analytics(request: Request):
         "week_start": week_start_date.isoformat(),
         "week_end": week_end_date.isoformat(),
         "streaks": streaks,
-    })
+        "achievements": achievements,
+    }
+
+
+@app.get("/api/analytics/goals")
+async def api_goals_analytics(request: Request):
+    session = _require_session(request)
+    try:
+        data = await _compute_goals_data(session["email"])
+    except _GoalsDataError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse(data)
 
 
 # ---------------------------------------------------------------------------
@@ -1703,6 +1761,57 @@ async def _build_weekly_digest(project_id: str) -> tuple[str, str]:
     return "Your weekly summary 📊", body
 
 
+async def _check_goal_achievements(email: str, subs: list, private_key: str) -> int:
+    """Detect newly-crossed weekly-KPI/streak thresholds and celebrate them.
+
+    Runs on every send-reminders poll (every 30 min) but is self-deduping via
+    `achievement_state` in profile.json — each threshold only fires once per
+    week (KPIs) or once per new personal best (streaks). Returns push count.
+    """
+    import json as _json
+    from datetime import date
+
+    import achievements
+    import coaching_log
+
+    try:
+        data = await _compute_goals_data(email)
+    except _GoalsDataError as exc:
+        LOGGER.warning("achievement check skipped, goals data unavailable: %s", exc)
+        return 0
+
+    profile = profile_store.load()
+    new_achievements, updated_state = achievements.evaluate(
+        kpis=data["kpis"],
+        actuals=data["actuals"],
+        weight_latest=data["weight_latest"],
+        streaks=data["streaks"],
+        week_start=data["week_start"],
+        today_iso=date.today().isoformat(),
+        state=profile.get("achievement_state"),
+    )
+    profile_store.save({**profile, "achievement_state": updated_state})
+
+    sent = 0
+    for ach in new_achievements:
+        if ach["type"] == "streak":
+            body = f"{ach['value']} days and counting — your best {ach['label'].lower()} yet."
+        elif ach.get("is_target"):
+            body = f"{ach['value']}{ach['unit']} — right at your target."
+        else:
+            body = f"{ach['value']} / {ach['target_or_best']} {ach['unit']} — goal hit for this week."
+        coaching_log.save_insight(
+            PROJECT_ID, "system-achievements", email,
+            category="milestone",
+            content=f"{ach['icon']} {ach['label']}",
+            context=_json.dumps(ach),
+        )
+        sent += _send_push_to_subs(
+            subs, email, f"🎉 {ach['label']}", body, private_key, url="/goals",
+        )
+    return sent
+
+
 @app.post("/api/send-reminders")
 async def send_reminders():
     """Called by Cloud Scheduler every 30 min. Sends due reminder notifications."""
@@ -1759,6 +1868,8 @@ async def send_reminders():
                 current_hhmm == reminders.get("weekly_digest_time", "19:00"):
             title, body = await _build_weekly_digest(PROJECT_ID)
             total_sent += _send_push_to_subs(subs, email, title, body, private_key, url="/health")
+
+        total_sent += await _check_goal_achievements(email, subs, private_key)
 
     LOGGER.info("send-reminders: sent %d notifications at %s", total_sent, current_hhmm)
     return JSONResponse({"sent": total_sent, "time": current_hhmm})
