@@ -1199,6 +1199,8 @@ async def _compute_goals_data(email: str) -> dict:
       COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
       COUNT(DISTINCT date) AS active_days,
       COALESCE(SUM(elevation_gain_m), 0) AS elevation_m,
+      COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN elevation_gain_m ELSE 0 END), 0) AS cycling_elevation_m,
+      COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN elevation_gain_m ELSE 0 END), 0) AS running_elevation_m,
       COUNT(*) AS activity_count
     FROM deduped
     """
@@ -1217,6 +1219,8 @@ async def _compute_goals_data(email: str) -> dict:
       COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
       COUNT(DISTINCT date) AS active_days,
       COALESCE(SUM(elevation_gain_m), 0) AS elevation_m,
+      COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN elevation_gain_m ELSE 0 END), 0) AS cycling_elevation_m,
+      COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN elevation_gain_m ELSE 0 END), 0) AS running_elevation_m,
       COUNT(*) AS activity_count
     FROM deduped
     """
@@ -1235,6 +1239,8 @@ async def _compute_goals_data(email: str) -> dict:
       COALESCE(SUM(duration_s), 0) / 3600.0 AS hours,
       COUNT(DISTINCT date) AS active_days,
       COALESCE(SUM(elevation_gain_m), 0) AS elevation_m,
+      COALESCE(SUM(CASE WHEN activity_type IN {CYCLING_TYPES} THEN elevation_gain_m ELSE 0 END), 0) AS cycling_elevation_m,
+      COALESCE(SUM(CASE WHEN activity_type IN {RUNNING_TYPES} THEN elevation_gain_m ELSE 0 END), 0) AS running_elevation_m,
       COUNT(*) AS activity_count
     FROM deduped
     GROUP BY week_start
@@ -1323,6 +1329,7 @@ async def _compute_goals_data(email: str) -> dict:
         raise _GoalsDataError(str(exc)) from exc
 
     _LBS_TO_KG = 1 / 2.20462
+    _ELEV_RATIO = 8.0  # Naismith/Scarf: 1m of climb ≈ 8m of flat distance
 
     today_date = date.today()
     wday = today_date.weekday()
@@ -1331,15 +1338,25 @@ async def _compute_goals_data(email: str) -> dict:
 
     def _parse_actuals(rows):
         if not rows:
-            return {"cycling_km": 0, "running_km": 0, "hours": 0, "active_days": 0, "elevation_m": 0, "activity_count": 0}
+            return {
+                "cycling_km": 0, "running_km": 0, "hours": 0, "active_days": 0,
+                "elevation_m": 0, "activity_count": 0,
+                "cycling_km_adjusted": 0, "running_km_adjusted": 0,
+            }
         r = rows[0]
+        cycling_km = float(r["cycling_km"])
+        running_km = float(r["running_km"])
+        cycling_elevation_m = float(r["cycling_elevation_m"])
+        running_elevation_m = float(r["running_elevation_m"])
         return {
-            "cycling_km": round(float(r["cycling_km"]), 1),
-            "running_km": round(float(r["running_km"]), 1),
+            "cycling_km": round(cycling_km, 1),
+            "running_km": round(running_km, 1),
             "hours": round(float(r["hours"]), 1),
             "active_days": int(r["active_days"]),
             "elevation_m": int(round(float(r["elevation_m"]))),
             "activity_count": int(r["activity_count"]),
+            "cycling_km_adjusted": round(cycling_km + (cycling_elevation_m / 1000.0) * _ELEV_RATIO, 1),
+            "running_km_adjusted": round(running_km + (running_elevation_m / 1000.0) * _ELEV_RATIO, 1),
         }
 
     actuals = _parse_actuals(actuals_rows)
@@ -1365,18 +1382,24 @@ async def _compute_goals_data(email: str) -> dict:
             "net": total_burned - total_eaten if total_burned and total_eaten else None,
         }
 
-    history = [
-        {
+    def _parse_history_row(r):
+        cycling_km = float(r["cycling_km"])
+        running_km = float(r["running_km"])
+        cycling_elevation_m = float(r["cycling_elevation_m"])
+        running_elevation_m = float(r["running_elevation_m"])
+        return {
             "week_start": str(r["week_start"]),
-            "cycling_km": round(float(r["cycling_km"]), 1),
-            "running_km": round(float(r["running_km"]), 1),
+            "cycling_km": round(cycling_km, 1),
+            "running_km": round(running_km, 1),
             "hours": round(float(r["hours"]), 1),
             "active_days": int(r["active_days"]),
             "elevation_m": int(round(float(r["elevation_m"]))),
             "activity_count": int(r["activity_count"]),
+            "cycling_km_adjusted": round(cycling_km + (cycling_elevation_m / 1000.0) * _ELEV_RATIO, 1),
+            "running_km_adjusted": round(running_km + (running_elevation_m / 1000.0) * _ELEV_RATIO, 1),
         }
-        for r in history_rows
-    ]
+
+    history = [_parse_history_row(r) for r in history_rows]
 
     this_week_activities = [
         {

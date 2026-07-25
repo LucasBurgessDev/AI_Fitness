@@ -516,10 +516,11 @@
       const target = cfg.target;
 
       const ACTUALS_KEY = {
-        weekly_cycling_km: 'cycling_km',
-        weekly_running_km: 'running_km',
+        weekly_cycling_km: 'cycling_km_adjusted',
+        weekly_running_km: 'running_km_adjusted',
         weekly_active_days: 'active_days',
       };
+      const ELEV_ADJUSTED_KEYS = new Set(['weekly_cycling_km', 'weekly_running_km']);
       let actual = null;
       if (key === 'target_weight_kg' && weightLatest) {
         actual = weightLatest.weight_kg;
@@ -541,8 +542,8 @@
       const deg = Math.round(pct * 3.6);
       const color = ringColor(pct);
       const hist = (history || []).map(w => {
-        if (key === 'weekly_cycling_km') return w.cycling_km || 0;
-        if (key === 'weekly_running_km') return w.running_km || 0;
+        if (key === 'weekly_cycling_km') return w.cycling_km_adjusted || 0;
+        if (key === 'weekly_running_km') return w.running_km_adjusted || 0;
         if (key === 'weekly_active_days') return w.active_days || 0;
         return 0;
       });
@@ -569,7 +570,9 @@
         hitGoal = pct >= 100;
         ringInner = `<div class="ring-pct" style="color:${color}">${pct}%</div>
                      <div class="ring-actual">${actualFmt} ${meta.unit}</div>`;
-        ringSubLabel = `Target: ${targetFmt} ${meta.unit}`;
+        ringSubLabel = ELEV_ADJUSTED_KEYS.has(key)
+          ? `Target: ${targetFmt} ${meta.unit} · <span title="Climbing counts extra toward this goal — 1m of elevation gain ≈ 8m of flat distance (Naismith's rule)" style="text-decoration:underline dotted;cursor:help">incl. elevation credit</span>`
+          : `Target: ${targetFmt} ${meta.unit}`;
       }
 
       const card = document.createElement('div');
