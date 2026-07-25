@@ -59,6 +59,8 @@
   .kpi-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
   .kpi-row input[type="number"] { width: 90px; flex-shrink: 0; padding: 0.35rem 0.6rem; font-family: 'JetBrains Mono', monospace; }
   .kpi-unit { font-size: 0.78rem; color: var(--text-muted); flex-shrink: 0; min-width: 40px; }
+  .kpi-row--wrap { flex-wrap: wrap; }
+  .kpi-hint { flex-basis: 100%; font-size: 0.72rem; color: var(--text-muted); padding-left: calc(16px + 0.75rem); }
 
   .actions { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
   .btn-save {
@@ -151,21 +153,23 @@
           value="{{ (profile.kpis or {}).get('target_body_fat_pct', {}).get('target', 20) }}" />
         <span class="kpi-unit">%</span>
       </div>
-      <div class="kpi-row">
+      <div class="kpi-row kpi-row--wrap">
         <input type="checkbox" name="kpi_weekly_cycling_km_enabled" value="true"
           {% if profile.kpis and profile.kpis.weekly_cycling_km and profile.kpis.weekly_cycling_km.enabled %}checked{% endif %} />
         <label class="kpi-label">Cycling distance</label>
         <input type="number" name="kpi_weekly_cycling_km_target" min="0" max="5000" step="1"
           value="{{ (profile.kpis or {}).get('weekly_cycling_km', {}).get('target', 0) or 0 | int }}" />
         <span class="kpi-unit">km/wk</span>
+        <span class="kpi-hint">Includes elevation credit — 1m climbed ≈ 8m flat (Naismith's rule)</span>
       </div>
-      <div class="kpi-row">
+      <div class="kpi-row kpi-row--wrap">
         <input type="checkbox" name="kpi_weekly_running_km_enabled" value="true"
           {% if profile.kpis and profile.kpis.weekly_running_km and profile.kpis.weekly_running_km.enabled %}checked{% endif %} />
         <label class="kpi-label">Running distance</label>
         <input type="number" name="kpi_weekly_running_km_target" min="0" max="1000" step="1"
           value="{{ (profile.kpis or {}).get('weekly_running_km', {}).get('target', 0) or 0 | int }}" />
         <span class="kpi-unit">km/wk</span>
+        <span class="kpi-hint">Includes elevation credit — 1m climbed ≈ 8m flat (Naismith's rule)</span>
       </div>
     </div>
 
