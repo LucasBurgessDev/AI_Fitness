@@ -34,8 +34,8 @@ STREAK_META: dict[str, dict[str, str]] = {
 }
 
 _ACTUALS_KEY = {
-    "weekly_cycling_km": "cycling_km",
-    "weekly_running_km": "running_km",
+    "weekly_cycling_km": "cycling_km_adjusted",
+    "weekly_running_km": "running_km_adjusted",
     "weekly_active_days": "active_days",
 }
 
