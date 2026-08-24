@@ -1,13 +1,16 @@
 .env
 .garth
+.garminconnect
 __pycache__/
 *.pyc
 *.pyo
 venv/
+.venv/
 garmin_stats.csv
 garmin_activities.csv
 garmin_runs.csv
 hevy_stats.csv
+historic_data/
 
 # OpenTofu / Terraform
 terraform/.terraform/
