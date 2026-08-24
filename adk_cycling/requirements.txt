@@ -11,3 +11,5 @@ itsdangerous
 httpx
 jinja2>=3.1.5
 pywebpush
+google-genai
+Pillow

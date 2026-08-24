@@ -43,6 +43,9 @@ DEFAULTS: dict[str, Any] = {
         "evening_checkin_time": "21:00",
         "weekly_digest_enabled": False,
         "weekly_digest_time": "19:00",
+        "skin_check_enabled": False,
+        "skin_check_time": "10:00",
+        "skin_check_frequency_days": 30,
     },
     "kpis": {
         "weekly_cycling_km":   {"target": 0.0, "enabled": False},

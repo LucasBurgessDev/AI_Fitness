@@ -8,7 +8,7 @@ from typing import Optional
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -387,6 +387,9 @@ async def settings_post(request: Request):
             "evening_checkin_time": form.get("evening_checkin_time", "21:00"),
             "weekly_digest_enabled": form.get("weekly_digest_enabled") == "true",
             "weekly_digest_time": form.get("weekly_digest_time", "19:00"),
+            "skin_check_enabled": form.get("skin_check_enabled") == "true",
+            "skin_check_time": form.get("skin_check_time", "10:00"),
+            "skin_check_frequency_days": int(float(form.get("skin_check_frequency_days", 30) or 30)),
         },
         "kpis": kpis,
     }
@@ -450,6 +453,29 @@ async def checkin_page(request: Request):
     if not session:
         return RedirectResponse("/login")
     return templates.TemplateResponse(request, "checkin.html", {"email": session["email"]})
+
+
+@app.get("/skin", response_class=HTMLResponse)
+async def skin_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    import skin_regions
+    return templates.TemplateResponse(
+        request, "skin.html",
+        {"email": session["email"], "regions": skin_regions.REGIONS},
+    )
+
+
+@app.get("/skin/{lesion_id}", response_class=HTMLResponse)
+async def skin_lesion_page(request: Request, lesion_id: str):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(
+        request, "skin_lesion.html",
+        {"email": session["email"], "lesion_id": lesion_id},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -741,6 +767,186 @@ async def api_calories_entry(request: Request):
         "ok": True, "date": date_str, "calories_eaten": calories_eaten,
         "sugar_g": sugar_g, "protein_g": protein_g,
     })
+
+
+# ---------------------------------------------------------------------------
+# Skin tracking API
+#
+# Personal mole/skin-tag/wart change-tracking. Deliberately NOT wired into the
+# health-coach chat agent's tools — the photo comparison call in skin_compare.py
+# is a narrow, one-shot Vertex AI call, kept separate from the chat agent's
+# shared session state.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/skin/lesions")
+async def api_skin_lesions_list(request: Request):
+    session = _require_session(request)
+    import skin_bq
+    try:
+        lesions = skin_bq.list_lesions(PROJECT_ID, session["email"])
+    except Exception as exc:
+        LOGGER.exception("skin lesions list error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    for lesion in lesions:
+        if lesion.get("created_at"):
+            lesion["created_at"] = lesion["created_at"].isoformat()
+    return JSONResponse({"lesions": lesions})
+
+
+@app.post("/api/skin/lesions")
+async def api_skin_lesions_create(request: Request):
+    session = _require_session(request)
+    body = await request.json()
+    nickname = (body.get("nickname") or "").strip()
+    region_key = body.get("region_key", "")
+    view = body.get("view", "front")
+    x_pct = body.get("x_pct")
+    y_pct = body.get("y_pct")
+
+    if not nickname:
+        raise HTTPException(status_code=400, detail="nickname is required")
+
+    import skin_regions
+    default = skin_regions.region_default(region_key)
+    if default:
+        view = default["view"]
+        if x_pct is None:
+            x_pct = default["x"]
+        if y_pct is None:
+            y_pct = default["y"]
+    if x_pct is None or y_pct is None:
+        raise HTTPException(status_code=400, detail="region_key or x_pct/y_pct is required")
+
+    import skin_bq
+    try:
+        lesion_id = skin_bq.create_lesion(
+            PROJECT_ID, session["email"], nickname, region_key, view, float(x_pct), float(y_pct),
+        )
+    except Exception as exc:
+        LOGGER.exception("skin lesion create error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse({"lesion_id": lesion_id})
+
+
+@app.patch("/api/skin/lesions/{lesion_id}")
+async def api_skin_lesions_update(request: Request, lesion_id: str):
+    session = _require_session(request)
+    body = await request.json()
+    import skin_bq
+    try:
+        skin_bq.update_lesion(
+            PROJECT_ID, session["email"], lesion_id,
+            nickname=body.get("nickname"),
+            x_pct=body.get("x_pct"),
+            y_pct=body.get("y_pct"),
+            archived=body.get("archived"),
+        )
+    except Exception as exc:
+        LOGGER.exception("skin lesion update error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/skin/lesions/{lesion_id}/photos")
+async def api_skin_photos_list(request: Request, lesion_id: str):
+    session = _require_session(request)
+    import skin_bq
+    try:
+        photos = skin_bq.list_photos(PROJECT_ID, session["email"], lesion_id)
+    except Exception as exc:
+        LOGGER.exception("skin photos list error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    for photo in photos:
+        if photo.get("captured_at"):
+            photo["captured_at"] = photo["captured_at"].isoformat()
+        photo.pop("gcs_path", None)
+        photo.pop("thumb_gcs_path", None)
+    return JSONResponse({"photos": photos})
+
+
+@app.post("/api/skin/lesions/{lesion_id}/photos")
+async def api_skin_photos_upload(
+    request: Request, lesion_id: str, file: UploadFile = File(...), note: str = Form(""),
+):
+    session = _require_session(request)
+    email = session["email"]
+
+    import skin_bq
+    try:
+        lesion = skin_bq.get_lesion(PROJECT_ID, email, lesion_id)
+    except Exception as exc:
+        LOGGER.exception("skin lesion lookup error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    if not lesion:
+        raise HTTPException(status_code=404, detail="Lesion not found")
+
+    raw = await file.read()
+    if len(raw) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 15MB)")
+
+    import skin_image
+    try:
+        full_bytes, thumb_bytes, width, height = skin_image.process_upload(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Compare against the previous photo (if any) before this one is saved.
+    # Best-effort: if the lookup fails, just skip the comparison rather than
+    # failing the whole upload.
+    try:
+        prev_photo = skin_bq.latest_photo(PROJECT_ID, email, lesion_id)
+    except Exception as exc:
+        LOGGER.warning("skin latest_photo lookup failed, skipping comparison: %s", exc)
+        prev_photo = None
+
+    import skin_store
+    photo_id = str(uuid4())
+    try:
+        gcs_path, thumb_gcs_path = skin_store.save_photo(email, lesion_id, photo_id, full_bytes, thumb_bytes)
+    except Exception as exc:
+        LOGGER.exception("skin photo upload error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    ai_notes = None
+    if prev_photo:
+        prev_bytes = skin_store.load_photo_bytes(prev_photo["gcs_path"])
+        if prev_bytes:
+            import skin_compare
+            ai_notes = skin_compare.compare_photos(prev_bytes, full_bytes)
+
+    try:
+        skin_bq.add_photo(
+            PROJECT_ID, email, lesion_id, photo_id, gcs_path, thumb_gcs_path,
+            note, ai_notes, width, height, len(full_bytes),
+        )
+    except Exception as exc:
+        LOGGER.exception("skin photo metadata save error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    return JSONResponse({
+        "photo_id": photo_id, "note": note, "ai_notes": ai_notes,
+        "width": width, "height": height,
+    })
+
+
+@app.get("/api/skin/photo/{photo_id}")
+async def api_skin_photo_bytes(request: Request, photo_id: str, thumb: bool = False):
+    session = _require_session(request)
+    import skin_bq
+    try:
+        photo = skin_bq.get_photo(PROJECT_ID, session["email"], photo_id)
+    except Exception as exc:
+        LOGGER.exception("skin photo lookup error: %s", exc)
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    import skin_store
+    path = photo["thumb_gcs_path"] if thumb else photo["gcs_path"]
+    data = skin_store.load_photo_bytes(path)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Photo bytes not found")
+    return Response(content=data, media_type="image/jpeg")
 
 
 @app.get("/api/analytics/health")
@@ -1891,6 +2097,25 @@ async def send_reminders():
                 current_hhmm == reminders.get("weekly_digest_time", "19:00"):
             title, body = await _build_weekly_digest(PROJECT_ID)
             total_sent += _send_push_to_subs(subs, email, title, body, private_key, url="/health")
+
+        if reminders.get("skin_check_enabled") and \
+                current_hhmm == reminders.get("skin_check_time", "10:00"):
+            import skin_bq
+            try:
+                due = skin_bq.count_lesions_needing_check(
+                    PROJECT_ID, email, reminders.get("skin_check_frequency_days", 30),
+                )
+            except Exception as exc:
+                LOGGER.warning("skin check reminder query failed: %s", exc)
+                due = 0
+            if due:
+                total_sent += _send_push_to_subs(
+                    subs, email,
+                    "Skin check 🔍",
+                    f"{due} tracked spot{'s' if due != 1 else ''} due for a new photo.",
+                    private_key,
+                    url="/skin",
+                )
 
         total_sent += await _check_goal_achievements(email, subs, private_key)
 
