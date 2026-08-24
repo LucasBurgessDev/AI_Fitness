@@ -43,7 +43,7 @@ def compare_photos(prev_bytes: bytes, new_bytes: bytes) -> str | None:
         from google.genai.types import Content, Part
 
         client = genai.Client()
-        content = Content(parts=[
+        content = Content(role="user", parts=[
             Part(text=_PROMPT),
             Part(text="Earlier photo:"),
             Part.from_bytes(data=prev_bytes, mime_type="image/jpeg"),
