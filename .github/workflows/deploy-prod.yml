@@ -96,6 +96,10 @@ jobs:
             "projects/$PROJECT_ID/datasets/garmin/tables/coaching_log" >/dev/null 2>&1
           tofu import "google_bigquery_table.calorie_entries" \
             "projects/$PROJECT_ID/datasets/garmin/tables/calorie_entries" >/dev/null 2>&1
+          tofu import "google_bigquery_table.skin_lesions" \
+            "projects/$PROJECT_ID/datasets/garmin/tables/skin_lesions" >/dev/null 2>&1
+          tofu import "google_bigquery_table.skin_photos" \
+            "projects/$PROJECT_ID/datasets/garmin/tables/skin_photos" >/dev/null 2>&1
           tofu import "google_bigquery_table.morning_checkin" \
             "projects/$PROJECT_ID/datasets/garmin/tables/morning_checkin" >/dev/null 2>&1
           tofu import "google_bigquery_table.evening_checkin" \

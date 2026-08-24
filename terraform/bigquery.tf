@@ -91,6 +91,44 @@ resource "google_bigquery_table" "evening_checkin" {
   ])
 }
 
+resource "google_bigquery_table" "skin_lesions" {
+  dataset_id          = google_bigquery_dataset.garmin.dataset_id
+  table_id            = "skin_lesions"
+  deletion_protection = false
+
+  schema = jsonencode([
+    { name = "lesion_id",  type = "STRING",    mode = "REQUIRED" },
+    { name = "email",      type = "STRING",    mode = "REQUIRED" },
+    { name = "nickname",   type = "STRING",    mode = "REQUIRED" },
+    { name = "region_key", type = "STRING",    mode = "NULLABLE" },
+    { name = "view",       type = "STRING",    mode = "REQUIRED" },
+    { name = "x_pct",      type = "FLOAT64",   mode = "REQUIRED" },
+    { name = "y_pct",      type = "FLOAT64",   mode = "REQUIRED" },
+    { name = "created_at", type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "archived",   type = "BOOL",      mode = "REQUIRED" },
+  ])
+}
+
+resource "google_bigquery_table" "skin_photos" {
+  dataset_id          = google_bigquery_dataset.garmin.dataset_id
+  table_id            = "skin_photos"
+  deletion_protection = false
+
+  schema = jsonencode([
+    { name = "photo_id",        type = "STRING",    mode = "REQUIRED" },
+    { name = "lesion_id",       type = "STRING",    mode = "REQUIRED" },
+    { name = "email",           type = "STRING",    mode = "REQUIRED" },
+    { name = "captured_at",     type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "gcs_path",        type = "STRING",    mode = "REQUIRED" },
+    { name = "thumb_gcs_path",  type = "STRING",    mode = "REQUIRED" },
+    { name = "note",            type = "STRING",    mode = "NULLABLE" },
+    { name = "ai_notes",        type = "STRING",    mode = "NULLABLE" },
+    { name = "width",           type = "INT64",     mode = "NULLABLE" },
+    { name = "height",          type = "INT64",     mode = "NULLABLE" },
+    { name = "file_size_bytes", type = "INT64",     mode = "NULLABLE" },
+  ])
+}
+
 resource "google_bigquery_table" "calorie_entries" {
   dataset_id          = google_bigquery_dataset.garmin.dataset_id
   table_id            = "calorie_entries"

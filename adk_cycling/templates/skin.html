@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Skin · Health Coach{% endblock %}
+
+{% block page_style %}
+<style>
+  .skin-main { flex: 1; max-width: 980px; margin: 0 auto; width: 100%; padding: 1.5rem 1rem 4rem; }
+  .skin-title { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.4rem; }
+  .skin-disclaimer {
+    font-size: 0.78rem; color: var(--text-muted); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .skin-layout { display: grid; grid-template-columns: 300px 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 720px) { .skin-layout { grid-template-columns: 1fr; } }
+
+  .diagram-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 1rem; position: sticky; top: 1rem;
+  }
+  .view-toggle { display: flex; gap: 0.4rem; margin-bottom: 0.75rem; justify-content: center; }
+  .view-toggle button {
+    padding: 0.3rem 0.9rem; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text-muted); font-size: 0.78rem;
+    font-weight: 600; cursor: pointer;
+  }
+  .view-toggle button.active { background: var(--accent); color: var(--ground); border-color: var(--accent); }
+
+  .diagram-wrap { position: relative; width: 100%; max-width: 220px; margin: 0 auto; cursor: crosshair; }
+  .diagram-wrap svg { width: 100%; height: auto; display: block; }
+  .diagram-svg-fig { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.5; }
+
+  .pin {
+    position: absolute; width: 14px; height: 14px; margin-left: -7px; margin-top: -7px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--ground);
+    box-shadow: 0 0 0 1px var(--accent); cursor: pointer;
+  }
+  .pin:hover { transform: scale(1.25); }
+  .pin.pending { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .region-picker { margin-top: 0.9rem; }
+  .region-picker select {
+    width: 100%; padding: 0.45rem 0.6rem; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 0.82rem;
+  }
+  .region-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center; }
+
+  .new-lesion-card {
+    background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 0.9rem 1rem; margin-bottom: 1.25rem; display: none;
+  }
+  .new-lesion-card.open { display: block; }
+  .new-lesion-row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+  .new-lesion-row input[type="text"] {
+    flex: 1; min-width: 160px; padding: 0.45rem 0.7rem; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 0.88rem;
+  }
+  .new-lesion-row button {
+    padding: 0.45rem 1rem; border-radius: 7px; border: none; font-size: 0.82rem; font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-create { background: var(--accent); color: var(--ground); }
+  .btn-cancel-new { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border) !important; }
+
+  .lesion-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .lesion-card {
+    display: flex; gap: 0.85rem; align-items: center; text-decoration: none; color: inherit;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 0.75rem 0.9rem; transition: border-color 0.15s;
+  }
+  .lesion-card:hover { border-color: var(--accent); }
+  .lesion-thumb {
+    width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: var(--surface-2);
+    flex-shrink: 0;
+  }
+  .lesion-thumb.empty {
+    display: flex; align-items: center; justify-content: center; font-size: 1.3rem; color: var(--text-muted);
+  }
+  .lesion-info { flex: 1; min-width: 0; }
+  .lesion-name { font-weight: 600; font-size: 0.92rem; }
+  .lesion-region { font-size: 0.76rem; color: var(--text-muted); }
+  .lesion-updated { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+
+  .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 0.88rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="skin-main">
+  <div class="skin-title">Skin tracking</div>
+  <div class="skin-disclaimer">
+    For personal tracking only — not a diagnostic tool. If you notice a concerning
+    change, see a dermatologist.
+  </div>
+
+  <div class="skin-layout">
+    <div class="diagram-card">
+      <div class="view-toggle">
+        <button id="view-front-btn" class="active" onclick="setView('front')">Front</button>
+        <button id="view-back-btn" onclick="setView('back')">Back</button>
+      </div>
+      <div class="diagram-wrap" id="diagram-wrap" onclick="onDiagramClick(event)">
+        <svg id="body-front" viewBox="0 0 100 200" xmlns="http://www.w3.org/2000/svg">
+          <ellipse class="diagram-svg-fig" cx="50" cy="10" rx="9" ry="10"/>
+          <path class="diagram-svg-fig" d="M 40 20 Q 50 17 60 20 L 63 55 Q 50 60 37 55 Z"/>
+          <path class="diagram-svg-fig" d="M 38 22 L 22 24 L 16 55 L 22 56 L 29 32 L 33 55 Z"/>
+          <path class="diagram-svg-fig" d="M 62 22 L 78 24 L 84 55 L 78 56 L 71 32 L 67 55 Z"/>
+          <path class="diagram-svg-fig" d="M 38 55 Q 50 62 62 55 L 63 95 L 55 95 L 51 65 L 49 65 L 45 95 L 37 95 Z"/>
+          <path class="diagram-svg-fig" d="M 37 95 L 45 95 L 42 145 L 44 195 L 38 195 L 37 145 Z"/>
+          <path class="diagram-svg-fig" d="M 55 95 L 63 95 L 63 145 L 62 195 L 56 195 L 58 145 Z"/>
+        </svg>
+        <svg id="body-back" viewBox="0 0 100 200" xmlns="http://www.w3.org/2000/svg" style="display:none;">
+          <ellipse class="diagram-svg-fig" cx="50" cy="10" rx="9" ry="10"/>
+          <path class="diagram-svg-fig" d="M 40 20 Q 50 17 60 20 L 63 55 Q 50 60 37 55 Z"/>
+          <path class="diagram-svg-fig" d="M 38 22 L 22 24 L 16 55 L 22 56 L 29 32 L 33 55 Z"/>
+          <path class="diagram-svg-fig" d="M 62 22 L 78 24 L 84 55 L 78 56 L 71 32 L 67 55 Z"/>
+          <path class="diagram-svg-fig" d="M 38 55 Q 50 62 62 55 L 63 95 L 55 95 L 51 65 L 49 65 L 45 95 L 37 95 Z"/>
+          <path class="diagram-svg-fig" d="M 37 95 L 45 95 L 42 145 L 44 195 L 38 195 L 37 145 Z"/>
+          <path class="diagram-svg-fig" d="M 55 95 L 63 95 L 63 145 L 62 195 L 56 195 L 58 145 Z"/>
+        </svg>
+        <div id="pins-layer"></div>
+      </div>
+      <div class="region-picker">
+        <select id="region-select" onchange="onRegionSelected()">
+          <option value="">Or pick a body region…</option>
+        </select>
+      </div>
+      <div class="region-hint">Tap the diagram or pick a region to add a new tracked spot.</div>
+    </div>
+
+    <div>
+      <div class="new-lesion-card" id="new-lesion-card">
+        <div class="new-lesion-row">
+          <input type="text" id="new-lesion-nickname" placeholder="Name this spot (e.g. &quot;mole, left shoulder&quot;)" />
+          <button class="btn-create" onclick="createLesion()">Add</button>
+          <button class="btn-cancel-new" onclick="cancelNewLesion()">Cancel</button>
+        </div>
+        <div class="region-hint" id="new-lesion-region" style="text-align:left;margin-top:0.4rem;"></div>
+      </div>
+
+      <div class="lesion-list" id="lesion-list">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_script %}
+<script>
+  const REGIONS = {{ regions | tojson }};
+  let currentView = 'front';
+  let lesions = [];
+  let pending = null; // { view, x_pct, y_pct, region_key }
+
+  function regionSelectOptions(view) {
+    const sel = document.getElementById('region-select');
+    sel.innerHTML = '<option value="">Or pick a body region…</option>';
+    REGIONS.filter(r => r.view === view).forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.key;
+      opt.textContent = r.label;
+      sel.appendChild(opt);
+    });
+  }
+
+  function setView(view) {
+    currentView = view;
+    document.getElementById('body-front').style.display = view === 'front' ? '' : 'none';
+    document.getElementById('body-back').style.display = view === 'back' ? '' : 'none';
+    document.getElementById('view-front-btn').classList.toggle('active', view === 'front');
+    document.getElementById('view-back-btn').classList.toggle('active', view === 'back');
+    regionSelectOptions(view);
+    renderPins();
+  }
+
+  function nearestRegion(view, x, y) {
+    let best = null, bestDist = Infinity;
+    REGIONS.filter(r => r.view === view).forEach(r => {
+      const d = Math.hypot(r.x - x, r.y - y);
+      if (d < bestDist) { bestDist = d; best = r; }
+    });
+    return best;
+  }
+
+  function onDiagramClick(evt) {
+    if (evt.target.closest('.pin')) return; // let pin clicks be handled separately
+    const wrap = document.getElementById('diagram-wrap');
+    const rect = wrap.getBoundingClientRect();
+    const x = ((evt.clientX - rect.left) / rect.width) * 100;
+    const y = ((evt.clientY - rect.top) / rect.height) * 100;
+    const region = nearestRegion(currentView, x, y);
+    pending = { view: currentView, x_pct: x, y_pct: y, region_key: region ? region.key : '' };
+    document.getElementById('region-select').value = pending.region_key;
+    openNewLesion();
+  }
+
+  function onRegionSelected() {
+    const key = document.getElementById('region-select').value;
+    if (!key) return;
+    const region = REGIONS.find(r => r.key === key);
+    if (!region) return;
+    if (region.view !== currentView) setView(region.view);
+    pending = { view: region.view, x_pct: region.x, y_pct: region.y, region_key: region.key };
+    openNewLesion();
+  }
+
+  function openNewLesion() {
+    const label = pending.region_key
+      ? (REGIONS.find(r => r.key === pending.region_key) || {}).label || pending.region_key
+      : 'custom spot';
+    document.getElementById('new-lesion-region').textContent = 'Location: ' + label;
+    document.getElementById('new-lesion-card').classList.add('open');
+    document.getElementById('new-lesion-nickname').focus();
+    renderPins();
+  }
+
+  function cancelNewLesion() {
+    pending = null;
+    document.getElementById('new-lesion-card').classList.remove('open');
+    document.getElementById('new-lesion-nickname').value = '';
+    renderPins();
+  }
+
+  async function createLesion() {
+    const nickname = document.getElementById('new-lesion-nickname').value.trim();
+    if (!nickname || !pending) return;
+    const resp = await fetch('/api/skin/lesions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nickname, region_key: pending.region_key, view: pending.view,
+        x_pct: pending.x_pct, y_pct: pending.y_pct,
+      }),
+    });
+    if (!resp.ok) { alert('Could not save spot.'); return; }
+    const data = await resp.json();
+    cancelNewLesion();
+    await loadLesions();
+    window.location.href = '/skin/' + data.lesion_id;
+  }
+
+  function renderPins() {
+    const layer = document.getElementById('pins-layer');
+    layer.innerHTML = '';
+    lesions.filter(l => l.view === currentView).forEach(l => {
+      const pin = document.createElement('a');
+      pin.className = 'pin';
+      pin.href = '/skin/' + l.lesion_id;
+      pin.style.left = l.x_pct + '%';
+      pin.style.top = l.y_pct + '%';
+      pin.title = l.nickname;
+      layer.appendChild(pin);
+    });
+    if (pending && pending.view === currentView) {
+      const pin = document.createElement('div');
+      pin.className = 'pin pending';
+      pin.style.left = pending.x_pct + '%';
+      pin.style.top = pending.y_pct + '%';
+      layer.appendChild(pin);
+    }
+  }
+
+  function renderList() {
+    const list = document.getElementById('lesion-list');
+    if (!lesions.length) {
+      list.innerHTML = '<div class="empty-state">No tracked spots yet — tap the diagram to add your first one.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    lesions.forEach(l => {
+      const a = document.createElement('a');
+      a.className = 'lesion-card';
+      a.href = '/skin/' + l.lesion_id;
+      const regionLabel = (REGIONS.find(r => r.key === l.region_key) || {}).label || l.region_key || '';
+      a.innerHTML = `
+        <div class="lesion-thumb empty">📷</div>
+        <div class="lesion-info">
+          <div class="lesion-name">${l.nickname}</div>
+          <div class="lesion-region">${regionLabel}</div>
+        </div>
+        <div class="lesion-updated"></div>
+      `;
+      list.appendChild(a);
+    });
+  }
+
+  async function loadLesions() {
+    try {
+      const resp = await fetch('/api/skin/lesions');
+      const data = await resp.json();
+      lesions = data.lesions || [];
+    } catch (e) {
+      lesions = [];
+    }
+    renderPins();
+    renderList();
+  }
+
+  regionSelectOptions('front');
+  loadLesions();
+</script>
+{% endblock %}

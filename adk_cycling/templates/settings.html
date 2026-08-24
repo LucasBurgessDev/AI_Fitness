@@ -230,8 +230,22 @@
           <input type="time" name="weekly_digest_time" step="1800"
                  value="{{ (profile.reminders or {}).get('weekly_digest_time', '19:00') }}" />
         </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" name="skin_check_enabled" value="true"
+                   {% if profile.reminders and profile.reminders.skin_check_enabled %}checked{% endif %} />
+            Skin check reminder 🔍
+          </label>
+          <input type="time" name="skin_check_time" step="1800"
+                 value="{{ (profile.reminders or {}).get('skin_check_time', '10:00') }}" />
+          <label style="margin-top:0.35rem;font-size:0.75rem;color:var(--text-muted);font-weight:500;">Every
+            <input type="number" name="skin_check_frequency_days" min="7" max="90" step="1"
+                   style="width:3.5rem;display:inline-block;"
+                   value="{{ (profile.reminders or {}).get('skin_check_frequency_days', 30) }}" /> days
+          </label>
+        </div>
       </div>
-      <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem;">Times are Europe/London. Use 30-minute intervals (07:00, 07:30).</p>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.4rem;">Times are Europe/London. Use 30-minute intervals (07:00, 07:30). The skin check reminder only fires when at least one tracked spot is overdue for a new photo.</p>
     </div>
 
     <div class="actions">
