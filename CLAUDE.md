@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Python pipeline that pulls biometric and activity data from Garmin Connect, syncs it to Google Drive as CSVs **and writes it to BigQuery**, feeding AI tools for personalized fitness coaching. Includes a separate ADK-powered cycling expert web service with Google OAuth2 login and MCP access to BigQuery + Google Drive. Runs locally (Windows Task Scheduler) or on Google Cloud Run.
 
+## Workflow
+
+- **Committing/pushing/PRs:** use the `ship` skill — it also gets the dev→main base branch right.
+- **Bug reports / "check logs" / errors:** use the `diagnose` skill — confirms root cause against real logs and re-verifies the fix before it's called done.
+
 ## Commands
 
 ### Local Development
