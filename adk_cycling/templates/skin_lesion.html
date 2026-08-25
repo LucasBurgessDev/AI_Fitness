@@ -3,49 +3,81 @@
 
 {% block page_style %}
 <style>
-  .lesion-main { flex: 1; max-width: 760px; margin: 0 auto; width: 100%; padding: 1.5rem 1rem 4rem; }
-  .lesion-back-link { font-size: 0.8rem; color: var(--text-muted); text-decoration: none; display: inline-block; margin-bottom: 0.75rem; }
-  .lesion-back-link:hover { color: var(--accent); }
-
-  .lesion-hdr { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-  .lesion-hdr-name { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; background: none; border: none; color: var(--text); padding: 0.1rem 0.2rem; border-radius: 6px; }
-  .lesion-hdr-name:focus { outline: 1px solid var(--accent); background: var(--surface-2); }
-  .lesion-hdr-region { font-size: 0.78rem; color: var(--text-muted); }
-  .btn-archive { font-size: 0.76rem; color: var(--text-muted); background: none; border: 1px solid var(--border); border-radius: 7px; padding: 0.3rem 0.6rem; cursor: pointer; }
-  .btn-archive:hover { border-color: var(--watts); color: var(--watts); }
-
-  .disclaimer { font-size: 0.76rem; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem; margin-bottom: 1.25rem; }
-
-  .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 1rem; margin-bottom: 1.5rem; }
-  .upload-row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
-  .upload-row input[type="file"] { flex: 1; min-width: 160px; font-size: 0.82rem; color: var(--text-muted); }
-  .upload-row textarea {
-    width: 100%; margin-top: 0.6rem; padding: 0.5rem 0.7rem; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface-2); color: var(--text); font-size: 0.85rem; resize: none; font-family: inherit;
+  .lesion-main { flex: 1; max-width: 720px; margin: 0 auto; width: 100%; padding: 1.25rem 1rem 5rem; }
+  .lesion-back-link {
+    font-size: 0.85rem; color: var(--text-muted); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 0.3rem; margin-bottom: 0.9rem;
+    min-height: 44px; padding: 0.2rem 0;
   }
-  .btn-upload { padding: 0.45rem 1.1rem; border-radius: 7px; border: none; background: var(--accent); color: var(--ground); font-weight: 700; font-size: 0.85rem; cursor: pointer; }
-  .btn-upload:disabled { opacity: 0.5; cursor: default; }
-  .upload-status { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; }
+  .lesion-back-link:active, .lesion-back-link:hover { color: var(--accent); }
 
-  .compare-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 1rem; margin-bottom: 1.5rem; }
-  .compare-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem; }
-  .compare-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .lesion-hdr { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
+  .lesion-hdr-name {
+    font-size: 1.2rem; font-weight: 700; letter-spacing: -0.02em; background: none; border: none;
+    color: var(--text); padding: 0.3rem 0.4rem; border-radius: 8px; width: 100%; min-height: 44px;
+  }
+  .lesion-hdr-name:focus { outline: 1px solid var(--accent); background: var(--surface-2); }
+  .lesion-hdr-region { font-size: 0.8rem; color: var(--text-muted); padding: 0 0.4rem; }
+  .btn-archive {
+    font-size: 0.8rem; color: var(--text-muted); background: none; border: 1px solid var(--border);
+    border-radius: 9px; padding: 0.5rem 0.8rem; cursor: pointer; min-height: 44px;
+  }
+  .btn-archive:active { border-color: var(--watts); color: var(--watts); }
+
+  .disclaimer { font-size: 0.78rem; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.85rem; margin-bottom: 1.25rem; }
+
+  /* ── Big-button upload flow: tap to pick/take a photo, then a preview +
+     note + confirm step, instead of a cramped inline file-input row. ── */
+  .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 1.1rem; margin-bottom: 1.5rem; }
+  .add-photo-tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem;
+    width: 100%; padding: 1.6rem 1rem; border-radius: 12px; border: 2px dashed var(--border);
+    background: var(--surface-2); color: var(--text-muted); cursor: pointer; font-size: 0.95rem; font-weight: 600;
+    min-height: 110px;
+  }
+  .add-photo-tile:active { border-color: var(--accent); color: var(--accent); }
+  .add-photo-tile .tile-icon { font-size: 1.8rem; }
+  #photo-file-input { display: none; }
+
+  .preview-wrap { display: none; }
+  .preview-wrap.show { display: block; }
+  .preview-img { width: 100%; max-height: 360px; object-fit: contain; border-radius: 10px; background: var(--surface-2); margin-bottom: 0.9rem; }
+  .preview-note {
+    width: 100%; padding: 0.7rem 0.85rem; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 0.95rem; resize: none; font-family: inherit;
+    margin-bottom: 0.9rem;
+  }
+  .preview-actions { display: flex; gap: 0.7rem; }
+  .preview-actions button { flex: 1; padding: 0.8rem; border-radius: 10px; border: none; font-size: 0.92rem; font-weight: 700; cursor: pointer; min-height: 48px; }
+  .btn-preview-save { background: var(--accent); color: var(--ground); }
+  .btn-preview-save:disabled { opacity: 0.5; }
+  .btn-preview-cancel { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border) !important; }
+  .upload-status { font-size: 0.82rem; color: var(--text-muted); margin-top: 0.7rem; text-align: center; }
+
+  .compare-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 1.1rem; margin-bottom: 1.5rem; }
+  .compare-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.85rem; }
+  .compare-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
   .compare-imgs figure { margin: 0; }
-  .compare-imgs img { width: 100%; border-radius: 8px; object-fit: cover; aspect-ratio: 1; background: var(--surface-2); }
-  .compare-imgs figcaption { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.3rem; text-align: center; }
-  .compare-ai { font-size: 0.85rem; color: var(--text); margin-top: 0.9rem; line-height: 1.45; padding: 0.7rem 0.85rem; background: var(--surface-2); border-radius: 8px; }
-  .compare-ai-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.3rem; }
+  .compare-imgs button { display: block; width: 100%; padding: 0; border: none; background: none; cursor: pointer; }
+  .compare-imgs img { width: 100%; border-radius: 10px; object-fit: cover; aspect-ratio: 1; background: var(--surface-2); }
+  .compare-imgs figcaption { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; text-align: center; }
+  .compare-ai { font-size: 0.9rem; color: var(--text); margin-top: 1rem; line-height: 1.5; padding: 0.8rem 0.9rem; background: var(--surface-2); border-radius: 10px; }
+  .compare-ai-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 0.35rem; }
 
-  .timeline-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem; }
-  .timeline-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 0.7rem; }
-  .timeline-item { cursor: pointer; }
-  .timeline-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--surface-2); }
-  .timeline-date { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.25rem; text-align: center; }
+  .timeline-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.85rem; }
+  .timeline-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.6rem; }
+  .timeline-item { cursor: pointer; padding: 0; border: none; background: none; }
+  .timeline-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 9px; background: var(--surface-2); }
+  .timeline-date { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.3rem; text-align: center; }
 
-  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 200; padding: 1rem; }
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center; z-index: 200; padding: 1rem; }
   .lightbox.open { display: flex; }
-  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 8px; }
-  .lightbox-note { color: #fff; font-size: 0.8rem; margin-top: 0.6rem; text-align: center; max-width: 500px; }
+  .lightbox img { max-width: 100%; max-height: 85vh; border-radius: 8px; }
+  .lightbox-note { color: #fff; font-size: 0.85rem; margin-top: 0.7rem; text-align: center; max-width: 500px; }
+  .lightbox-close {
+    position: absolute; top: max(1rem, env(safe-area-inset-top)); right: 1rem; width: 44px; height: 44px;
+    border-radius: 50%; border: none; background: rgba(255,255,255,0.15); color: #fff; font-size: 1.3rem; cursor: pointer;
+  }
 
   .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 0.88rem; }
 </style>
@@ -55,7 +87,7 @@
 <div class="lesion-main">
   <a class="lesion-back-link" href="/skin">← All tracked spots</a>
   <div class="lesion-hdr">
-    <div>
+    <div style="flex:1; min-width:200px;">
       <input class="lesion-hdr-name" id="lesion-name" value="" onchange="renameLesion()" />
       <div class="lesion-hdr-region" id="lesion-region"></div>
     </div>
@@ -65,23 +97,32 @@
   <div class="disclaimer">For personal tracking only — not a diagnostic tool. See a dermatologist about any concerning changes.</div>
 
   <div class="upload-card">
-    <div class="upload-row">
-      <input type="file" id="photo-file" accept="image/*" capture="environment" />
-      <button class="btn-upload" id="upload-btn" onclick="uploadPhoto()">Add photo</button>
+    <button type="button" class="add-photo-tile" id="add-photo-tile" onclick="document.getElementById('photo-file-input').click()">
+      <span class="tile-icon">📷</span>
+      <span>Take or choose a photo</span>
+    </button>
+    <input type="file" id="photo-file-input" accept="image/*" capture="environment" onchange="onFileChosen()" />
+
+    <div class="preview-wrap" id="preview-wrap">
+      <img class="preview-img" id="preview-img" />
+      <textarea class="preview-note" id="preview-note" rows="2" placeholder="Optional note (itching, bleeding, recent sun exposure)…"></textarea>
+      <div class="preview-actions">
+        <button class="btn-preview-cancel" onclick="cancelPreview()">Retake</button>
+        <button class="btn-preview-save" id="save-photo-btn" onclick="uploadPhoto()">Save photo</button>
+      </div>
+      <div class="upload-status" id="upload-status"></div>
     </div>
-    <textarea id="photo-note" rows="2" placeholder="Optional note (e.g. any itching, bleeding, recent sun exposure)…"></textarea>
-    <div class="upload-status" id="upload-status"></div>
   </div>
 
   <div class="compare-card" id="compare-card" style="display:none;">
     <div class="compare-title">Latest vs previous</div>
     <div class="compare-imgs">
       <figure>
-        <img id="compare-prev-img" />
+        <button type="button" id="compare-prev-btn"><img id="compare-prev-img" /></button>
         <figcaption id="compare-prev-date"></figcaption>
       </figure>
       <figure>
-        <img id="compare-latest-img" />
+        <button type="button" id="compare-latest-btn"><img id="compare-latest-img" /></button>
         <figcaption id="compare-latest-date"></figcaption>
       </figure>
     </div>
@@ -97,7 +138,8 @@
   </div>
 </div>
 
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+<div class="lightbox" id="lightbox" onclick="if (event.target === this) closeLightbox()">
+  <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
   <div>
     <img id="lightbox-img" />
     <div class="lightbox-note" id="lightbox-note"></div>
@@ -109,6 +151,7 @@
 <script>
   const LESION_ID = {{ lesion_id | tojson }};
   let photos = [];
+  let chosenFile = null;
 
   function fmtDate(iso) {
     if (!iso) return '';
@@ -141,15 +184,18 @@
     const latest = photos[photos.length - 1];
     const prev = photos.length > 1 ? photos[photos.length - 2] : null;
 
-    document.getElementById('compare-latest-img').src = `/api/skin/photo/${latest.photo_id}`;
+    document.getElementById('compare-latest-img').src = `/api/skin/photo/${latest.photo_id}?thumb=true`;
     document.getElementById('compare-latest-date').textContent = fmtDate(latest.captured_at);
+    document.getElementById('compare-latest-btn').onclick = () => openLightbox(latest);
 
     if (prev) {
-      document.getElementById('compare-prev-img').src = `/api/skin/photo/${prev.photo_id}`;
+      document.getElementById('compare-prev-img').src = `/api/skin/photo/${prev.photo_id}?thumb=true`;
       document.getElementById('compare-prev-date').textContent = fmtDate(prev.captured_at);
+      document.getElementById('compare-prev-btn').onclick = () => openLightbox(prev);
     } else {
       document.getElementById('compare-prev-img').removeAttribute('src');
       document.getElementById('compare-prev-date').textContent = 'No earlier photo yet';
+      document.getElementById('compare-prev-btn').onclick = null;
     }
 
     const aiBox = document.getElementById('compare-ai');
@@ -164,12 +210,13 @@
   function renderTimeline() {
     const grid = document.getElementById('timeline-grid');
     if (!photos.length) {
-      grid.innerHTML = '<div class="empty-state">No photos yet — add your first one above.</div>';
+      grid.innerHTML = '<div class="empty-state">No photos yet — tap "Take or choose a photo" above.</div>';
       return;
     }
     grid.innerHTML = '';
     [...photos].reverse().forEach(p => {
-      const item = document.createElement('div');
+      const item = document.createElement('button');
+      item.type = 'button';
       item.className = 'timeline-item';
       item.onclick = () => openLightbox(p);
       item.innerHTML = `
@@ -189,18 +236,34 @@
     document.getElementById('lightbox').classList.remove('open');
   }
 
+  function onFileChosen() {
+    const input = document.getElementById('photo-file-input');
+    chosenFile = input.files[0];
+    if (!chosenFile) return;
+    document.getElementById('preview-img').src = URL.createObjectURL(chosenFile);
+    document.getElementById('preview-note').value = '';
+    document.getElementById('upload-status').textContent = '';
+    document.getElementById('add-photo-tile').style.display = 'none';
+    document.getElementById('preview-wrap').classList.add('show');
+  }
+
+  function cancelPreview() {
+    chosenFile = null;
+    document.getElementById('photo-file-input').value = '';
+    document.getElementById('preview-wrap').classList.remove('show');
+    document.getElementById('add-photo-tile').style.display = 'flex';
+  }
+
   async function uploadPhoto() {
-    const fileInput = document.getElementById('photo-file');
-    const file = fileInput.files[0];
-    if (!file) { alert('Choose a photo first.'); return; }
-    const note = document.getElementById('photo-note').value.trim();
-    const btn = document.getElementById('upload-btn');
+    if (!chosenFile) return;
+    const note = document.getElementById('preview-note').value.trim();
+    const btn = document.getElementById('save-photo-btn');
     const status = document.getElementById('upload-status');
     btn.disabled = true;
     status.textContent = 'Uploading and comparing…';
 
     const form = new FormData();
-    form.append('file', file);
+    form.append('file', chosenFile);
     form.append('note', note);
 
     try {
@@ -208,15 +271,14 @@
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         status.textContent = 'Upload failed: ' + (err.detail || err.error || resp.statusText);
+        btn.disabled = false;
         return;
       }
-      fileInput.value = '';
-      document.getElementById('photo-note').value = '';
       status.textContent = 'Saved.';
+      cancelPreview();
       await loadPhotos();
     } catch (e) {
       status.textContent = 'Upload failed: ' + e;
-    } finally {
       btn.disabled = false;
     }
   }
