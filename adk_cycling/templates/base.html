@@ -325,6 +325,9 @@
       <a href="/calories" class="{{ 'active' if request.url.path == '/calories' else '' }}">
         <span class="bn-icon">🍽</span>Calories
       </a>
+      <a href="/skin" class="{{ 'active' if request.url.path.startswith('/skin') else '' }}">
+        <span class="bn-icon">🩹</span>Skin
+      </a>
       <a href="/chat" class="{{ 'active' if request.url.path == '/chat' else '' }}">
         <span class="bn-icon">💬</span>Chat
       </a>
