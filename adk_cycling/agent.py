@@ -32,7 +32,7 @@ _SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "system_prompt.txt
 # BigQuery function tools — used instead of MCP to avoid asyncio scope issues
 # ---------------------------------------------------------------------------
 
-def query_garmin_data(sql: str) -> str:
+def query_garmin_data(sql: str, safe: bool = False) -> str:
     """Execute a SQL query against the garmin BigQuery dataset and return results.
 
     Args:
@@ -43,6 +43,10 @@ def query_garmin_data(sql: str) -> str:
                rides — don't select or surface them unless the user is specifically asking about
                a cycling workout.
              Both tables are in project health-data-482722 and partitioned on run_date (DATE).
+        safe: if True, retries with NULL substituted for any column BigQuery reports
+              as not existing yet (see bq_cache.patch_missing_column) instead of
+              failing outright. Only pass this for fixed, single-table SELECT
+              queries we control — not arbitrary caller-authored SQL.
 
     Returns:
         Query results as a formatted string, or an error message.
@@ -52,20 +56,27 @@ def query_garmin_data(sql: str) -> str:
         LOGGER.debug("BQ cache hit")
         return cached
 
-    try:
-        client = bigquery.Client(project=PROJECT_ID)
-        results = client.query(sql).result()
-        rows = [dict(row) for row in results]
-        if not rows:
-            result = "Query returned no results."
-        else:
-            # Format as a readable table summary
-            result = "\n".join(str(row) for row in rows)
-        bq_cache.put(sql, result)
-        return result
-    except Exception as e:
-        LOGGER.error("BigQuery query error: %s | SQL: %s", e, sql)
-        return f"Query error: {e}"
+    client = bigquery.Client(project=PROJECT_ID)
+    attempt_sql = sql
+    for _ in range(12 if safe else 1):
+        try:
+            results = client.query(attempt_sql).result()
+            rows = [dict(row) for row in results]
+            if not rows:
+                result = "Query returned no results."
+            else:
+                # Format as a readable table summary
+                result = "\n".join(str(row) for row in rows)
+            bq_cache.put(sql, result)
+            return result
+        except Exception as e:
+            patched = bq_cache.patch_missing_column(attempt_sql, e) if safe else None
+            if not patched:
+                LOGGER.error("BigQuery query error: %s | SQL: %s", e, attempt_sql)
+                return f"Query error: {e}"
+            LOGGER.warning("garmin_stats column not backfilled yet, using NULL: %s", e)
+            attempt_sql = patched
+    return "Query error: too many unrecognized columns in query"
 
 
 def get_recent_activities(days: int = 30, activity_type: str = "") -> str:
@@ -118,7 +129,7 @@ def get_recent_stats(days: int = 30) -> str:
         ORDER BY date DESC
         LIMIT 60
     """
-    return query_garmin_data(sql)
+    return query_garmin_data(sql, safe=True)
 
 
 def get_intraday_stats(date: str = "") -> str:
