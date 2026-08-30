@@ -1382,14 +1382,25 @@ class _GoalsDataError(Exception):
     pass
 
 
-def _load_achievement_badges(client, email: str, achievement_state: dict, limit: int = 10) -> list[dict]:
+def _load_achievement_badges(
+    client, email: str, achievement_state: dict, streaks: dict, limit: int = 10,
+) -> list[dict]:
     """Badge shelf data for /goals.
 
-    Streak badges are one-per-type and sourced straight from profile.json's
-    `achievement_state.streak_bests` (see achievements.py) — the largest streak
-    ever reached and the date it was set, overwritten in place on a new PB. A
-    broken-then-later-rebeaten streak replaces its old badge rather than
-    stacking a second one, so there's never more than one badge per streak type.
+    Streak badges are exactly one-per-type (one of `achievements.STREAK_META`)
+    showing the largest streak ever reached and the date it was set — the
+    higher of two sources:
+      - `achievement_state.streak_bests` (profile.json): the persisted ledger
+        achievements.evaluate() overwrites in place on every new PB, so a record
+        beyond the trailing window (or set before this deploy) is remembered.
+      - `streaks[key]["best"]`/`["best_date"]` (this same request's live
+        60-day-window streak computation): always has a real, data-derived date
+        for whatever the current-best-in-window is, so a type that hasn't yet
+        had a *newly detected* PB since this feature shipped still shows a badge
+        immediately instead of waiting for the next 30-min poll to notice one.
+    Whichever source has the larger value wins; ties prefer the live value
+    since its date is always present. A type is only skipped if neither source
+    has both a value and a date to show — no dates are ever fabricated.
 
     Weekly-goal/target hits are different in kind (each week's hit is its own
     moment, not a running record to overwrite) so those still come from the
@@ -1402,15 +1413,27 @@ def _load_achievement_badges(client, email: str, achievement_state: dict, limit:
     import achievements
 
     streak_badges = []
-    for key, entry in (achievement_state.get("streak_bests") or {}).items():
-        meta = achievements.STREAK_META.get(key)
-        value = entry.get("value") if isinstance(entry, dict) else entry
-        date = entry.get("date") if isinstance(entry, dict) else None
-        if not meta or not value or not date:
+    for key, meta in achievements.STREAK_META.items():
+        persisted = (achievement_state.get("streak_bests") or {}).get(key)
+        persisted_value = persisted.get("value") if isinstance(persisted, dict) else persisted
+        persisted_date = persisted.get("date") if isinstance(persisted, dict) else None
+
+        live = streaks.get(key) or {}
+        live_value = live.get("best") or 0
+        live_date = live.get("best_date")
+
+        if live_value and live_value >= (persisted_value or 0):
+            value, badge_date = live_value, live_date
+        elif persisted_value and persisted_date:
+            value, badge_date = persisted_value, persisted_date
+        else:
+            continue  # neither source has both a value and a real date yet
+
+        if not value or not badge_date:
             continue
         streak_badges.append({
             "id": f"streak:{key}:{value}",
-            "date": date,
+            "date": badge_date,
             "icon": meta["icon"],
             "label": meta["label"],
             "value": value,
@@ -1694,19 +1717,29 @@ async def _compute_goals_data(email: str) -> dict:
     def _compute_streak_ordered(dates_set: set, n_days: int = 60) -> dict:
         current = 0
         best = 0
+        best_end_offset = None  # days-ago of the most recent day of the best run
         run = 0
+        run_end_offset = None
         in_current = True
         for i in range(n_days):
             d = (today_date - timedelta(days=i)).isoformat()
             if d in dates_set:
+                if run == 0:
+                    run_end_offset = i  # first (most-recent) day of this run
                 run += 1
-                best = max(best, run)
+                if run > best:
+                    best = run
+                    best_end_offset = run_end_offset
                 if in_current:
                     current = run
             else:
                 in_current = False
                 run = 0
-        return {"current": current, "best": best}
+        best_date = (
+            (today_date - timedelta(days=best_end_offset)).isoformat()
+            if best_end_offset is not None else None
+        )
+        return {"current": current, "best": best, "best_date": best_date}
 
     activity_dates = {str(r["date"]) for r in streak_act_rows}
     checkin_dates = {str(r["date"]) for r in streak_ci_rows}
@@ -1727,7 +1760,7 @@ async def _compute_goals_data(email: str) -> dict:
         "checkin": _compute_streak_ordered(checkin_dates),
     }
 
-    achievements = _load_achievement_badges(client, email, p.get("achievement_state") or {})
+    achievements = _load_achievement_badges(client, email, p.get("achievement_state") or {}, streaks)
 
     return {
         "kpis": kpis,
