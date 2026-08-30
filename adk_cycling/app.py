@@ -972,7 +972,19 @@ async def api_health_analytics(request: Request, days: int = 180):
     """
     try:
         import bq_cache
-        rows = bq_cache.query(client, sql)
+        attempt_sql = sql
+        for _ in range(12):
+            try:
+                rows = bq_cache.query(client, attempt_sql)
+                break
+            except Exception as exc:
+                patched = bq_cache.patch_missing_column(attempt_sql, exc)
+                if not patched:
+                    raise
+                LOGGER.warning("garmin_stats column not backfilled yet, using NULL: %s", exc)
+                attempt_sql = patched
+        else:
+            raise RuntimeError("too many unrecognized columns in health analytics query")
     except Exception as exc:
         LOGGER.exception("Health analytics BQ error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
