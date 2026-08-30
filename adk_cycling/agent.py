@@ -100,14 +100,18 @@ def get_recent_stats(days: int = 30) -> str:
         days: Number of days to look back (default 30).
 
     Returns:
-        Daily stats including weight, body composition, sleep, HRV, stress, and more as a formatted string.
+        Daily stats including weight, body composition, sleep, HRV, stress, hydration,
+        overnight recovery (HR range, stress, Body Battery change, naps), and more as a formatted string.
     """
     sql = f"""
         SELECT date, timestamp, weight_lbs, muscle_mass_lbs, body_fat_pct, water_pct,
                sleep_total_hr, sleep_deep_hr, sleep_rem_hr, sleep_score,
                rhr, min_hr, max_hr, avg_stress, body_battery, respiration, spo2,
                vo2_max, training_status, hrv_status, hrv_avg,
-               steps, step_goal, cals_total, cals_active, cals_goal, activities
+               steps, step_goal, cals_total, cals_active, cals_goal, activities,
+               hydration_ml, hydration_goal_ml, bb_change_overnight,
+               overnight_hr_avg, overnight_hr_min, overnight_hr_max, overnight_stress_avg,
+               nap_bb_gain, nap_count
         FROM `{PROJECT_ID}.garmin.garmin_stats`
         WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
         QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY timestamp DESC) = 1

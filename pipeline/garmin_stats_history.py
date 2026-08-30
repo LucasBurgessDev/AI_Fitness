@@ -208,16 +208,23 @@ def main():
                     h = api.connectapi(f"/hrv-service/hrv/daily/{day_str}")
                 raw_status = get_safe(h, "hrvSummary", "status")
                 # API sometimes returns a numeric timestamp in status instead of a string
-                # label. Fall back to feedbackPhrase (e.g. "HRV_BALANCED_3") if not a string.
-                if isinstance(raw_status, str) and not raw_status.lstrip("-").replace(".", "").isdigit():
+                # label, and returns the sentinel "NONE" while Garmin is still calibrating
+                # a baseline (e.g. after a new watch is registered). Fall back to
+                # feedbackPhrase in both cases (e.g. "HRV_BALANCED_3" -> "BALANCED").
+                if (isinstance(raw_status, str) and not raw_status.lstrip("-").replace(".", "").isdigit()
+                        and raw_status.upper() not in ("NONE", "UNKNOWN")):
                     hrv_s = raw_status
                 else:
                     fb = get_safe(h, "hrvSummary", "feedbackPhrase") or ""
                     if fb and isinstance(fb, str):
                         hrv_s = "_".join(fb.split("_")[1:-1]) if fb.count("_") >= 2 else fb
                     else:
-                        hrv_s = None
-                raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage")
+                        hrv_s = raw_status if isinstance(raw_status, str) else None
+                raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage") or get_safe(h, "hrvSummary", "weeklyAvg")
+                if raw_hrv is None:
+                    # weeklyAvg/baseline are null during device-baseline calibration;
+                    # lastNightAvg is already populated then, so fall back to it.
+                    raw_hrv = get_safe(h, "hrvSummary", "lastNightAvg")
                 if raw_hrv is not None:
                     v = float(raw_hrv)
                     if v > 200:
