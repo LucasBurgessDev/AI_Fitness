@@ -158,29 +158,12 @@ def get_intraday_stats(date: str = "") -> str:
     return query_garmin_data(sql)
 
 
-def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
-    """Compute daily ATL, CTL, and TSB (cycling training-load metrics) from activity TSS data.
+def _build_training_load_cte(weeks: int, ftp_watts: float) -> str:
+    """Return a `WITH ... with_load AS (...)` CTE (no trailing SELECT) computing
+    date/tss/atl/ctl for a date-spine covering `weeks` plus a 42-day seed buffer.
 
-    This is a cycling-specialty tool — only call it when the user explicitly asks about their
-    cycling training load, fitness/fatigue balance, or FTP progress. Don't volunteer ATL/CTL/TSB
-    jargon in general health conversations.
-
-    ATL (Acute Training Load) = 7-day rolling average TSS — represents short-term fatigue.
-    CTL (Chronic Training Load) = 42-day rolling average TSS — represents long-term fitness base.
-    TSB (Training Stress Balance) = CTL − ATL — positive means fresh, negative means fatigued.
-
-    Always pass ftp_watts from the user's current profile so that TSS can be computed on
-    the fly for any activities where it was not pre-calculated by the pipeline.
-
-    Args:
-        weeks: Number of weeks of results to return (default 8). An extra 42-day buffer is
-               fetched automatically to seed the CTL window accurately.
-        ftp_watts: User's current cycling FTP in watts (e.g. 191). When provided, activities that
-                   have stored power data but a NULL tss column will have TSS computed as
-                   (duration_s × (NP or avg_power / FTP)²) / 3600 × 100. Pass 0 to disable.
-
-    Returns:
-        Daily training load table (date, tss, atl, ctl, tsb) as a formatted string.
+    Shared by get_training_load() and plan_progress.py's plan-progress query so
+    both build byte-identical ATL/CTL math — see module docstring in plan_progress.py.
     """
     lookback_days = weeks * 7 + 42
     ftp_safe = max(float(ftp_watts), 0.0)
@@ -206,8 +189,7 @@ def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
     else:
         tss_expr = "COALESCE(tss, 0)"
 
-    lookback_days = weeks * 7 + 42
-    sql = f"""
+    return f"""
         WITH date_spine AS (
             SELECT d AS date
             FROM UNNEST(GENERATE_DATE_ARRAY(
@@ -238,6 +220,36 @@ def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
                 AVG(tss) OVER (ORDER BY date ROWS BETWEEN 41 PRECEDING AND CURRENT ROW) AS ctl
             FROM filled
         )
+    """
+
+
+def get_training_load(weeks: int = 8, ftp_watts: float = 0) -> str:
+    """Compute daily ATL, CTL, and TSB (cycling training-load metrics) from activity TSS data.
+
+    This is a cycling-specialty tool — only call it when the user explicitly asks about their
+    cycling training load, fitness/fatigue balance, or FTP progress. Don't volunteer ATL/CTL/TSB
+    jargon in general health conversations.
+
+    ATL (Acute Training Load) = 7-day rolling average TSS — represents short-term fatigue.
+    CTL (Chronic Training Load) = 42-day rolling average TSS — represents long-term fitness base.
+    TSB (Training Stress Balance) = CTL − ATL — positive means fresh, negative means fatigued.
+
+    Always pass ftp_watts from the user's current profile so that TSS can be computed on
+    the fly for any activities where it was not pre-calculated by the pipeline.
+
+    Args:
+        weeks: Number of weeks of results to return (default 8). An extra 42-day buffer is
+               fetched automatically to seed the CTL window accurately.
+        ftp_watts: User's current cycling FTP in watts (e.g. 191). When provided, activities that
+                   have stored power data but a NULL tss column will have TSS computed as
+                   (duration_s × (NP or avg_power / FTP)²) / 3600 × 100. Pass 0 to disable.
+
+    Returns:
+        Daily training load table (date, tss, atl, ctl, tsb) as a formatted string.
+    """
+    cte = _build_training_load_cte(weeks, ftp_watts)
+    sql = f"""
+        {cte}
         SELECT
             date,
             ROUND(tss, 1) AS tss,
@@ -348,6 +360,257 @@ def get_body_composition_trend(weeks: int = 12) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Training plan tools — plain sync functions like everything above (not async:
+# see weather.py's module docstring for why). Every string returned here must
+# stay in plain language — no "phase"/"TSS"/"CTL"/"FTP zone" — mirroring the
+# existing rule against power jargon everywhere else in this file's tools.
+# ---------------------------------------------------------------------------
+
+_TRAJECTORY_PHRASES = {
+    "ahead": "ahead of pace for your goal",
+    "on_track": "on track for your goal",
+    "behind": "a bit behind pace — here's a good chance to catch up",
+}
+
+
+def get_training_plan() -> str:
+    """Return the user's current training plan: goal, target date, and this week's sessions.
+
+    Call this whenever the user asks about their training plan, "what's my plan", what
+    stage they're in, or before suggesting a specific session. If no plan is active, say
+    so plainly and offer to build one with create_training_plan.
+
+    Returns:
+        Formatted plan summary, or "No active training plan." if none exists.
+    """
+    from datetime import date, timedelta
+
+    import plan_store
+
+    plan = plan_store.load()
+    if not plan.get("active"):
+        return "No active training plan."
+
+    goal = plan["goal"]
+    lines = [f"Goal: {goal['raw_text']} — target date {goal['target_date']}"]
+    if goal.get("feasibility_note"):
+        lines.append(f"Note: {goal['feasibility_note']}")
+
+    today = date.today()
+    week_start = (today - timedelta(days=today.weekday())).isoformat()
+    week_end = (today + timedelta(days=6 - today.weekday())).isoformat()
+    this_week = sorted(
+        (s for s in plan["sessions"] if week_start <= s["date"] <= week_end),
+        key=lambda s: s["date"],
+    )
+    if this_week:
+        lines.append("\nThis week:")
+        for s in this_week:
+            icon = {"completed": "✅", "missed": "⚠️", "pending": "•"}.get(s["status"], "•")
+            dur = f" ({s['target_duration_min']} min)" if s.get("target_duration_min") else ""
+            lines.append(f"{icon} {s['date']}: {s['title']}{dur} (id: {s['id']})")
+    return "\n".join(lines)
+
+
+def create_training_plan(goal_text: str, target_date: str, discipline: str = "cycling") -> str:
+    """Generate a new training plan from a stated goal and save it.
+
+    Always restate the parsed goal and target date back to the user for confirmation
+    before calling this — it replaces any existing active plan. Pulls the user's current
+    fitness (recent training load) and equipment from their profile automatically; you
+    don't need to ask for those separately.
+
+    Args:
+        goal_text: The user's goal in their own words, e.g. "sub-5:00 century".
+        target_date: Event/goal date in YYYY-MM-DD format.
+        discipline: "cycling" | "running" (default "cycling").
+
+    Returns:
+        A plain-language confirmation with the plan's shape, or an error message.
+    """
+    from datetime import date
+
+    import plan_progress
+
+    try:
+        target = date.fromisoformat(target_date)
+    except ValueError:
+        return f"'{target_date}' isn't a valid date — please give it as YYYY-MM-DD."
+    if target <= date.today():
+        return "The target date needs to be in the future."
+
+    plan = plan_progress.build_and_save_plan(goal_text, target, discipline)
+
+    lines = [f"Plan created: {goal_text} by {target_date}."]
+    if plan["goal"].get("feasibility_note"):
+        lines.append(plan["goal"]["feasibility_note"])
+    session_count = len([s for s in plan["sessions"] if s["session_type"] != "rest"])
+    lines.append(f"{len(plan['phases'])} training stages, {session_count} sessions planned.")
+    first_week = sorted(
+        (s for s in plan["sessions"] if s["week_number"] == 1), key=lambda s: s["date"],
+    )
+    lines.append("First week:")
+    for s in first_week:
+        dur = f" ({s['target_duration_min']} min)" if s.get("target_duration_min") else ""
+        lines.append(f"- {s['date']}: {s['title']}{dur}")
+    return "\n".join(lines)
+
+
+def get_plan_progress() -> str:
+    """Return how the user is doing against their active training plan.
+
+    Call when the user asks "how am I doing", "am I on track", or before suggesting
+    adjustments to the plan.
+
+    Returns:
+        Plain-language weekly progress summary, or "No active training plan." if none exists.
+    """
+    import plan_progress
+
+    result = plan_progress.get_plan_progress()
+    if not result.get("active"):
+        return "No active training plan."
+
+    progress = result["progress"]
+    status = progress.get("trajectory_status")
+    phrase = _TRAJECTORY_PHRASES.get(status, "still building a fitness picture — check back after a session or two")
+    lines = [f"You're {phrase}."]
+    if progress.get("overall_adherence_pct") is not None:
+        lines.append(f"You've completed about {int(progress['overall_adherence_pct'])}% of your planned sessions so far.")
+
+    from datetime import date
+    today_iso = date.today().isoformat()
+    # Prioritize weeks that have actually started (so the current week is never
+    # dropped in favour of future weeks for a plan that spans a week boundary).
+    started = [w for w in progress["weeks"] if w["week_start"] <= today_iso]
+    for w in (started or progress["weeks"])[-4:]:
+        lines.append(f"Week of {w['week_start']}: {w['completed_sessions']}/{w['planned_sessions']} sessions done")
+    return "\n".join(lines)
+
+
+def suggest_next_session() -> str:
+    """Return today's (or the next upcoming) planned session, adjusted for weather
+    forecast and available equipment.
+
+    Always call this instead of inventing a session yourself when the user asks "what
+    should I do today/next" and a plan is active.
+
+    Returns:
+        The recommended session with any weather/equipment adjustment explained in
+        plain language, or "No active training plan." if none exists.
+    """
+    import plan_progress
+
+    p = profile_store.load()
+    result = plan_progress.suggest_next_session(p.get("equipment", ""), p.get("location") or {})
+    if not result.get("active"):
+        return "No active training plan."
+    if result.get("session") is None:
+        return result.get("note", "No upcoming sessions in the plan.")
+
+    session = result.get("adjusted_session") or result["session"]
+    dur = f" — about {session['target_duration_min']} minutes" if session.get("target_duration_min") else ""
+    lines = [f"{session['title']}{dur}. {session['description']}"]
+    if result.get("swapped") and session.get("note"):
+        lines.append(f"Adjusted: {session['note']}")
+    lines.append(f"(session id: {session['id']})")
+    return "\n".join(lines)
+
+
+def get_weather_forecast(days: int = 3) -> str:
+    """Fetch a short-range weather forecast for the user's saved location.
+
+    Call before suggesting outdoor sessions, or when the user asks about conditions
+    for an upcoming ride/run.
+
+    Args:
+        days: Number of days ahead (default 3, max 7).
+
+    Returns:
+        Formatted daily forecast (temp range, rain chance, wind), or an error message
+        if no location is set in the profile.
+    """
+    import weather as weather_mod
+
+    p = profile_store.load()
+    loc = p.get("location") or {}
+    lat, lon = loc.get("lat"), loc.get("lon")
+    if lat is None or lon is None:
+        return "No location set — add one in Settings to get weather-aware suggestions."
+
+    forecast = weather_mod.get_forecast(lat, lon, days=days)
+    if forecast.get("error"):
+        return f"Couldn't fetch a forecast right now: {forecast['error']}"
+
+    lines = [f"Forecast for {loc.get('place_name', 'your area')}:"]
+    for d, info in forecast.get("days", {}).items():
+        lines.append(
+            f"{d}: {info['description']}, {info['temp_min_c']}–{info['temp_max_c']}°C, "
+            f"{info['precip_prob_pct']}% chance of rain, wind {info['wind_kph']} km/h"
+        )
+    return "\n".join(lines)
+
+
+def mark_session_complete(session_id: str, note: str = "") -> str:
+    """Mark a specific planned session as completed. Only call this after the user
+    explicitly confirms they did it (or wants to log it done).
+
+    Use get_training_plan or suggest_next_session first to find the session_id.
+
+    Args:
+        session_id: From get_training_plan/suggest_next_session output.
+        note: Optional note, e.g. "felt great" or "cut it short, tired".
+
+    Returns:
+        Confirmation, or an error message.
+    """
+    import plan_store
+
+    plan = plan_store.load()
+    if not plan.get("active"):
+        return "No active training plan."
+    updated, found = [], False
+    for s in plan["sessions"]:
+        if s["id"] == session_id:
+            found = True
+            s = {**s, "status": "completed", "note": note or "manual"}
+        updated.append(s)
+    if not found:
+        return f"Couldn't find a session with id {session_id}."
+    plan_store.save({**plan, "sessions": updated})
+    return "Logged — nice work."
+
+
+def link_session_calendar_event(session_id: str, event_id: str) -> str:
+    """Record that a plan session already has a Google Calendar event, so it doesn't
+    get duplicated or orphaned later. Call this right after create_training_event
+    succeeds for a session that came from the training plan.
+
+    Args:
+        session_id: The plan session's id.
+        event_id: The calendar event id returned by create_training_event.
+
+    Returns:
+        Confirmation, or an error message.
+    """
+    import plan_store
+
+    plan = plan_store.load()
+    if not plan.get("active"):
+        return "No active training plan."
+    updated, found = [], False
+    for s in plan["sessions"]:
+        if s["id"] == session_id:
+            found = True
+            s = {**s, "calendar_event_id": event_id}
+        updated.append(s)
+    if not found:
+        return f"Couldn't find a session with id {session_id}."
+    plan_store.save({**plan, "sessions": updated})
+    return "Linked to calendar."
+
+
+# ---------------------------------------------------------------------------
 # Runner construction
 # ---------------------------------------------------------------------------
 
@@ -366,6 +629,7 @@ def _build_instruction(p: dict) -> str:
         wpkg=wpkg,
         goals=p.get("goals", ""),
         equipment=p.get("equipment", ""),
+        location_name=(p.get("location") or {}).get("place_name", "Putney, London"),
     )
 
 
@@ -599,6 +863,13 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             FunctionTool(func=create_training_event),
             FunctionTool(func=delete_calendar_event),
             FunctionTool(func=get_coaching_log),
+            FunctionTool(func=get_training_plan),
+            FunctionTool(func=create_training_plan),
+            FunctionTool(func=get_plan_progress),
+            FunctionTool(func=suggest_next_session),
+            FunctionTool(func=get_weather_forecast),
+            FunctionTool(func=mark_session_complete),
+            FunctionTool(func=link_session_calendar_event),
         ],
     )
     return Runner(agent=agent, app_name=_APP_NAME, session_service=_session_service)
