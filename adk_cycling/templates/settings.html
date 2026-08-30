@@ -192,6 +192,16 @@
     </div>
 
     <div class="card">
+      <h3>Location</h3>
+      <div class="field">
+        <label for="location_place">Where you're based <span class="hint">(used for weather-aware session suggestions)</span></label>
+        <input type="text" id="location_place" name="location_place"
+          value="{{ (profile.location or {}).get('place_name', '') }}"
+          placeholder="e.g. Putney, London" />
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Reminders</h3>
       <div class="field-row">
         <div class="field">

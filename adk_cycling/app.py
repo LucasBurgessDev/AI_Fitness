@@ -357,6 +357,23 @@ async def settings_post(request: Request):
 
     form = await request.form()
 
+    current_profile = profile_store.load()
+    location_place = (form.get("location_place", "") or "").strip()
+    current_location = current_profile.get("location") or {}
+    location_error = None
+    if location_place and location_place != current_location.get("place_name"):
+        import weather
+        geocoded = weather.geocode(location_place)
+        if geocoded:
+            location = geocoded
+        else:
+            # Keep old coordinates but the new text, so weather calls don't silently
+            # use stale coords for a place name that no longer matches them.
+            location = {**current_location, "place_name": location_place}
+            location_error = f"Couldn't find '{location_place}' — kept the previous location."
+    else:
+        location = current_location or dict(profile_store.DEFAULTS["location"])
+
     _KPI_KEYS = [
         "weekly_cycling_km", "weekly_running_km", "weekly_hours",
         "weekly_active_days", "target_weight_kg", "target_body_fat_pct",
@@ -378,6 +395,7 @@ async def settings_post(request: Request):
         "stats_date": form.get("stats_date", "").strip(),
         "goals": (form.get("goals", "") or "").strip(),
         "equipment": (form.get("equipment", "") or "").strip(),
+        "location": location,
         "reminders": {
             "morning_checkin_enabled": form.get("morning_checkin_enabled") == "true",
             "morning_checkin_time": form.get("morning_checkin_time", "07:30"),
@@ -394,7 +412,7 @@ async def settings_post(request: Request):
         "kpis": kpis,
     }
 
-    error = None
+    error = location_error
     saved = False
     try:
         profile_store.save(new_profile)
@@ -445,6 +463,14 @@ async def goals_page(request: Request):
     if not session:
         return RedirectResponse("/login")
     return templates.TemplateResponse(request, "goals.html", {"email": session["email"]})
+
+
+@app.get("/plan", response_class=HTMLResponse)
+async def plan_page(request: Request):
+    session = _get_session(request)
+    if not session:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(request, "plan.html", {"email": session["email"]})
 
 
 @app.get("/checkin", response_class=HTMLResponse)
@@ -1728,6 +1754,51 @@ async def api_goals_analytics(request: Request):
     return JSONResponse(data)
 
 
+@app.get("/api/plan/progress")
+async def api_plan_progress(request: Request):
+    _require_session(request)
+    import asyncio
+    import plan_progress
+    import plan_store
+    try:
+        data = await asyncio.to_thread(plan_progress.get_plan_progress)
+    except Exception as exc:
+        LOGGER.exception("plan progress error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    if data.get("active"):
+        data["plan"] = plan_store.load()
+    return JSONResponse(data)
+
+
+@app.post("/api/plan/create")
+async def api_plan_create(request: Request):
+    _require_session(request)
+    import asyncio
+    import plan_progress
+    from datetime import date
+
+    form = await request.form()
+    goal_text = (form.get("goal_text", "") or "").strip()
+    target_date_str = (form.get("target_date", "") or "").strip()
+    discipline = (form.get("discipline", "cycling") or "cycling").strip()
+
+    if not goal_text:
+        return JSONResponse({"error": "Please describe your goal."}, status_code=400)
+    try:
+        target = date.fromisoformat(target_date_str)
+    except ValueError:
+        return JSONResponse({"error": "Target date must be YYYY-MM-DD."}, status_code=400)
+    if target <= date.today():
+        return JSONResponse({"error": "Target date needs to be in the future."}, status_code=400)
+
+    try:
+        plan = await asyncio.to_thread(plan_progress.build_and_save_plan, goal_text, target, discipline)
+    except Exception as exc:
+        LOGGER.exception("plan create error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse(plan)
+
+
 # ---------------------------------------------------------------------------
 # Garmin sync
 # ---------------------------------------------------------------------------
@@ -2087,9 +2158,44 @@ async def _check_goal_achievements(email: str, subs: list, private_key: str) -> 
     return sent
 
 
+async def _check_plan_milestones(email: str, subs: list, private_key: str) -> int:
+    """Detect training-plan stage completions and celebrate them, mirroring
+    _check_goal_achievements's wiring exactly (self-deduping via milestone_state
+    persisted in the plan, so each stage only fires once).
+    """
+    import json as _json
+
+    import plan_progress
+    import plan_store
+
+    try:
+        plan = plan_store.load()
+        if not plan.get("active"):
+            return 0
+        events, updated_state = plan_progress.evaluate_plan_milestones(plan, plan.get("milestone_state"))
+        plan_store.save({**plan, "milestone_state": updated_state})
+    except Exception as exc:
+        LOGGER.warning("plan milestone check skipped: %s", exc)
+        return 0
+
+    import coaching_log
+    sent = 0
+    for ev in events:
+        content = f"Finished your {ev['label']} — {ev['completed']}/{ev['total']} sessions done."
+        coaching_log.save_insight(
+            PROJECT_ID, "system-training-plan", email,
+            category="goal_progress",
+            content=content,
+            context=_json.dumps(ev),
+        )
+        sent += _send_push_to_subs(subs, email, "🎉 Training plan milestone", content, private_key, url="/plan")
+    return sent
+
+
 @app.post("/api/send-reminders")
 async def send_reminders():
     """Called by Cloud Scheduler every 30 min. Sends due reminder notifications."""
+    import asyncio
     import push_store, vapid_store
     from datetime import datetime
     try:
@@ -2121,12 +2227,23 @@ async def send_reminders():
 
         if reminders.get("training_reminder_enabled") and \
                 current_hhmm == reminders.get("training_reminder_time", "17:00"):
-            total_sent += _send_push_to_subs(
-                subs, email,
-                "Time to move",
-                "Open your coaching dashboard to see today's plan.",
-                private_key,
-            )
+            title, body = "Time to move", "Open your coaching dashboard to see today's plan."
+            try:
+                import plan_store
+                if plan_store.load().get("active"):
+                    import plan_progress
+                    suggestion = await asyncio.to_thread(
+                        plan_progress.suggest_next_session, p.get("equipment", ""), p.get("location") or {},
+                    )
+                    session = (suggestion.get("adjusted_session") or suggestion.get("session")) if suggestion.get("active") else None
+                    if session and session.get("session_type") != "rest":
+                        title = "Today's session"
+                        body = session["title"]
+                        if session.get("target_duration_min"):
+                            body += f" — about {session['target_duration_min']} min"
+            except Exception as exc:
+                LOGGER.warning("plan-aware training reminder failed, using generic text: %s", exc)
+            total_sent += _send_push_to_subs(subs, email, title, body, private_key, url="/plan")
 
         if reminders.get("evening_checkin_enabled") and \
                 current_hhmm == reminders.get("evening_checkin_time", "21:00"):
@@ -2164,6 +2281,7 @@ async def send_reminders():
                 )
 
         total_sent += await _check_goal_achievements(email, subs, private_key)
+        total_sent += await _check_plan_milestones(email, subs, private_key)
 
     LOGGER.info("send-reminders: sent %d notifications at %s", total_sent, current_hhmm)
     return JSONResponse({"sent": total_sent, "time": current_hhmm})

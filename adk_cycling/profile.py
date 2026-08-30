@@ -1,7 +1,7 @@
 """
 GCS-backed user profile store with in-memory cache.
 
-Editable fields: ftp, weight_kg, height_cm, age, stats_date, goals, equipment.
+Editable fields: ftp, weight_kg, height_cm, age, stats_date, goals, equipment, location.
 Falls back to defaults and in-memory-only if GCS_PROFILE_BUCKET is unset.
 """
 from __future__ import annotations
@@ -34,6 +34,11 @@ DEFAULTS: dict[str, Any] = {
         "Zwift, Zwift Cog, Wahoo Kickr Core, Trek Domane, Triban RC500, "
         "Garmin Vivoactive 4, Ant+ Receiver"
     ),
+    "location": {
+        "place_name": "Putney, London",
+        "lat": 51.4571,
+        "lon": -0.2158,
+    },
     "reminders": {
         "morning_checkin_enabled": False,
         "morning_checkin_time": "07:30",
@@ -95,6 +100,8 @@ def load() -> dict[str, Any]:
             # Deep-merge kpis so new default KPI entries aren't dropped when
             # the saved blob predates them being added to DEFAULTS.
             merged["kpis"] = {**DEFAULTS.get("kpis", {}), **data.get("kpis", {})}
+            # Same treatment for location — old blobs predate this field.
+            merged["location"] = {**DEFAULTS.get("location", {}), **data.get("location", {})}
             _cache = merged
             _cache_ts = now
             return dict(_cache)
