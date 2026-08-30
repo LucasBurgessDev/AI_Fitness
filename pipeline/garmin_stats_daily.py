@@ -58,6 +58,11 @@ HEADERS = [
     "Lactate Threshold HR", "Lactate Threshold Pace",
     "Activities",
     "Cals Goal",
+    "Hydration (mL)", "Hydration Goal (mL)",
+    "Body Battery Change (Overnight)",
+    "Overnight HR Avg", "Overnight HR Min", "Overnight HR Max",
+    "Overnight Stress Avg",
+    "Nap Body Battery Gain", "Nap Count",
 ]
 
 
@@ -125,6 +130,19 @@ def _fetch_sleep(api, today):
                 "_fetch_sleep: Garmin returned no sleep score for %s (watch likely lacks sleep-score support)",
                 today,
             )
+
+        # Overnight HR / stress / Body Battery — minute-level wellness arrays that
+        # newer watches (e.g. Vivoactive 5) surface in the same sleep payload.
+        # Reduced to nightly summary stats rather than stored as raw arrays.
+        hr_points = [p.get("value") for p in (sleep_data.get("sleepHeartRate") or [])
+                     if isinstance(p, dict) and p.get("value") is not None]
+        stress_points = [p.get("value") for p in (sleep_data.get("sleepStress") or [])
+                          if isinstance(p, dict) and p.get("value") is not None and p.get("value") >= 0]
+        overnight_hr_avg = round(sum(hr_points) / len(hr_points), 1) if hr_points else None
+        overnight_hr_min = min(hr_points) if hr_points else None
+        overnight_hr_max = max(hr_points) if hr_points else None
+        overnight_stress_avg = round(sum(stress_points) / len(stress_points), 1) if stress_points else None
+
         return {
             "sleep_total": round(sleep_total_raw / 3600, 2) if sleep_total_raw else None,
             "sleep_deep":  round(sleep_deep  / 3600, 2) if sleep_deep  else None,
@@ -132,6 +150,11 @@ def _fetch_sleep(api, today):
             "sleep_light": round(sleep_light / 3600, 2) if sleep_light else None,
             "sleep_awake": round(sleep_awake / 3600, 2) if sleep_awake else None,
             "sleep_score": sleep_score,
+            "overnight_hr_avg": overnight_hr_avg,
+            "overnight_hr_min": overnight_hr_min,
+            "overnight_hr_max": overnight_hr_max,
+            "overnight_stress_avg": overnight_stress_avg,
+            "bb_change_overnight": sleep_data.get("bodyBatteryChange"),
         }
     except Exception as exc:
         LOGGER.warning("_fetch_sleep failed for %s: %s", today, exc)
@@ -173,9 +196,13 @@ def _fetch_hrv(api, today):
         else:
             h = api.connectapi(f"/hrv-service/hrv/daily/{today}")
         raw_status = get_safe(h, "hrvSummary", "status")
-        # API sometimes returns a numeric timestamp in status instead of a string label.
-        # Fall back to feedbackPhrase (e.g. "HRV_BALANCED_3") if status is not a string.
-        if isinstance(raw_status, str) and not raw_status.lstrip("-").replace(".", "").isdigit():
+        # API sometimes returns a numeric timestamp in status instead of a string label,
+        # and returns the sentinel "NONE" while Garmin is still calibrating a baseline
+        # (e.g. for ~1-2 weeks after a new watch is registered). Fall back to
+        # feedbackPhrase in both cases (e.g. "HRV_BALANCED_3" -> "BALANCED",
+        # "ONBOARDING_1" -> "ONBOARDING_1" — more useful than the bare "NONE").
+        if (isinstance(raw_status, str) and not raw_status.lstrip("-").replace(".", "").isdigit()
+                and raw_status.upper() not in ("NONE", "UNKNOWN")):
             hrv_status = raw_status
         else:
             fb = get_safe(h, "hrvSummary", "feedbackPhrase") or ""
@@ -183,8 +210,13 @@ def _fetch_hrv(api, today):
             if fb and isinstance(fb, str):
                 hrv_status = "_".join(fb.split("_")[1:-1]) if fb.count("_") >= 2 else fb
             else:
-                hrv_status = None
+                hrv_status = raw_status if isinstance(raw_status, str) else None
         raw_hrv = get_safe(h, "hrvSummary", "weeklyAverage") or get_safe(h, "hrvSummary", "weeklyAvg")
+        if raw_hrv is None:
+            # weeklyAvg/baseline are null while a new device's HRV baseline is still
+            # calibrating; lastNightAvg is already populated during that window, so use
+            # it rather than showing no HRV data at all for 1-2 weeks after a watch swap.
+            raw_hrv = get_safe(h, "hrvSummary", "lastNightAvg")
         hrv_avg = None
         if raw_hrv is not None:
             v = float(raw_hrv)
@@ -201,6 +233,38 @@ def _fetch_hrv(api, today):
     except Exception as exc:
         LOGGER.warning("_fetch_hrv failed for %s: %s", today, exc)
         return {}
+
+
+def _fetch_hydration(api, today):
+    try:
+        fn = getattr(api, "get_hydration_data", None)
+        hy = fn(today) if callable(fn) else None
+        if hy:
+            val = hy.get("valueInML")
+            goal = hy.get("goalInML")
+            return {
+                "hydration_ml": round(val) if val is not None else None,
+                "hydration_goal_ml": round(goal) if goal is not None else None,
+            }
+    except Exception as exc:
+        LOGGER.warning("_fetch_hydration failed for %s: %s", today, exc)
+    return {}
+
+
+def _fetch_body_battery_events(api, today):
+    """Naps aren't reflected anywhere in the daily user-summary totals, so pull them
+    from the Body Battery events feed. SLEEP-type events just duplicate the overnight
+    bodyBatteryChange already captured in _fetch_sleep, so only NAP events count here."""
+    try:
+        fn = getattr(api, "get_body_battery_events", None)
+        events = fn(today) if callable(fn) else None
+        if events is not None:
+            naps = [e for e in events if get_safe(e, "event", "eventType") == "NAP"]
+            gain = sum((get_safe(e, "event", "bodyBatteryImpact") or 0) for e in naps)
+            return {"nap_bb_gain": gain if naps else None, "nap_count": len(naps)}
+    except Exception as exc:
+        LOGGER.warning("_fetch_body_battery_events failed for %s: %s", today, exc)
+    return {}
 
 
 def _fetch_training_readiness(api, today):
@@ -449,7 +513,7 @@ def main():
 
         # 2–13) All remaining API calls fire in parallel
         print("3. Fetching supplementary metrics in parallel...")
-        with ThreadPoolExecutor(max_workers=12) as executor:
+        with ThreadPoolExecutor(max_workers=14) as executor:
             f_sleep     = executor.submit(_fetch_sleep,              api, today)
             f_ts        = executor.submit(_fetch_training_status,    api, today)
             f_bc        = executor.submit(_fetch_body_comp,          api, today)
@@ -462,6 +526,8 @@ def main():
             f_tl        = executor.submit(_fetch_training_load,      api, today)
             f_mm        = executor.submit(_fetch_max_metrics,        api, today)
             f_acts      = executor.submit(build_activity_str,        api, today, flt)
+            f_hy        = executor.submit(_fetch_hydration,          api, today)
+            f_bbev      = executor.submit(_fetch_body_battery_events, api, today)
 
         sleep_r  = f_sleep.result()
         ts_r     = f_ts.result()
@@ -475,6 +541,8 @@ def main():
         tl_r     = f_tl.result()
         mm_r     = f_mm.result()
         activity_str = f_acts.result()
+        hy_r     = f_hy.result()
+        bbev_r   = f_bbev.result()
 
         sleep_total        = sleep_r.get("sleep_total")
         sleep_deep         = sleep_r.get("sleep_deep")
@@ -504,6 +572,15 @@ def main():
         tl_aerobic_pct     = tl_r.get("tl_aerobic_pct")
         lt_hr              = mm_r.get("lt_hr")
         lt_pace            = mm_r.get("lt_pace")
+        hydration_ml       = hy_r.get("hydration_ml")
+        hydration_goal_ml  = hy_r.get("hydration_goal_ml")
+        bb_change_overnight    = sleep_r.get("bb_change_overnight")
+        overnight_hr_avg       = sleep_r.get("overnight_hr_avg")
+        overnight_hr_min       = sleep_r.get("overnight_hr_min")
+        overnight_hr_max       = sleep_r.get("overnight_hr_max")
+        overnight_stress_avg   = sleep_r.get("overnight_stress_avg")
+        nap_bb_gain        = bbev_r.get("nap_bb_gain")
+        nap_count          = bbev_r.get("nap_count")
 
         new_row = [
             today, now_str,
@@ -522,6 +599,11 @@ def main():
             lt_hr, lt_pace,
             activity_str,
             cals_goal,
+            hydration_ml, hydration_goal_ml,
+            bb_change_overnight,
+            overnight_hr_avg, overnight_hr_min, overnight_hr_max,
+            overnight_stress_avg,
+            nap_bb_gain, nap_count,
         ]
 
         # --- SMART SAVE: APPEND NEW ROW (and migrate schema if needed) ---
