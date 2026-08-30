@@ -9,8 +9,15 @@ State shape:
 {
     "initialized": bool,
     "kpi_hits": {kpi_key: {"period": str, "hit": bool}},
-    "streak_bests": {streak_key: int},
+    "streak_bests": {streak_key: {"value": int, "date": str}},
 }
+
+`streak_bests` is the single persistent badge per streak type — the largest
+streak ever reached and the date it was set. It's overwritten in place when a
+new, larger streak is reached; it does not accumulate a history entry per PB,
+so a badge for a broken-and-later-rebeaten streak just gets replaced with the
+new record rather than stacking a second badge next to it. (Older state blobs
+store a bare int here instead of a dict — `_streak_best_value` tolerates both.)
 """
 from __future__ import annotations
 
@@ -38,6 +45,13 @@ _ACTUALS_KEY = {
     "weekly_running_km": "running_km_adjusted",
     "weekly_active_days": "active_days",
 }
+
+
+def _streak_best_value(entry: Any) -> int:
+    """streak_bests entries used to be bare ints; tolerate both shapes."""
+    if isinstance(entry, dict):
+        return int(entry.get("value") or 0)
+    return int(entry or 0)
 
 
 def _kpi_hit(key: str, meta: dict[str, Any], target: float, actual: float | None) -> bool:
@@ -104,7 +118,7 @@ def evaluate(
 
     for key, meta in STREAK_META.items():
         current = int((streaks.get(key) or {}).get("current") or 0)
-        prev_best = int(streak_bests.get(key, 0))
+        prev_best = _streak_best_value(streak_bests.get(key))
         if current > prev_best:
             if not seeding and prev_best > 0:
                 achievements.append({
@@ -115,8 +129,12 @@ def evaluate(
                     "value": current,
                     "target_or_best": prev_best,
                     "unit": "days",
+                    "date": today_iso,
                 })
-            streak_bests[key] = current
+            # Overwrite, don't accumulate — this is the one badge for this
+            # streak type, so a later PB (even after the streak broke in
+            # between) replaces the old value/date rather than adding to it.
+            streak_bests[key] = {"value": current, "date": today_iso}
 
     updated_state = {
         "initialized": True,

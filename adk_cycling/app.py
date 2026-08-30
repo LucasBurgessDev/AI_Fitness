@@ -1356,14 +1356,41 @@ class _GoalsDataError(Exception):
     pass
 
 
-def _load_recent_achievements(client, email: str, limit: int = 10) -> list[dict]:
-    """Structured badge history for the /goals badge shelf.
+def _load_achievement_badges(client, email: str, achievement_state: dict, limit: int = 10) -> list[dict]:
+    """Badge shelf data for /goals.
 
-    Only rule-based achievements (session_id='system-achievements') are
-    returned — ad-hoc LLM chat milestones lack structured `context` JSON and
-    are left for the coaching log's own free-text view instead.
+    Streak badges are one-per-type and sourced straight from profile.json's
+    `achievement_state.streak_bests` (see achievements.py) — the largest streak
+    ever reached and the date it was set, overwritten in place on a new PB. A
+    broken-then-later-rebeaten streak replaces its old badge rather than
+    stacking a second one, so there's never more than one badge per streak type.
+
+    Weekly-goal/target hits are different in kind (each week's hit is its own
+    moment, not a running record to overwrite) so those still come from the
+    append-only `coaching_log` history (session_id='system-achievements'); ad-hoc
+    LLM chat milestones lack structured `context` JSON and are left for the
+    coaching log's own free-text view instead.
     """
     import json as _json
+
+    import achievements
+
+    streak_badges = []
+    for key, entry in (achievement_state.get("streak_bests") or {}).items():
+        meta = achievements.STREAK_META.get(key)
+        value = entry.get("value") if isinstance(entry, dict) else entry
+        date = entry.get("date") if isinstance(entry, dict) else None
+        if not meta or not value or not date:
+            continue
+        streak_badges.append({
+            "id": f"streak:{key}:{value}",
+            "date": date,
+            "icon": meta["icon"],
+            "label": meta["label"],
+            "value": value,
+            "unit": "days",
+        })
+
     from google.cloud import bigquery
 
     sql = f"""
@@ -1376,27 +1403,28 @@ def _load_recent_achievements(client, email: str, limit: int = 10) -> list[dict]
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("email", "STRING", email),
     ])
+    kpi_badges = []
     try:
         rows = list(client.query(sql, job_config=job_config).result())
+        for r in rows:
+            try:
+                ctx = _json.loads(r["context"]) if r["context"] else {}
+            except Exception:
+                ctx = {}
+            if ctx.get("type") == "streak":
+                continue  # superseded by the persistent badge above
+            kpi_badges.append({
+                "id": r["id"],
+                "date": str(r["date"]),
+                "icon": ctx.get("icon", "🏅"),
+                "label": ctx.get("label", r["content"]),
+                "value": ctx.get("value"),
+                "unit": ctx.get("unit", ""),
+            })
     except Exception as exc:
         LOGGER.warning("achievements query failed: %s", exc)
-        return []
 
-    out = []
-    for r in rows:
-        try:
-            ctx = _json.loads(r["context"]) if r["context"] else {}
-        except Exception:
-            ctx = {}
-        out.append({
-            "id": r["id"],
-            "date": str(r["date"]),
-            "icon": ctx.get("icon", "🏅"),
-            "label": ctx.get("label", r["content"]),
-            "value": ctx.get("value"),
-            "unit": ctx.get("unit", ""),
-        })
-    return out
+    return sorted(streak_badges + kpi_badges, key=lambda a: a["date"], reverse=True)
 
 
 async def _compute_goals_data(email: str) -> dict:
@@ -1673,7 +1701,7 @@ async def _compute_goals_data(email: str) -> dict:
         "checkin": _compute_streak_ordered(checkin_dates),
     }
 
-    achievements = _load_recent_achievements(client, email)
+    achievements = _load_achievement_badges(client, email, p.get("achievement_state") or {})
 
     return {
         "kpis": kpis,
