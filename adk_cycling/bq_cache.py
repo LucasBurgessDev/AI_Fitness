@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import threading
 import time
 from typing import Optional
@@ -15,6 +16,8 @@ from typing import Optional
 LOGGER = logging.getLogger(__name__)
 
 _TTL_SECONDS: int = int(os.getenv("BQ_CACHE_TTL", "3600"))  # default 1 hour
+
+_UNRECOGNIZED_NAME_RE = re.compile(r"Unrecognized name: (\w+)")
 
 _lock = threading.Lock()
 _store: dict[str, tuple[str, float]] = {}  # key → (result, expires_at)
@@ -47,6 +50,30 @@ def clear() -> None:
         count = len(_store)
         _store.clear()
     LOGGER.info("BQ cache cleared (%d entries evicted)", count)
+
+
+def patch_missing_column(sql: str, exc: Exception) -> Optional[str]:
+    """If `exc` is BigQuery's "Unrecognized name: X", return `sql` with that column
+    swapped for `NULL AS X` — or None if `exc` isn't that error, or X can't be
+    found in `sql` to patch.
+
+    New garmin_stats columns land in this code before BigQuery's ALLOW_FIELD_ADDITION
+    adds them to the live table — that only happens once the pipeline next writes a
+    row containing them (see pipeline/bigquery_writer.py). Until then, a query that
+    selects one 400s. Callers should retry with the patched SQL in a loop (more than
+    one column can be missing at once) instead of failing outright.
+
+    Only safe for simple `SELECT col1, col2, ... FROM table` queries where each
+    selected column name appears nowhere else in the SQL (no WHERE/JOIN/alias
+    referencing it) — true for the fixed garmin_stats queries this is used for, not
+    for arbitrary caller-supplied SQL.
+    """
+    match = _UNRECOGNIZED_NAME_RE.search(str(exc))
+    if not match:
+        return None
+    col = match.group(1)
+    patched, n = re.subn(rf"(?<![.\w]){re.escape(col)}\b", f"NULL AS {col}", sql, count=1)
+    return patched if n else None
 
 
 def query(client, sql: str) -> list:
