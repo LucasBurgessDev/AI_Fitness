@@ -959,7 +959,10 @@ async def api_health_analytics(request: Request, days: int = 180):
     SELECT date, weight_lbs, body_fat_pct, muscle_mass_lbs,
            sleep_total_hr, sleep_deep_hr, sleep_rem_hr, sleep_light_hr, sleep_score,
            rhr, hrv_avg, avg_stress, body_battery, body_battery_high, body_battery_low,
-           vo2_max, steps, step_goal, cals_total
+           vo2_max, steps, step_goal, cals_total,
+           hydration_ml, hydration_goal_ml, bb_change_overnight,
+           overnight_hr_avg, overnight_hr_min, overnight_hr_max, overnight_stress_avg,
+           nap_bb_gain, nap_count
     FROM `{PROJECT_ID}.garmin.garmin_stats`
     WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
     QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY
@@ -980,6 +983,9 @@ async def api_health_analytics(request: Request, days: int = 180):
         "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr", "sleep_light_hr", "sleep_score",
         "rhr", "hrv_avg", "avg_stress", "body_battery", "body_battery_high", "body_battery_low",
         "vo2_max", "steps", "step_goal", "cals_total",
+        "hydration_ml", "hydration_goal_ml", "bb_change_overnight",
+        "overnight_hr_avg", "overnight_hr_min", "overnight_hr_max", "overnight_stress_avg",
+        "nap_bb_gain", "nap_count",
     ]
     data: dict = {"dates": []}
     for f in fields:

@@ -64,6 +64,18 @@ _STATS_SCHEMA = [
     bigquery.SchemaField("lactate_threshold_hr", "INT64"),
     bigquery.SchemaField("lactate_threshold_pace", "FLOAT64"),
     bigquery.SchemaField("activities", "STRING"),
+    # Hydration (manually logged in the Garmin Connect app)
+    bigquery.SchemaField("hydration_ml", "INT64"),
+    bigquery.SchemaField("hydration_goal_ml", "INT64"),
+    # Overnight recovery detail (from minute-level sleep wellness arrays)
+    bigquery.SchemaField("bb_change_overnight", "INT64"),
+    bigquery.SchemaField("overnight_hr_avg", "FLOAT64"),
+    bigquery.SchemaField("overnight_hr_min", "INT64"),
+    bigquery.SchemaField("overnight_hr_max", "INT64"),
+    bigquery.SchemaField("overnight_stress_avg", "FLOAT64"),
+    # Naps (not reflected in the daily user-summary totals)
+    bigquery.SchemaField("nap_bb_gain", "INT64"),
+    bigquery.SchemaField("nap_count", "INT64"),
 ]
 
 _ACTIVITIES_SCHEMA = [
@@ -175,6 +187,15 @@ _CSV_TO_STATS_COLS = {
     "Lactate Threshold HR": "lactate_threshold_hr",
     "Lactate Threshold Pace": "lactate_threshold_pace",
     "Activities": "activities",
+    "Hydration (mL)": "hydration_ml",
+    "Hydration Goal (mL)": "hydration_goal_ml",
+    "Body Battery Change (Overnight)": "bb_change_overnight",
+    "Overnight HR Avg": "overnight_hr_avg",
+    "Overnight HR Min": "overnight_hr_min",
+    "Overnight HR Max": "overnight_hr_max",
+    "Overnight Stress Avg": "overnight_stress_avg",
+    "Nap Body Battery Gain": "nap_bb_gain",
+    "Nap Count": "nap_count",
 }
 
 
@@ -322,13 +343,17 @@ def write_stats_range(
                                   "cals_total", "cals_active", "cals_goal",
                                   "intensity_moderate_mins", "intensity_vigorous_mins",
                                   "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs",
-                                  "lactate_threshold_hr"})
+                                  "lactate_threshold_hr",
+                                  "hydration_ml", "hydration_goal_ml", "bb_change_overnight",
+                                  "overnight_hr_min", "overnight_hr_max",
+                                  "nap_bb_gain", "nap_count"})
     out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
                                     "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
                                     "sleep_light_hr", "sleep_awake_hr",
                                     "respiration", "spo2", "vo2_max", "hrv_avg",
                                     "atl", "ctl", "tsb", "tl_aerobic_pct",
-                                    "lactate_threshold_pace"})
+                                    "lactate_threshold_pace",
+                                    "overnight_hr_avg", "overnight_stress_avg"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
     out = _coerce_str_cols(out, {"hrv_status", "training_status", "activities"})
 
@@ -457,13 +482,17 @@ def write_stats(
                                   "cals_total", "cals_active", "cals_goal",
                                   "intensity_moderate_mins", "intensity_vigorous_mins",
                                   "race_5k_secs", "race_10k_secs", "race_half_secs", "race_full_secs",
-                                  "lactate_threshold_hr"})
+                                  "lactate_threshold_hr",
+                                  "hydration_ml", "hydration_goal_ml", "bb_change_overnight",
+                                  "overnight_hr_min", "overnight_hr_max",
+                                  "nap_bb_gain", "nap_count"})
     out = _coerce_float_cols(out, {"weight_lbs", "muscle_mass_lbs", "body_fat_pct", "water_pct",
                                     "sleep_total_hr", "sleep_deep_hr", "sleep_rem_hr",
                                     "sleep_light_hr", "sleep_awake_hr",
                                     "respiration", "spo2", "vo2_max", "hrv_avg",
                                     "atl", "ctl", "tsb", "tl_aerobic_pct",
-                                    "lactate_threshold_pace"})
+                                    "lactate_threshold_pace",
+                                    "overnight_hr_avg", "overnight_stress_avg"})
     out = _ensure_schema_cols(out, _STATS_SCHEMA)
 
     out = _coerce_str_cols(out, {"hrv_status", "training_status", "activities"})

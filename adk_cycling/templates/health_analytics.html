@@ -145,6 +145,8 @@
     <div class="stat-card"><div class="stat-label">Sleep Score</div><div class="stat-row"><div class="stat-value" id="sv-sleep">—</div><span class="stat-trend-pill" id="trend-sleep"></span></div></div>
     <div class="stat-card"><div class="stat-label">Body Battery</div><div class="stat-row"><div class="stat-value" id="sv-bb">—</div><span class="stat-trend-pill" id="trend-bb"></span></div></div>
     <div class="stat-card"><div class="stat-label">Avg Stress</div><div class="stat-row"><div class="stat-value" id="sv-stress">—</div><span class="stat-trend-pill" id="trend-stress"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Hydration</div><div class="stat-row"><div class="stat-value" id="sv-hydration">—</div><span class="stat-trend-pill" id="trend-hydration"></span></div></div>
+    <div class="stat-card"><div class="stat-label">Overnight HR</div><div class="stat-row"><div class="stat-value" id="sv-overnight-hr">—</div><span class="stat-trend-pill" id="trend-overnight-hr"></span></div></div>
   </div>
 
   <div class="chart-grid">
@@ -175,6 +177,14 @@
     <div class="chart-card">
       <div class="chart-title">Daily Steps vs Goal</div>
       <div class="chart-wrap"><div class="loading-state" id="load-steps"><div class="spinner"></div> Loading…</div><canvas id="chart-steps"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Hydration vs Goal</div>
+      <div class="chart-wrap"><div class="loading-state" id="load-hydration"><div class="spinner"></div> Loading…</div><canvas id="chart-hydration"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Overnight Recovery (HR range &amp; stress)</div>
+      <div class="chart-wrap"><div class="loading-state" id="load-overnight"><div class="spinner"></div> Loading…</div><canvas id="chart-overnight"></canvas></div>
     </div>
   </div>
 
@@ -296,6 +306,8 @@
     setTrend('sleep',  d.sleep_score,  true);
     setTrend('bb',     d.body_battery, true);
     setTrend('stress', d.avg_stress,   false);
+    setTrend('hydration',    d.hydration_ml,     true);
+    setTrend('overnight-hr', d.overnight_hr_avg, false);
   }
 
   function chartDefaults() {
@@ -356,6 +368,8 @@
     setStatVal('sleep', latest.sleep_score, '', 0);
     setStatVal('bb', latest.body_battery, '', 0);
     setStatVal('stress', latest.avg_stress, '', 0);
+    setStatVal('hydration', latest.hydration_ml != null ? latest.hydration_ml / 1000 : null, ' L', 1);
+    setStatVal('overnight-hr', latest.overnight_hr_avg, ' bpm', 0);
   }
 
   function renderWeight(d) {
@@ -491,6 +505,59 @@
         ],
       },
       options: def,
+    });
+  }
+
+  function renderHydration(d) {
+    hideLoader('hydration');
+    const hasData = (d.hydration_ml || []).some(v => v != null);
+    if (!hasData) {
+      const wrap = document.getElementById('chart-hydration')?.parentElement;
+      if (wrap) wrap.innerHTML = '<div class="no-data">💧 No hydration logs yet<br><span style="font-size:0.75rem;display:block;margin-top:0.35rem">Log water intake in the Garmin Connect app to see it here</span></div>';
+      return;
+    }
+    const def = chartDefaults();
+    makeChart('chart-hydration', {
+      type: 'bar',
+      data: {
+        labels: d.dates,
+        datasets: [
+          { label: 'Intake (mL)', data: d.hydration_ml, backgroundColor: isDark() ? 'rgba(0,200,255,0.55)' : 'rgba(0,127,168,0.55)', barPercentage: 0.8 },
+          { label: 'Goal', data: d.hydration_goal_ml, type: 'line', borderColor: cssVar('--amber'), borderDash: [4, 3], backgroundColor: 'transparent', pointRadius: 0, tension: 0, spanGaps: true },
+        ],
+      },
+      options: { ...def, scales: { ...def.scales, y: { ...def.scales.y, title: { display: true, text: 'mL', color: cssVar('--text-muted'), font: { size: 10 } } } } },
+    });
+  }
+
+  function renderOvernight(d) {
+    hideLoader('overnight');
+    const hasData = (d.overnight_hr_avg || []).some(v => v != null);
+    if (!hasData) {
+      const wrap = document.getElementById('chart-overnight')?.parentElement;
+      if (wrap) wrap.innerHTML = '<div class="no-data">🌙 No overnight detail yet<br><span style="font-size:0.75rem;display:block;margin-top:0.35rem">Needs a watch that reports minute-level sleep HR/stress</span></div>';
+      return;
+    }
+    const def = chartDefaults();
+    makeChart('chart-overnight', {
+      type: 'line',
+      data: {
+        labels: d.dates,
+        datasets: [
+          { label: 'HR High', data: d.overnight_hr_max, borderColor: 'rgba(255,79,31,0.35)', backgroundColor: 'rgba(255,79,31,0.08)', fill: '+1', tension: 0.3, pointRadius: 0, spanGaps: true, yAxisID: 'y' },
+          { label: 'HR Low', data: d.overnight_hr_min, borderColor: 'rgba(255,79,31,0.2)', backgroundColor: 'transparent', fill: false, tension: 0.3, pointRadius: 0, spanGaps: true, yAxisID: 'y' },
+          { label: 'HR Avg', data: d.overnight_hr_avg, borderColor: cssVar('--watts'), backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 5, spanGaps: true, yAxisID: 'y' },
+          { label: 'Overnight Stress', data: d.overnight_stress_avg, borderColor: cssVar('--amber'), backgroundColor: 'transparent', borderDash: [4, 3], tension: 0.35, pointRadius: 0, spanGaps: true, yAxisID: 'y2' },
+        ],
+      },
+      options: {
+        ...def,
+        scales: {
+          x: def.scales.x,
+          y: { ...def.scales.y, position: 'left', title: { display: true, text: 'HR bpm', color: cssVar('--watts'), font: { size: 10 } } },
+          y2: { ...def.scales.y, position: 'right', grid: { drawOnChartArea: false }, min: 0, max: 100, title: { display: true, text: 'Stress', color: cssVar('--amber'), font: { size: 10 } } },
+        },
+      },
     });
   }
 
@@ -709,7 +776,7 @@
       renderAll(data);
     } catch (err) {
       console.error('Health analytics error:', err);
-      ['weight','sleep','hrv','bb','stress','vo2','steps'].forEach(id => showError(id, err.message));
+      ['weight','sleep','hrv','bb','stress','vo2','steps','hydration','overnight'].forEach(id => showError(id, err.message));
     }
     loadCheckinData(days);
     loadActivityTrends();
@@ -725,13 +792,15 @@
     renderStress(data);
     renderVo2(data);
     renderSteps(data);
+    renderHydration(data);
+    renderOvernight(data);
   }
 
   function reloadCharts() { if (currentData) renderAll(currentData); }
 
   function reload() {
     const days = document.getElementById('days-select').value;
-    ['weight','sleep','hrv','bb','stress','vo2','steps','mood'].forEach(id => {
+    ['weight','sleep','hrv','bb','stress','vo2','steps','hydration','overnight','mood'].forEach(id => {
       const el = document.getElementById('load-' + id);
       if (el) { el.style.display = 'flex'; }
       if (charts['chart-' + id]) { charts['chart-' + id].destroy(); delete charts['chart-' + id]; }
