@@ -130,6 +130,14 @@
         <span class="kpi-unit">days/wk</span>
       </div>
       <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_steps_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_steps and profile.kpis.weekly_steps.enabled %}checked{% endif %} />
+        <label class="kpi-label">Steps</label>
+        <input type="number" name="kpi_weekly_steps_target" min="0" max="200000" step="1000"
+          value="{{ (profile.kpis or {}).get('weekly_steps', {}).get('target', 70000) }}" />
+        <span class="kpi-unit">steps/wk</span>
+      </div>
+      <div class="kpi-row">
         <input type="checkbox" name="kpi_weekly_hours_enabled" value="true"
           {% if profile.kpis and profile.kpis.weekly_hours and profile.kpis.weekly_hours.enabled %}checked{% endif %} />
         <label class="kpi-label">Active time</label>

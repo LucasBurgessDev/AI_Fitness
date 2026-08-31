@@ -57,6 +57,7 @@ DEFAULTS: dict[str, Any] = {
         "weekly_running_km":   {"target": 0.0, "enabled": False},
         "weekly_hours":        {"target": 0.0, "enabled": False},
         "weekly_active_days":  {"target": 5,   "enabled": False},
+        "weekly_steps":        {"target": 0,   "enabled": False},
         "target_weight_kg":    {"target": 85.0, "enabled": True},
         "target_body_fat_pct": {"target": 0.0, "enabled": False},
     },
