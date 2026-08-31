@@ -1817,7 +1817,7 @@ async def api_plan_progress(request: Request):
 
 @app.post("/api/plan/create")
 async def api_plan_create(request: Request):
-    _require_session(request)
+    session = _require_session(request)
     import asyncio
     import plan_progress
     from datetime import date
@@ -1837,7 +1837,9 @@ async def api_plan_create(request: Request):
         return JSONResponse({"error": "Target date needs to be in the future."}, status_code=400)
 
     try:
-        plan = await asyncio.to_thread(plan_progress.build_and_save_plan, goal_text, target, discipline)
+        plan = await asyncio.to_thread(
+            plan_progress.build_and_save_plan, goal_text, target, discipline, session["email"],
+        )
     except Exception as exc:
         LOGGER.exception("plan create error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)

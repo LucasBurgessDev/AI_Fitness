@@ -412,50 +412,6 @@ def get_training_plan() -> str:
     return "\n".join(lines)
 
 
-def create_training_plan(goal_text: str, target_date: str, discipline: str = "cycling") -> str:
-    """Generate a new training plan from a stated goal and save it.
-
-    Always restate the parsed goal and target date back to the user for confirmation
-    before calling this — it replaces any existing active plan. Pulls the user's current
-    fitness (recent training load) and equipment from their profile automatically; you
-    don't need to ask for those separately.
-
-    Args:
-        goal_text: The user's goal in their own words, e.g. "sub-5:00 century".
-        target_date: Event/goal date in YYYY-MM-DD format.
-        discipline: "cycling" | "running" (default "cycling").
-
-    Returns:
-        A plain-language confirmation with the plan's shape, or an error message.
-    """
-    from datetime import date
-
-    import plan_progress
-
-    try:
-        target = date.fromisoformat(target_date)
-    except ValueError:
-        return f"'{target_date}' isn't a valid date — please give it as YYYY-MM-DD."
-    if target <= date.today():
-        return "The target date needs to be in the future."
-
-    plan = plan_progress.build_and_save_plan(goal_text, target, discipline)
-
-    lines = [f"Plan created: {goal_text} by {target_date}."]
-    if plan["goal"].get("feasibility_note"):
-        lines.append(plan["goal"]["feasibility_note"])
-    session_count = len([s for s in plan["sessions"] if s["session_type"] != "rest"])
-    lines.append(f"{len(plan['phases'])} training stages, {session_count} sessions planned.")
-    first_week = sorted(
-        (s for s in plan["sessions"] if s["week_number"] == 1), key=lambda s: s["date"],
-    )
-    lines.append("First week:")
-    for s in first_week:
-        dur = f" ({s['target_duration_min']} min)" if s.get("target_duration_min") else ""
-        lines.append(f"- {s['date']}: {s['title']}{dur}")
-    return "\n".join(lines)
-
-
 def get_plan_progress() -> str:
     """Return how the user is doing against their active training plan.
 
@@ -820,6 +776,64 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
         except Exception as exc:
             LOGGER.error("delete_calendar_event error: %s", exc)
             return f"Error deleting calendar event: {exc}"
+
+    # --- Training plan creation/adjustment (closure capturing user_email, needed
+    # to log a continuity note to coaching_log when replacing an existing plan) ---
+
+    def create_training_plan(goal_text: str, target_date: str, discipline: str = "cycling") -> str:
+        """Generate a training plan from a stated goal and save it as the active plan.
+
+        This is also how you adjust or reformulate an existing plan — e.g. the user
+        wants a different target date, a harder/easier goal, or to switch discipline.
+        There's no separate "edit" tool: just call this again with the new goal and it
+        replaces the old plan, re-baselined from their current fitness (not the old
+        plan's numbers). If a plan is already active, call get_training_plan or
+        get_plan_progress first, mention where they left off, and confirm they want to
+        replace it before calling this.
+
+        Always restate the parsed goal and target date back to the user for
+        confirmation before calling this. Pulls the user's current fitness (recent
+        training load) and equipment from their profile automatically; you don't need
+        to ask for those separately.
+
+        Args:
+            goal_text: The user's goal in their own words, e.g. "sub-5:00 century".
+            target_date: Event/goal date in YYYY-MM-DD format.
+            discipline: "cycling" | "running" (default "cycling").
+
+        Returns:
+            A plain-language confirmation with the plan's shape (and, if this replaced
+            an existing plan, a short note on how that one wrapped up), or an error message.
+        """
+        from datetime import date
+
+        import plan_progress
+
+        try:
+            target = date.fromisoformat(target_date)
+        except ValueError:
+            return f"'{target_date}' isn't a valid date — please give it as YYYY-MM-DD."
+        if target <= date.today():
+            return "The target date needs to be in the future."
+
+        plan = plan_progress.build_and_save_plan(goal_text, target, discipline, email=user_email)
+
+        lines = []
+        if plan.get("outgoing_summary"):
+            lines.append(plan["outgoing_summary"])
+        lines.append(f"Plan created: {goal_text} by {target_date}.")
+        if plan["goal"].get("feasibility_note"):
+            lines.append(plan["goal"]["feasibility_note"])
+        session_count = len([s for s in plan["sessions"] if s["session_type"] != "rest"])
+        lines.append(f"{len(plan['phases'])} training stages, {session_count} sessions planned.")
+        first_week = sorted(
+            (s for s in plan["sessions"] if s["week_number"] == 1), key=lambda s: s["date"],
+        )
+        lines.append("First week:")
+        for s in first_week:
+            dur = f" ({s['target_duration_min']} min)" if s.get("target_duration_min") else ""
+            lines.append(f"- {s['date']}: {s['title']}{dur}")
+        return "\n".join(lines)
 
     # --- Coaching log tool (closure capturing user_email) ---
     # Insights are saved automatically after every response via _auto_save_insights.

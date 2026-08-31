@@ -85,14 +85,61 @@ def get_baseline_fitness(ftp_watts: float) -> dict[str, Any]:
     }
 
 
-def build_and_save_plan(goal_text: str, target_date: date, discipline: str = "cycling") -> dict:
+def _close_out_previous_plan(old_plan: dict, email: str) -> Optional[str]:
+    """If an old plan is active, log a short continuity note to coaching_log before
+    it's replaced, and return a plain-language summary the caller can weave into
+    its own response — so switching goals never just silently erases the old one.
+
+    Mirrors the achievement/milestone logging convention (system-training-plan
+    session_id, goal_progress category) already used elsewhere in this feature.
+    """
+    if not old_plan.get("active"):
+        return None
+
+    goal = old_plan.get("goal") or {}
+    progress = old_plan.get("progress") or {}
+    adherence = progress.get("overall_adherence_pct")
+    trajectory_phrase = {
+        "ahead": "ahead of pace", "on_track": "on track", "behind": "a bit behind pace",
+    }.get(progress.get("trajectory_status"))
+
+    bits = [f'your goal of "{goal.get("raw_text", "your last plan")}"']
+    if adherence is not None:
+        bits.append(f"{int(adherence)}% of sessions completed")
+    if trajectory_phrase:
+        bits.append(trajectory_phrase)
+    summary = "Wrapped up " + ", ".join(bits) + " — starting fresh with a new goal."
+
+    try:
+        import json as _json
+        import coaching_log
+        coaching_log.save_insight(
+            PROJECT_ID, "system-training-plan", email,
+            category="goal_progress",
+            content=summary,
+            context=_json.dumps({"old_goal": goal, "old_progress": progress}),
+        )
+    except Exception as exc:
+        LOGGER.warning("Could not log outgoing plan summary: %s", exc)
+    return summary
+
+
+def build_and_save_plan(goal_text: str, target_date: date, discipline: str = "cycling", email: str = "") -> dict:
     """Fetch profile + current fitness, generate a plan, and save it as the active plan.
 
+    This is also how an existing plan gets adjusted/reformulated — a new goal always
+    fully replaces the old one (re-baselined from current fitness, not the original
+    plan's numbers), rather than trying to patch specific fields in place. If a plan
+    was already active, a short continuity note is logged and returned in
+    "outgoing_summary" so callers can tell the user what happened to it.
+
     Shared by the chat tool (agent.create_training_plan) and the /api/plan/create
-    route so plan creation has exactly one implementation.
+    route so plan creation/adjustment has exactly one implementation.
 
     Returns:
-        The full saved plan dict (goal/baseline/phases/sessions/progress/milestone_state).
+        The full saved plan dict (goal/baseline/phases/sessions/progress/milestone_state)
+        plus a transient "outgoing_summary" key (not persisted) — None if no plan was
+        replaced.
     """
     import profile as profile_store
 
@@ -100,6 +147,10 @@ def build_and_save_plan(goal_text: str, target_date: date, discipline: str = "cy
     p = profile_store.load()
     ftp = float(p.get("ftp") or 0)
     baseline = get_baseline_fitness(ftp)
+
+    old_plan = plan_store.load()
+    outgoing_summary = _close_out_previous_plan(old_plan, email)
+
     goal_type = "ftp_target" if "ftp" in goal_text.lower() and discipline == "cycling" else "event_time"
     generated = plan_generator.generate_plan(
         goal_text=goal_text, goal_type=goal_type, discipline=discipline,
@@ -114,7 +165,7 @@ def build_and_save_plan(goal_text: str, target_date: date, discipline: str = "cy
         "created_at": datetime.utcnow().isoformat(),
     }
     plan_store.save(plan)
-    return plan
+    return {**plan, "outgoing_summary": outgoing_summary}
 
 
 def _match_sessions(sessions: list[dict], activities: list[dict], today_iso: str) -> list[dict]:
