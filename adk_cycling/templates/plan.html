@@ -39,6 +39,11 @@
     padding: 0.6rem 1.1rem; font-size: 0.88rem; font-weight: 600; cursor: pointer;
   }
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-secondary {
+    background: transparent; color: var(--accent); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.4rem 0.8rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .btn-secondary:hover { background: var(--surface-2); }
   .form-error { color: var(--watts); font-size: 0.82rem; margin-top: 0.5rem; }
 
   /* Header stats */
@@ -117,6 +122,61 @@
 
   const STATUS_LABEL = { pending: 'Upcoming', completed: 'Done', missed: 'Missed' };
 
+  // Shared by the empty-state "set a goal" form and the active-plan "change goal"
+  // form — both post to the same /api/plan/create, which fully replaces whatever
+  // plan is currently active (re-baselined from current fitness).
+  function goalFormHtml({ idPrefix, prefill = {}, submitLabel, warning }) {
+    return `
+      <form id="${idPrefix}-form">
+        ${warning ? `<p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:1rem">${warning}</p>` : ''}
+        <div class="field">
+          <label for="${idPrefix}-goal_text">Your goal</label>
+          <input type="text" id="${idPrefix}-goal_text" name="goal_text"
+            value="${(prefill.raw_text || '').replace(/"/g, '&quot;')}"
+            placeholder="e.g. sub-5:00 century, build FTP to 250W, 10K PB" required />
+        </div>
+        <div class="field">
+          <label for="${idPrefix}-target_date">Target date</label>
+          <input type="date" id="${idPrefix}-target_date" name="target_date" value="${prefill.target_date || ''}" required />
+        </div>
+        <div class="field">
+          <label for="${idPrefix}-discipline">Discipline</label>
+          <select id="${idPrefix}-discipline" name="discipline">
+            <option value="cycling" ${prefill.discipline === 'cycling' ? 'selected' : ''}>Cycling</option>
+            <option value="running" ${prefill.discipline === 'running' ? 'selected' : ''}>Running</option>
+          </select>
+        </div>
+        <button type="submit" class="btn-primary" id="${idPrefix}-submit">${submitLabel}</button>
+        <div class="form-error" id="${idPrefix}-form-error"></div>
+      </form>
+    `;
+  }
+
+  let pendingOutgoingSummary = null;
+
+  function wireGoalForm(idPrefix, submitLabel, busyLabel) {
+    document.getElementById(`${idPrefix}-form`).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById(`${idPrefix}-submit`);
+      const errEl = document.getElementById(`${idPrefix}-form-error`);
+      btn.disabled = true;
+      btn.textContent = busyLabel;
+      errEl.textContent = '';
+      try {
+        const form = new FormData(e.target);
+        const res = await fetch('/api/plan/create', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        pendingOutgoingSummary = data.outgoing_summary || null;
+        await loadPlan();
+      } catch (err) {
+        errEl.textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = submitLabel;
+      }
+    });
+  }
+
   function renderEmptyState(root) {
     root.innerHTML = `
       <div class="card">
@@ -126,46 +186,10 @@
           using your current fitness and equipment, then track progress as you go. You can also just
           describe this in <a href="/chat" style="color:var(--accent)">chat</a> instead.
         </p>
-        <form id="plan-form">
-          <div class="field">
-            <label for="goal_text">Your goal</label>
-            <input type="text" id="goal_text" name="goal_text" placeholder="e.g. sub-5:00 century, build FTP to 250W, 10K PB" required />
-          </div>
-          <div class="field">
-            <label for="target_date">Target date</label>
-            <input type="date" id="target_date" name="target_date" required />
-          </div>
-          <div class="field">
-            <label for="discipline">Discipline</label>
-            <select id="discipline" name="discipline">
-              <option value="cycling">Cycling</option>
-              <option value="running">Running</option>
-            </select>
-          </div>
-          <button type="submit" class="btn-primary" id="plan-submit">Build my plan</button>
-          <div class="form-error" id="plan-form-error"></div>
-        </form>
+        ${goalFormHtml({ idPrefix: 'new', submitLabel: 'Build my plan' })}
       </div>
     `;
-    document.getElementById('plan-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('plan-submit');
-      const errEl = document.getElementById('plan-form-error');
-      btn.disabled = true;
-      btn.textContent = 'Building…';
-      errEl.textContent = '';
-      try {
-        const form = new FormData(e.target);
-        const res = await fetch('/api/plan/create', { method: 'POST', body: form });
-        const data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-        await loadPlan();
-      } catch (err) {
-        errEl.textContent = err.message;
-        btn.disabled = false;
-        btn.textContent = 'Build my plan';
-      }
-    });
+    wireGoalForm('new', 'Build my plan', 'Building…');
   }
 
   function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
@@ -181,8 +205,12 @@
     const trajectoryLabel = { ahead: 'Ahead of pace', on_track: 'On track', behind: 'A bit behind' }[progress.trajectory_status] || 'Building a picture';
 
     let html = `
+      ${pendingOutgoingSummary ? `<div class="feasibility-note" style="margin-bottom:1.25rem">${pendingOutgoingSummary}</div>` : ''}
       <div class="card">
-        <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.9rem">${goal.raw_text}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:0.9rem">
+          <div style="font-size:0.95rem;font-weight:600">${goal.raw_text}</div>
+          <button type="button" class="btn-secondary" id="toggle-change-goal">Change goal</button>
+        </div>
         <div class="plan-header-grid">
           <div class="stat-block"><div class="stat-label">Target date</div><div class="stat-value" style="font-size:1.1rem">${goal.target_date}</div></div>
           <div class="stat-block"><div class="stat-label">Days left</div><div class="stat-value">${daysLeft >= 0 ? daysLeft : '—'}</div></div>
@@ -191,6 +219,12 @@
         </div>
         ${goal.feasibility_note ? `<div class="feasibility-note">${goal.feasibility_note}</div>` : ''}
         <div class="stage-strip">${renderStageStrip(plan, todayIso)}</div>
+        <div id="change-goal-panel" style="display:none;margin-top:1.1rem;padding-top:1.1rem;border-top:1px solid var(--border)">
+          ${goalFormHtml({
+            idPrefix: 'change', prefill: goal, submitLabel: 'Replace plan',
+            warning: `This replaces your current plan entirely (re-baselined from where your fitness is today) — it doesn't just tweak one field. ${overall != null ? `You're currently ${overall}% through the old one.` : ''}`,
+          })}
+        </div>
       </div>
 
       <div class="card">
@@ -204,7 +238,13 @@
       </div>
     `;
     root.innerHTML = html;
+    pendingOutgoingSummary = null;
     renderLoadChart(progress.weeks);
+    wireGoalForm('change', 'Replace plan', 'Replacing…');
+    document.getElementById('toggle-change-goal').addEventListener('click', () => {
+      const panel = document.getElementById('change-goal-panel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
   }
 
   function renderStageStrip(plan, todayIso) {

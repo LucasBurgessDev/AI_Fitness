@@ -137,6 +137,9 @@
       white-space: nowrap;
     }
     .hdr-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       background: var(--surface-2);
       border: 1px solid var(--border);
       color: var(--text-muted);
@@ -144,25 +147,18 @@
       padding: 0.28rem 0.55rem;
       font-size: 0.82rem;
       cursor: pointer;
+      text-decoration: none;
       transition: background 0.15s, color 0.15s;
       line-height: 1;
     }
     .hdr-btn:hover { color: var(--text); }
-    .hdr-signout {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 0.78rem;
-      padding: 0.28rem 0.5rem;
-      border-radius: 7px;
-      transition: color 0.15s;
-      white-space: nowrap;
-    }
-    .hdr-signout:hover { color: var(--text); }
 
+    /* Sign-out is an icon-only .hdr-btn (see markup) so it stays visible —
+       and tappable — on mobile too, instead of hiding with the rest of the
+       desktop-only nav below. */
     @media (max-width: 640px) {
       .hdr-nav { display: none; }
       .hdr-email { display: none; }
-      .hdr-signout { display: none; }
     }
 
     /* ── Bottom nav ── */
@@ -303,7 +299,7 @@
     <div class="hdr-right">
       <span class="hdr-email">{{ email | default('') }}</span>
       <button class="hdr-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
-      <a class="hdr-signout" href="/logout">Sign out</a>
+      <a class="hdr-btn" href="/logout" title="Sign out — use this to re-trigger Google sign-in if permissions lapse">🚪</a>
     </div>
   </header>
 
