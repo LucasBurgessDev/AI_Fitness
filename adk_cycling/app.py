@@ -376,7 +376,7 @@ async def settings_post(request: Request):
 
     _KPI_KEYS = [
         "weekly_cycling_km", "weekly_running_km", "weekly_hours",
-        "weekly_active_days", "target_weight_kg", "target_body_fat_pct",
+        "weekly_active_days", "weekly_steps", "target_weight_kg", "target_body_fat_pct",
     ]
     kpis = {}
     for k in _KPI_KEYS:
@@ -1593,14 +1593,17 @@ async def _compute_goals_data(email: str) -> dict:
     ORDER BY date DESC
     """
 
-    # Garmin sets its own daily calorie-burn goal (cals_goal) — unlike the other
-    # KPI rings, which track a user-configured weekly/target value from Settings,
-    # this one just mirrors whatever Garmin's watch/app already decided for today.
-    today_cals_sql = f"""
-    SELECT cals_total, cals_goal
-    FROM `{PROJECT_ID}.garmin.garmin_stats`
-    WHERE date = FORMAT_DATE('%Y-%m-%d', CURRENT_DATE())
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    # Steps live in garmin_stats (daily wellness snapshots), not garmin_activities
+    # like the other weekly KPIs, so this needs its own dedup-per-date query rather
+    # than folding into actuals_sql.
+    weekly_steps_sql = f"""
+    SELECT COALESCE(SUM(steps), 0) AS total_steps
+    FROM (
+      SELECT date, steps
+      FROM `{PROJECT_ID}.garmin.garmin_stats`
+      WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    )
     """
 
     streak_activity_sql = f"""
@@ -1632,7 +1635,7 @@ async def _compute_goals_data(email: str) -> dict:
             actuals_rows, prev_week_rows, history_rows,
             weight_rows, cal_week_rows, week_act_rows,
             streak_act_rows, streak_stats_rows, streak_ci_rows,
-            today_cals_rows,
+            weekly_steps_rows,
         ) = await asyncio.gather(
             asyncio.to_thread(bq_cache.query, client, actuals_sql),
             asyncio.to_thread(bq_cache.query, client, prev_week_sql),
@@ -1643,7 +1646,7 @@ async def _compute_goals_data(email: str) -> dict:
             asyncio.to_thread(bq_cache.query, client, streak_activity_sql),
             asyncio.to_thread(bq_cache.query, client, streak_stats_sql),
             asyncio.to_thread(bq_cache.query, client, streak_checkin_sql),
-            asyncio.to_thread(bq_cache.query, client, today_cals_sql),
+            asyncio.to_thread(bq_cache.query, client, weekly_steps_sql),
         )
     except Exception as exc:
         LOGGER.exception("Goals analytics BQ error: %s", exc)
@@ -1682,6 +1685,7 @@ async def _compute_goals_data(email: str) -> dict:
 
     actuals = _parse_actuals(actuals_rows)
     prev_week = _parse_actuals(prev_week_rows)
+    actuals["steps"] = int(weekly_steps_rows[0]["total_steps"]) if weekly_steps_rows else 0
 
     weight_latest = None
     if weight_rows:
@@ -1703,15 +1707,6 @@ async def _compute_goals_data(email: str) -> dict:
             "net": total_burned - total_eaten if total_burned and total_eaten else None,
         }
 
-    cals_today = None
-    if today_cals_rows:
-        r = today_cals_rows[0]
-        goal = int(r["cals_goal"]) if r["cals_goal"] else None
-        if goal:
-            cals_today = {
-                "actual": int(r["cals_total"]) if r["cals_total"] else 0,
-                "goal": goal,
-            }
 
     def _parse_history_row(r):
         cycling_km = float(r["cycling_km"])
@@ -1802,7 +1797,6 @@ async def _compute_goals_data(email: str) -> dict:
         "prev_week": prev_week,
         "weight_latest": weight_latest,
         "calories_week": calories_week,
-        "cals_today": cals_today,
         "history": history,
         "this_week_activities": this_week_activities,
         "week_start": week_start_date.isoformat(),
