@@ -56,6 +56,7 @@ DEFAULTS: dict[str, Any] = {
         "weekly_cycling_km":   {"target": 0.0, "enabled": False},
         "weekly_running_km":   {"target": 0.0, "enabled": False},
         "weekly_hours":        {"target": 0.0, "enabled": False},
+        "weekly_active_days":  {"target": 5,   "enabled": False},
         "target_weight_kg":    {"target": 85.0, "enabled": True},
         "target_body_fat_pct": {"target": 0.0, "enabled": False},
     },
@@ -65,11 +66,6 @@ DEFAULTS: dict[str, Any] = {
         "streak_bests": {},
     },
 }
-
-# KPIs dropped from DEFAULTS but that may still be sitting in an already-saved
-# profile.json blob (e.g. weekly_active_days — capped at 5, never a meaningful
-# goal) — stripped on every load so retiring one here fully removes it.
-_RETIRED_KPI_KEYS = {"weekly_active_days"}
 
 _cache: dict[str, Any] | None = None
 _cache_ts: float = 0.0
@@ -104,8 +100,6 @@ def load() -> dict[str, Any]:
             # Deep-merge kpis so new default KPI entries aren't dropped when
             # the saved blob predates them being added to DEFAULTS.
             merged["kpis"] = {**DEFAULTS.get("kpis", {}), **data.get("kpis", {})}
-            for k in _RETIRED_KPI_KEYS:
-                merged["kpis"].pop(k, None)
             # Same treatment for location — old blobs predate this field.
             merged["location"] = {**DEFAULTS.get("location", {}), **data.get("location", {})}
             _cache = merged
