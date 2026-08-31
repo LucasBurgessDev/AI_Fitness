@@ -376,7 +376,7 @@ async def settings_post(request: Request):
 
     _KPI_KEYS = [
         "weekly_cycling_km", "weekly_running_km", "weekly_hours",
-        "target_weight_kg", "target_body_fat_pct",
+        "weekly_active_days", "target_weight_kg", "target_body_fat_pct",
     ]
     kpis = {}
     for k in _KPI_KEYS:
