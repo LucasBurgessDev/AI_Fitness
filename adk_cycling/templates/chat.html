@@ -10,10 +10,16 @@
 <style>
   body { height: 100dvh; overflow: hidden; min-height: 0; }
 
-  /* On mobile the bottom-nav is fixed ~72px tall — shrink the body to end above it */
+  /* On mobile the bottom-nav is fixed ~72px tall — shrink the body to end above it.
+     base.html's .bottom-nav-spacer reserves that same 72px again as a normal-flow
+     block (it's meant for pages that scroll the whole body under the fixed nav) —
+     on this fixed-height flex layout that double-counts the gap, leaving the input
+     bar floating with an empty band below it instead of sitting flush above the
+     nav. Hide the spacer here since the body-height shrink above already does its job. */
   @media (max-width: 640px) {
     body { height: calc(100dvh - 72px - env(safe-area-inset-bottom, 0px)); }
     #input-area { padding-bottom: 0.7rem; }
+    .bottom-nav-spacer { display: none; }
   }
 
   /* ---- Main layout ---- */
@@ -331,17 +337,16 @@
   }
 
   // ---- Session management ----
-  let activeSessionId = localStorage.getItem('cc-session-id') || null;
+  // Landing on /chat always starts a fresh, empty conversation — past
+  // conversations stay one click away in the sidebar, but none is auto-resumed
+  // on load. No session is created (or persisted) until the user actually sends
+  // a message — see sendMessage()'s lazy newChat() call below.
+  let activeSessionId = null;
 
   async function initSessions() {
     const sessions = await fetchSessions();
-    if (sessions.length === 0) { await newChat(); return; }
-    if (!activeSessionId || !sessions.some(s => s.session_id === activeSessionId)) {
-      activeSessionId = sessions[0].session_id;
-      localStorage.setItem('cc-session-id', activeSessionId);
-    }
     renderSessionList(sessions);
-    await loadMessages(activeSessionId);
+    showWelcome();
   }
 
   async function fetchSessions() {
@@ -404,14 +409,13 @@
       if (!r.ok) return;
       const d = await r.json();
       activeSessionId = d.session_id;
-      localStorage.setItem('cc-session-id', activeSessionId);
       showWelcome(); await loadSessionList();
     } catch(e) { console.error('newChat', e); }
   }
 
   async function switchSession(id) {
     if (id === activeSessionId) { closeSidebar(); return; }
-    activeSessionId = id; localStorage.setItem('cc-session-id', id);
+    activeSessionId = id;
     document.querySelectorAll('.session-item').forEach(el => {
       el.classList.toggle('active', el.dataset.id === id);
       el.querySelector('.session-title').style.color = el.dataset.id === id ? 'var(--accent)' : '';
