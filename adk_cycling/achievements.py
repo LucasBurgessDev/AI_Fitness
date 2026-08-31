@@ -25,8 +25,9 @@ from typing import Any
 
 # weekly_hours is intentionally excluded — mirrors goals.html's KPI_META,
 # which drops it because the user prefers not to see it as a KPI ring.
-# weekly_active_days is also excluded — a week only has 7 days and the target
-# has always topped out at 5, so it's not a meaningful goal to track.
+# weekly_active_days is a real KPI ring on the goals page (see goals.html's own
+# KPI_META) but is deliberately left out here — the user doesn't want it to
+# fire achievements/badges, just track as an ordinary weekly goal.
 KPI_META: dict[str, dict[str, Any]] = {
     "weekly_cycling_km":   {"icon": "🚴", "label": "Weekly Cycling Goal", "unit": "km", "is_target": False},
     "weekly_running_km":   {"icon": "🏃", "label": "Weekly Running Goal", "unit": "km", "is_target": False},

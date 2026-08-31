@@ -122,6 +122,14 @@
     <div class="card">
       <h3>Weekly Targets</h3>
       <div class="kpi-row">
+        <input type="checkbox" name="kpi_weekly_active_days_enabled" value="true"
+          {% if profile.kpis and profile.kpis.weekly_active_days and profile.kpis.weekly_active_days.enabled %}checked{% endif %} />
+        <label class="kpi-label">Active days</label>
+        <input type="number" name="kpi_weekly_active_days_target" min="0" max="7" step="1"
+          value="{{ (profile.kpis or {}).get('weekly_active_days', {}).get('target', 5) }}" />
+        <span class="kpi-unit">days/wk</span>
+      </div>
+      <div class="kpi-row">
         <input type="checkbox" name="kpi_weekly_hours_enabled" value="true"
           {% if profile.kpis and profile.kpis.weekly_hours and profile.kpis.weekly_hours.enabled %}checked{% endif %} />
         <label class="kpi-label">Active time</label>

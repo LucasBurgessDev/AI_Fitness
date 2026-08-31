@@ -8,7 +8,15 @@
 
 {% block page_style %}
 <style>
-  body { height: 100dvh; overflow: hidden; min-height: 0; }
+  /* var(--app-height) (set in base.html's early head script from the real,
+     JS-measured window/visualViewport height) is preferred over 100dvh — an
+     installed PWA's standalone mode has no browser chrome for dvh to track,
+     and can report a wrong dvh value on the very first paint of a fresh/cold
+     navigation (e.g. following a link into /chat from another page) before
+     it corrects itself. 100dvh stays as the fallback for the brief instant
+     before that script runs, and for any browser that doesn't support the
+     custom property. */
+  body { height: var(--app-height, 100dvh); overflow: hidden; min-height: 0; }
 
   /* On mobile the bottom-nav is fixed ~72px tall — shrink the body to end above it.
      base.html's .bottom-nav-spacer reserves that same 72px again as a normal-flow
@@ -17,7 +25,7 @@
      bar floating with an empty band below it instead of sitting flush above the
      nav. Hide the spacer here since the body-height shrink above already does its job. */
   @media (max-width: 640px) {
-    body { height: calc(100dvh - 72px - env(safe-area-inset-bottom, 0px)); }
+    body { height: calc(var(--app-height, 100dvh) - 72px - env(safe-area-inset-bottom, 0px)); }
     #input-area { padding-bottom: 0.7rem; }
     .bottom-nav-spacer { display: none; }
   }

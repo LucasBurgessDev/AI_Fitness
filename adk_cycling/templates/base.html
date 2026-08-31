@@ -18,6 +18,22 @@
     (function() {
       var t = localStorage.getItem('cc-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', t);
+
+      // iOS's installed-PWA ("Add to Home Screen") standalone mode has no
+      // browser chrome to dynamically show/hide, so `dvh` — designed to track
+      // that chrome — can report a wrong height on the very first paint of a
+      // fresh/cold navigation (e.g. following a link into /chat from another
+      // page), before correcting itself. Measure the real viewport with JS
+      // instead and expose it as --app-height for pages that need an exact-fit
+      // layout, updating it on resize/orientation change too.
+      function setAppHeight() {
+        var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+        document.documentElement.style.setProperty('--app-height', h + 'px');
+      }
+      setAppHeight();
+      window.addEventListener('resize', setAppHeight);
+      window.addEventListener('orientationchange', setAppHeight);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', setAppHeight);
     })();
   </script>
   <style>
