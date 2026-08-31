@@ -499,14 +499,15 @@
       </div>`;
   }
 
-  function renderRings(kpis, actuals, weightLatest, history) {
+  function renderRings(kpis, actuals, weightLatest, history, calsToday) {
     anyGoalHitThisRender = false;
     const grid = document.getElementById('kpi-grid');
     const enabledKeys = Object.entries(kpis || {})
       .filter(([k, v]) => v.enabled && KPI_META[k])
       .map(([k]) => k);
 
-    document.getElementById('empty-kpis').style.display = enabledKeys.length === 0 ? '' : 'none';
+    document.getElementById('empty-kpis').style.display =
+      (enabledKeys.length === 0 && !calsToday) ? '' : 'none';
     grid.innerHTML = '';
 
     enabledKeys.forEach(key => {
@@ -612,6 +613,32 @@
         });
       }
     });
+
+    // Calorie Goal is Garmin's own daily burn goal, not a user-configured
+    // target from Settings — shown alongside the other rings whenever today's
+    // data is available, independent of the kpis enable/target system above.
+    if (calsToday && calsToday.goal > 0) {
+      const pct = Math.min(100, Math.round((calsToday.actual / calsToday.goal) * 100));
+      const color = ringColor(pct);
+      const hitGoal = pct >= 100;
+      const card = document.createElement('div');
+      card.className = 'kpi-card' + (hitGoal ? ' kpi-card--hit' : '');
+      card.innerHTML = `
+        ${hitGoal ? '<span class="kpi-card-trophy">🏆</span>' : ''}
+        <div class="kpi-label">Calorie Goal</div>
+        <div class="ring-wrap">
+          <div class="ring" id="ring-cals_today" style="--ring-deg:${Math.round(pct * 3.6)}deg;--ring-color:${color};">
+            <div class="ring-inner">
+              <div class="ring-pct" style="color:${color}">${pct}%</div>
+              <div class="ring-actual">${calsToday.actual} kcal</div>
+            </div>
+          </div>
+        </div>
+        <div class="ring-actual" style="font-size:0.7rem">Today's goal: ${calsToday.goal} kcal</div>
+      `;
+      grid.appendChild(card);
+      if (hitGoal) anyGoalHitThisRender = true;
+    }
   }
 
   function actBadge(type) {
@@ -785,7 +812,7 @@
     renderWeekBar(data.actuals, data.prev_week || {}, data.weight_latest, data.week_start, data.week_end);
     renderStreaks(data.streaks);
     renderCalorieStrip(data.calories_week);
-    renderRings(data.kpis, data.actuals, data.weight_latest, data.history);
+    renderRings(data.kpis, data.actuals, data.weight_latest, data.history, data.cals_today);
     renderActivities(data.this_week_activities);
     renderBadgeShelf(data.achievements);
     document.getElementById('loading').style.display = 'none';
@@ -794,7 +821,9 @@
     triggerAchievementCelebrations(data.achievements);
   }
 
-  function reloadCharts() { if (_data) renderRings(_data.kpis, _data.actuals, _data.weight_latest, _data.history); }
+  function reloadCharts() {
+    if (_data) renderRings(_data.kpis, _data.actuals, _data.weight_latest, _data.history, _data.cals_today);
+  }
 
   async function loadData() {
     try {

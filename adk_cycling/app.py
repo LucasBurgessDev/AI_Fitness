@@ -1593,6 +1593,16 @@ async def _compute_goals_data(email: str) -> dict:
     ORDER BY date DESC
     """
 
+    # Garmin sets its own daily calorie-burn goal (cals_goal) — unlike the other
+    # KPI rings, which track a user-configured weekly/target value from Settings,
+    # this one just mirrors whatever Garmin's watch/app already decided for today.
+    today_cals_sql = f"""
+    SELECT cals_total, cals_goal
+    FROM `{PROJECT_ID}.garmin.garmin_stats`
+    WHERE date = FORMAT_DATE('%Y-%m-%d', CURRENT_DATE())
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY date ORDER BY run_date DESC, timestamp DESC) = 1
+    """
+
     streak_activity_sql = f"""
     SELECT DISTINCT date FROM `{PROJECT_ID}.garmin.garmin_activities`
     WHERE date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY))
@@ -1622,6 +1632,7 @@ async def _compute_goals_data(email: str) -> dict:
             actuals_rows, prev_week_rows, history_rows,
             weight_rows, cal_week_rows, week_act_rows,
             streak_act_rows, streak_stats_rows, streak_ci_rows,
+            today_cals_rows,
         ) = await asyncio.gather(
             asyncio.to_thread(bq_cache.query, client, actuals_sql),
             asyncio.to_thread(bq_cache.query, client, prev_week_sql),
@@ -1632,6 +1643,7 @@ async def _compute_goals_data(email: str) -> dict:
             asyncio.to_thread(bq_cache.query, client, streak_activity_sql),
             asyncio.to_thread(bq_cache.query, client, streak_stats_sql),
             asyncio.to_thread(bq_cache.query, client, streak_checkin_sql),
+            asyncio.to_thread(bq_cache.query, client, today_cals_sql),
         )
     except Exception as exc:
         LOGGER.exception("Goals analytics BQ error: %s", exc)
@@ -1690,6 +1702,16 @@ async def _compute_goals_data(email: str) -> dict:
             "total_eaten": total_eaten,
             "net": total_burned - total_eaten if total_burned and total_eaten else None,
         }
+
+    cals_today = None
+    if today_cals_rows:
+        r = today_cals_rows[0]
+        goal = int(r["cals_goal"]) if r["cals_goal"] else None
+        if goal:
+            cals_today = {
+                "actual": int(r["cals_total"]) if r["cals_total"] else 0,
+                "goal": goal,
+            }
 
     def _parse_history_row(r):
         cycling_km = float(r["cycling_km"])
@@ -1780,6 +1802,7 @@ async def _compute_goals_data(email: str) -> dict:
         "prev_week": prev_week,
         "weight_latest": weight_latest,
         "calories_week": calories_week,
+        "cals_today": cals_today,
         "history": history,
         "this_week_activities": this_week_activities,
         "week_start": week_start_date.isoformat(),
