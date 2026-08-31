@@ -31,6 +31,7 @@ from typing import Any
 KPI_META: dict[str, dict[str, Any]] = {
     "weekly_cycling_km":   {"icon": "🚴", "label": "Weekly Cycling Goal", "unit": "km", "is_target": False},
     "weekly_running_km":   {"icon": "🏃", "label": "Weekly Running Goal", "unit": "km", "is_target": False},
+    "weekly_steps":        {"icon": "👟", "label": "Weekly Steps Goal", "unit": "steps", "is_target": False},
     "target_weight_kg":    {"icon": "⚖️", "label": "Weight Target", "unit": "kg", "is_target": True},
     "target_body_fat_pct": {"icon": "📉", "label": "Body Fat Target", "unit": "%", "is_target": True},
 }
@@ -45,6 +46,7 @@ STREAK_META: dict[str, dict[str, str]] = {
 _ACTUALS_KEY = {
     "weekly_cycling_km": "cycling_km_adjusted",
     "weekly_running_km": "running_km_adjusted",
+    "weekly_steps": "steps",
 }
 
 
