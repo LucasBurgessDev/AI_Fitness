@@ -25,10 +25,11 @@ from typing import Any
 
 # weekly_hours is intentionally excluded — mirrors goals.html's KPI_META,
 # which drops it because the user prefers not to see it as a KPI ring.
+# weekly_active_days is also excluded — a week only has 7 days and the target
+# has always topped out at 5, so it's not a meaningful goal to track.
 KPI_META: dict[str, dict[str, Any]] = {
     "weekly_cycling_km":   {"icon": "🚴", "label": "Weekly Cycling Goal", "unit": "km", "is_target": False},
     "weekly_running_km":   {"icon": "🏃", "label": "Weekly Running Goal", "unit": "km", "is_target": False},
-    "weekly_active_days":  {"icon": "📅", "label": "Weekly Active Days Goal", "unit": "days", "is_target": False},
     "target_weight_kg":    {"icon": "⚖️", "label": "Weight Target", "unit": "kg", "is_target": True},
     "target_body_fat_pct": {"icon": "📉", "label": "Body Fat Target", "unit": "%", "is_target": True},
 }
@@ -43,7 +44,6 @@ STREAK_META: dict[str, dict[str, str]] = {
 _ACTUALS_KEY = {
     "weekly_cycling_km": "cycling_km_adjusted",
     "weekly_running_km": "running_km_adjusted",
-    "weekly_active_days": "active_days",
 }
 
 

@@ -376,7 +376,7 @@ async def settings_post(request: Request):
 
     _KPI_KEYS = [
         "weekly_cycling_km", "weekly_running_km", "weekly_hours",
-        "weekly_active_days", "target_weight_kg", "target_body_fat_pct",
+        "target_weight_kg", "target_body_fat_pct",
     ]
     kpis = {}
     for k in _KPI_KEYS:
@@ -1398,9 +1398,13 @@ def _load_achievement_badges(
         for whatever the current-best-in-window is, so a type that hasn't yet
         had a *newly detected* PB since this feature shipped still shows a badge
         immediately instead of waiting for the next 30-min poll to notice one.
-    Whichever source has the larger value wins; ties prefer the live value
-    since its date is always present. A type is only skipped if neither source
-    has both a value and a date to show — no dates are ever fabricated.
+    Whichever source has the larger value wins; on a tie, the badge shows the
+    *earlier* of the two dates — the badge is "when you first reached this
+    streak length", not whichever source happened to be checked most recently.
+    A type is only skipped if neither source has both a value and a date to
+    show — no dates are ever fabricated. STREAK_META has exactly one entry per
+    streak type and this loop appends at most once per key, so the result is
+    guaranteed to contain at most one badge per streak type.
 
     Weekly-goal/target hits are different in kind (each week's hit is its own
     moment, not a running record to overwrite) so those still come from the
@@ -1417,17 +1421,21 @@ def _load_achievement_badges(
         persisted = (achievement_state.get("streak_bests") or {}).get(key)
         persisted_value = persisted.get("value") if isinstance(persisted, dict) else persisted
         persisted_date = persisted.get("date") if isinstance(persisted, dict) else None
+        persisted_value = persisted_value or 0
 
         live = streaks.get(key) or {}
         live_value = live.get("best") or 0
         live_date = live.get("best_date")
 
-        if live_value and live_value >= (persisted_value or 0):
+        if live_value > persisted_value:
             value, badge_date = live_value, live_date
-        elif persisted_value and persisted_date:
+        elif persisted_value > live_value:
             value, badge_date = persisted_value, persisted_date
+        elif live_value > 0:  # tied and non-zero — badge is the earliest reach of this length
+            dates = [d for d in (live_date, persisted_date) if d]
+            value, badge_date = live_value, (min(dates) if dates else None)
         else:
-            continue  # neither source has both a value and a real date yet
+            continue  # both zero — nothing to show
 
         if not value or not badge_date:
             continue
@@ -1460,8 +1468,8 @@ def _load_achievement_badges(
                 ctx = _json.loads(r["context"]) if r["context"] else {}
             except Exception:
                 ctx = {}
-            if ctx.get("type") == "streak":
-                continue  # superseded by the persistent badge above
+            if ctx.get("type") != "kpi":
+                continue  # streak badges come from the persistent source above only
             kpi_badges.append({
                 "id": r["id"],
                 "date": str(r["date"]),
@@ -1727,7 +1735,11 @@ async def _compute_goals_data(email: str) -> dict:
                 if run == 0:
                     run_end_offset = i  # first (most-recent) day of this run
                 run += 1
-                if run > best:
+                # >= (not >) so that when two runs in the window tie for best
+                # length, the later-processed one — which, since we walk from
+                # today backwards, is chronologically the EARLIER run — wins.
+                # Badges show when a streak length was first reached.
+                if run >= best:
                     best = run
                     best_end_offset = run_end_offset
                 if in_current:
