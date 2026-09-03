@@ -537,6 +537,69 @@ def mark_session_complete(session_id: str, note: str = "") -> str:
     return "Logged — nice work."
 
 
+def adjust_session(date: str, title: str = "", duration_min: int = 0, note: str = "") -> str:
+    """Adjust one day's planned session to fit real life — schedule changed, only have
+    an hour today, want a longer ride Saturday, no longer commuting so a bigger slot
+    opened up, etc. A pure logistics tweak to a single day, not a plan regeneration.
+
+    Use this — not create_training_plan — whenever the user wants to move session
+    details around for schedule/time/logistics reasons rather than change their actual
+    goal. create_training_plan fully rebuilds the whole plan (re-baselined, new session
+    list) and should be reserved for genuine goal changes, not day-to-day flexibility.
+    If the user mentions several days at once (e.g. "Tuesday at 5:30, Saturday a 2hr
+    ride, Sunday a recovery ride"), call this once per day.
+
+    Args:
+        date: YYYY-MM-DD — the day whose session to adjust. Call get_training_plan
+              first if you need to confirm which date a day-of-week like "Saturday"
+              resolves to.
+        title: New plain-language title, e.g. "2-hour ride" or "Recovery spin".
+               Leave empty to keep the existing title.
+        duration_min: New duration in minutes. Leave 0 to keep the existing duration.
+        note: Optional context, e.g. "moved earlier — no longer commuting".
+
+    Returns:
+        Confirmation with the updated session, or an error message if no active plan
+        or no session exists on that date.
+    """
+    import plan_store
+
+    plan = plan_store.load()
+    if not plan.get("active"):
+        return "No active training plan."
+
+    updated, found, result_line = [], False, ""
+    for s in plan["sessions"]:
+        if s.get("date") != date:
+            updated.append(s)
+            continue
+        found = True
+        s = dict(s)
+        changed = bool(title) or duration_min > 0
+        if title:
+            s["title"] = title
+        if duration_min > 0:
+            s["target_duration_min"] = duration_min
+        if note:
+            s["note"] = note
+        if changed:
+            # No longer matches the generator's heuristic type/load — mark it a manual
+            # override so progress tracking treats it as a real session (not "rest")
+            # without pretending to know its training-load contribution.
+            s["session_type"] = "custom"
+            s["target_load"] = None
+            if s["status"] != "completed":
+                s["status"] = "pending"
+        dur = f" ({s['target_duration_min']} min)" if s.get("target_duration_min") else ""
+        result_line = f"{s['date']}: {s['title']}{dur}"
+        updated.append(s)
+
+    if not found:
+        return f"No planned session found on {date} — check the date falls within your plan."
+    plan_store.save({**plan, "sessions": updated})
+    return f"Updated. {result_line}"
+
+
 def link_session_calendar_event(session_id: str, event_id: str) -> str:
     """Record that a plan session already has a Google Calendar event, so it doesn't
     get duplicated or orphaned later. Call this right after create_training_event
@@ -626,8 +689,12 @@ def _auto_save_insights(
             "or any response that doesn't contain a specific memorable insight about this person."
         )
 
+        # gemini-2.0-flash 404s on Vertex AI's "global" location in this project
+        # (confirmed in prod logs — every single call here was failing silently);
+        # gemini-2.5-flash is the model the main agent already uses successfully
+        # under the same GOOGLE_GENAI_USE_VERTEXAI/GOOGLE_CLOUD_LOCATION=global config.
         client = genai.Client()
-        resp = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         text = resp.text.strip()
 
         # Strip markdown code fences if the model wraps the JSON
@@ -883,6 +950,7 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             FunctionTool(func=suggest_next_session),
             FunctionTool(func=get_weather_forecast),
             FunctionTool(func=mark_session_complete),
+            FunctionTool(func=adjust_session),
             FunctionTool(func=link_session_calendar_event),
         ],
     )
