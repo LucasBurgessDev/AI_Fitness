@@ -85,10 +85,18 @@ def get_baseline_fitness(ftp_watts: float) -> dict[str, Any]:
     }
 
 
-def _close_out_previous_plan(old_plan: dict, email: str) -> Optional[str]:
-    """If an old plan is active, log a short continuity note to coaching_log before
-    it's replaced, and return a plain-language summary the caller can weave into
-    its own response — so switching goals never just silently erases the old one.
+def _close_out_previous_plan(old_plan: dict, new_plan: dict, email: str) -> Optional[str]:
+    """If an old plan is active, log a continuity note to coaching_log describing the
+    transition, and return a plain-language summary the caller can weave into its own
+    response — so switching goals never just silently erases the old one.
+
+    Critical: the log entry must state that a NEW plan is now active, not just that the
+    old one ended — a chat session's auto-injected coaching-log preamble (see agent.py's
+    _prepare_session) reads entries like this out of context, and a message that only
+    says "wrapped up X" reads as "no plan exists now" to a model skimming it, causing it
+    to tell the user there's no active plan even though one was just created. (Root
+    cause of a real incident: confirmed via the actual chat transcript and the exact
+    coaching_log row it was reading — see git history for this comment for detail.)
 
     Mirrors the achievement/milestone logging convention (system-training-plan
     session_id, goal_progress category) already used elsewhere in this feature.
@@ -96,19 +104,26 @@ def _close_out_previous_plan(old_plan: dict, email: str) -> Optional[str]:
     if not old_plan.get("active"):
         return None
 
-    goal = old_plan.get("goal") or {}
+    old_goal = old_plan.get("goal") or {}
     progress = old_plan.get("progress") or {}
     adherence = progress.get("overall_adherence_pct")
     trajectory_phrase = {
         "ahead": "ahead of pace", "on_track": "on track", "behind": "a bit behind pace",
     }.get(progress.get("trajectory_status"))
 
-    bits = [f'your goal of "{goal.get("raw_text", "your last plan")}"']
+    stats_bits = []
     if adherence is not None:
-        bits.append(f"{int(adherence)}% of sessions completed")
+        stats_bits.append(f"{int(adherence)}% of sessions completed")
     if trajectory_phrase:
-        bits.append(trajectory_phrase)
-    summary = "Wrapped up " + ", ".join(bits) + " — starting fresh with a new goal."
+        stats_bits.append(trajectory_phrase)
+    stats = f" ({', '.join(stats_bits)})" if stats_bits else ""
+
+    new_goal = new_plan.get("goal") or {}
+    summary = (
+        f'Replaced your goal of "{old_goal.get("raw_text", "your last plan")}"{stats} '
+        f'with a new active plan: "{new_goal.get("raw_text", "")}" '
+        f'(target {new_goal.get("target_date", "")}).'
+    )
 
     try:
         import json as _json
@@ -117,7 +132,7 @@ def _close_out_previous_plan(old_plan: dict, email: str) -> Optional[str]:
             PROJECT_ID, "system-training-plan", email,
             category="goal_progress",
             content=summary,
-            context=_json.dumps({"old_goal": goal, "old_progress": progress}),
+            context=_json.dumps({"old_goal": old_goal, "old_progress": progress, "new_goal": new_goal}),
         )
     except Exception as exc:
         LOGGER.warning("Could not log outgoing plan summary: %s", exc)
@@ -149,7 +164,6 @@ def build_and_save_plan(goal_text: str, target_date: date, discipline: str = "cy
     baseline = get_baseline_fitness(ftp)
 
     old_plan = plan_store.load()
-    outgoing_summary = _close_out_previous_plan(old_plan, email)
 
     goal_type = "ftp_target" if "ftp" in goal_text.lower() and discipline == "cycling" else "event_time"
     generated = plan_generator.generate_plan(
@@ -164,6 +178,11 @@ def build_and_save_plan(goal_text: str, target_date: date, discipline: str = "cy
         "plan_id": f"plan-{date.today().isoformat()}",
         "created_at": datetime.utcnow().isoformat(),
     }
+
+    # Log the transition (old goal's fate + new goal's identity) *after* the new plan
+    # is built, so the one coaching_log entry unambiguously states a plan IS active now.
+    outgoing_summary = _close_out_previous_plan(old_plan, plan, email)
+
     plan_store.save(plan)
     return {**plan, "outgoing_summary": outgoing_summary}
 
