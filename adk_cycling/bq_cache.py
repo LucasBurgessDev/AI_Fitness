@@ -15,7 +15,12 @@ from typing import Optional
 
 LOGGER = logging.getLogger(__name__)
 
-_TTL_SECONDS: int = int(os.getenv("BQ_CACHE_TTL", "3600"))  # default 1 hour
+_TTL_SECONDS: int = int(os.getenv("BQ_CACHE_TTL", "300"))  # default 5 min
+
+# The automatic hourly Garmin pull (Cloud Scheduler -> garmin-fitness-daily job)
+# writes fresh rows straight to BigQuery and has no way to clear this cache (only
+# the in-app "Sync Now" button and check-in/calorie forms call bq_cache.clear()).
+# A short TTL bounds how stale the dashboard can get between those automatic runs.
 
 _UNRECOGNIZED_NAME_RE = re.compile(r"Unrecognized name: (\w+)")
 
