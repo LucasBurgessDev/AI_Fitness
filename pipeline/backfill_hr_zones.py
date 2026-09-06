@@ -31,7 +31,7 @@ PROJECT_ID = os.environ.get("BQ_PROJECT_ID", "")
 GARTH_DIR  = os.environ.get("GARTH_DIR", ".garth")
 
 CYCLING_TYPES = (
-    "cycling", "road_cycling", "gravel_cycling", "mountain_biking",
+    "cycling", "road_cycling", "road_biking", "gravel_cycling", "mountain_biking",
     "indoor_cycling", "virtual_ride", "spinning",
 )
 

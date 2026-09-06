@@ -1200,7 +1200,7 @@ async def api_training_analytics(request: Request, days: int = 180):
     }
 
     cycling_types = {
-        "cycling", "road_cycling", "gravel_cycling", "mountain_biking",
+        "cycling", "road_cycling", "road_biking", "gravel_cycling", "mountain_biking",
         "indoor_cycling", "virtual_ride", "spinning",
     }
 
@@ -1290,7 +1290,7 @@ async def api_cycling_stats(request: Request, weeks: int = 8):
       aerobic_te, anaerobic_te, aerobic_decoupling_pct
     FROM `{PROJECT_ID}.garmin.garmin_activities`
     WHERE activity_type IN (
-      'cycling','road_cycling','gravel_cycling','mountain_biking',
+      'cycling','road_cycling','road_biking','gravel_cycling','mountain_biking',
       'indoor_cycling','virtual_ride','spinning'
     )
     AND date >= FORMAT_DATE('%Y-%m-%d', DATE_SUB(CURRENT_DATE(), INTERVAL {days} DAY))
@@ -1492,7 +1492,7 @@ async def _compute_goals_data(email: str) -> dict:
     p = profile_store.load()
     kpis = p.get("kpis", {})
 
-    CYCLING_TYPES = "('cycling','road_cycling','gravel_cycling','mountain_biking','indoor_cycling','virtual_ride','spinning')"
+    CYCLING_TYPES = "('cycling','road_cycling','road_biking','gravel_cycling','mountain_biking','indoor_cycling','virtual_ride','spinning')"
     RUNNING_TYPES = "('running','treadmill_running','trail_running')"
 
     actuals_sql = f"""
@@ -1934,6 +1934,59 @@ def _cloud_run_token() -> str:
     return creds.token
 
 
+def _wait_for_execution_and_warm_cache(base: str, headers: dict, trigger_time, max_wait_s: int = 480) -> None:
+    """Poll the job's executions until the one we just triggered actually
+    completes (or max_wait_s elapses), then clear + re-warm the BQ cache.
+
+    Replaces a fixed 180s delay guess: a real run was traced end-to-end and
+    took ~230s from trigger to its BigQuery write landing, so the old guess
+    could (and did) fire before the new data existed, re-warming the cache
+    with stale pre-sync results for the rest of its TTL. Runs in a background
+    thread, so plain synchronous httpx (not the route's AsyncClient).
+
+    `trigger_time` guards against matching a *previous* execution that
+    happens to already show completionTime in an early poll, before the API
+    has registered the new one yet — only an execution created at or after
+    the trigger counts.
+    """
+    import time as _time
+    from datetime import datetime as _datetime
+    import httpx as _httpx
+    import bq_cache
+    from agent import warm_bq_cache
+
+    deadline = _time.monotonic() + max_wait_s
+    completed = False
+    with _httpx.Client(timeout=15) as client:
+        while _time.monotonic() < deadline:
+            _time.sleep(10)
+            try:
+                resp = client.get(f"{base}/executions", headers=headers, params={"pageSize": 5})
+                if resp.status_code != 200:
+                    continue
+                for ex in resp.json().get("executions", []):
+                    create_time_str = ex.get("createTime")
+                    if not create_time_str or not ex.get("completionTime"):
+                        continue
+                    create_time = _datetime.fromisoformat(create_time_str.replace("Z", "+00:00"))
+                    if create_time >= trigger_time:
+                        completed = True
+                        break
+            except Exception as exc:
+                LOGGER.warning("Polling sync execution failed (will retry): %s", exc)
+            if completed:
+                break
+
+    if not completed:
+        LOGGER.warning("Gave up waiting for Garmin sync execution after %ss — warming cache anyway", max_wait_s)
+
+    bq_cache.clear()
+    try:
+        warm_bq_cache()
+    except Exception as exc:
+        LOGGER.warning("BQ cache warm after sync failed: %s", exc)
+
+
 @app.post("/api/garmin/sync")
 async def garmin_sync(request: Request):
     """Trigger the Garmin data-pull Cloud Run Job (max 1 concurrent execution)."""
@@ -1967,14 +2020,20 @@ async def garmin_sync(request: Request):
                 LOGGER.warning("Could not list executions: %s %s", list_resp.status_code, list_resp.text)
 
             # Trigger a new execution
+            from datetime import datetime, timezone
+            trigger_time = datetime.now(timezone.utc)
             run_resp = await client.post(f"{base}:run", headers=headers, json={})
             if run_resp.status_code in (200, 202):
                 import threading
                 import bq_cache
-                from agent import warm_bq_cache
                 bq_cache.clear()
-                # Re-warm the cache ~3 minutes later, once the pipeline has finished
-                threading.Thread(target=warm_bq_cache, kwargs={"delay_seconds": 180}, daemon=True).start()
+                # Re-warm once the triggered execution actually completes, not a
+                # fixed-delay guess — see _wait_for_execution_and_warm_cache.
+                threading.Thread(
+                    target=_wait_for_execution_and_warm_cache,
+                    args=(base, headers, trigger_time),
+                    daemon=True,
+                ).start()
                 return JSONResponse({"status": "triggered", "message": "Garmin data sync started. This usually takes 1–2 minutes."})
             else:
                 LOGGER.error("Cloud Run job trigger failed: %s %s", run_resp.status_code, run_resp.text)
