@@ -5,6 +5,14 @@ on:
     branches:
       - main
 
+# See deploy-dev.yml's identical guard: two pushes to main close together used
+# to race on the same Cloud Run resources and could ABORT with a resource
+# version conflict. Queue instead of cancel, so the second push's commit still
+# deploys once the first finishes.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: health-data-482722
   REGION: europe-west2

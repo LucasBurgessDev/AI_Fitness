@@ -5,6 +5,17 @@ on:
     branches:
       - dev
 
+# Two merges landing on dev close together (e.g. two PRs merged back-to-back)
+# used to fire two of these workflows in parallel, both deploying/patching the
+# same Cloud Run resources — one would win, the other would hit Cloud Run's
+# optimistic-concurrency check and fail with an ABORTED "Conflict for resource"
+# error (confirmed in a real run: two merges 4s apart on 2026-09-06). Queuing
+# instead of cancelling means the second run still deploys its own (newer)
+# commit once the first finishes, rather than being dropped.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: health-data-482722
   REGION: europe-west2

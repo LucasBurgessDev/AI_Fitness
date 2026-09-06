@@ -2002,8 +2002,14 @@ async def startup_event():
     threading.Thread(target=warm_bq_cache, daemon=True).start()
 
 
-@app.get("/health")
+@app.get("/healthz")
 async def health():
+    # Was "/health" — that path is already taken by health_analytics_page above
+    # (the user-facing Health tab, linked from base.html and push notifications),
+    # registered first, so it always won the route match and this liveness check
+    # was permanently unreachable (redirected to /login like every other page
+    # instead of returning {"status": "ok"}). Renamed to the conventional
+    # /healthz path instead of touching the user-facing route.
     return {"status": "ok"}
 
 
