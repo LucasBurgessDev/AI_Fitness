@@ -32,7 +32,7 @@ PROJECT_ID = os.environ.get("PROJECT_ID", "health-data-482722")
 # fragments — not worth the risk of touching working, already-deployed code
 # for a pure refactor.
 CYCLING_ACTIVITY_TYPES = {
-    "cycling", "road_cycling", "gravel_cycling", "mountain_biking",
+    "cycling", "road_cycling", "road_biking", "gravel_cycling", "mountain_biking",
     "indoor_cycling", "virtual_ride", "spinning",
 }
 RUNNING_ACTIVITY_TYPES = {"running", "treadmill_running", "trail_running"}

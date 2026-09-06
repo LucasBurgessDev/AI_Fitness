@@ -617,7 +617,7 @@
   }
 
   function actBadge(type) {
-    if (['virtual_ride','indoor_cycling','road_cycling','gravel_cycling','cycling','spinning','mountain_biking'].includes(type))
+    if (['virtual_ride','indoor_cycling','road_cycling','road_biking','gravel_cycling','cycling','spinning','mountain_biking'].includes(type))
       return `<span class="badge badge-cycling">${type.replace(/_/g,' ')}</span>`;
     if (['running','treadmill_running','trail_running'].includes(type))
       return `<span class="badge badge-running">${type.replace(/_/g,' ')}</span>`;

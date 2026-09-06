@@ -50,6 +50,7 @@ FTP_DETAIL_SLEEP_S = float(os.getenv("FTP_DETAIL_SLEEP_S", "0.10"))
 CYCLING_TYPE_KEYS = {
     "cycling",
     "road_cycling",
+    "road_biking",
     "gravel_cycling",
     "mountain_biking",
     "indoor_cycling",
