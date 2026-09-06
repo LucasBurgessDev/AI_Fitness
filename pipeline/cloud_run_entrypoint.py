@@ -119,21 +119,40 @@ def main() -> None:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
 
+    _time.sleep(3)
+
+    LOGGER.info("Starting garmin_training_plan_daily.py")
+    p_plan = subprocess.Popen(
+        ["python", "garmin_training_plan_daily.py"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+
     acts_stdout, acts_stderr = p_acts.communicate()
     stats_stdout, stats_stderr = p_stats.communicate()
+    plan_stdout, plan_stderr = p_plan.communicate()
 
     acts_out = (acts_stdout or "") + (acts_stderr or "")
     stats_out = (stats_stdout or "") + (stats_stderr or "")
+    plan_out = (plan_stdout or "") + (plan_stderr or "")
 
     LOGGER.info("garmin_activities_daily rc=%d\nSTDOUT+STDERR:\n%s",
                 p_acts.returncode, acts_out[-4000:])
     LOGGER.info("garmin_stats rc=%d\nSTDOUT+STDERR:\n%s",
                 p_stats.returncode, stats_out[-4000:])
+    LOGGER.info("garmin_training_plan rc=%d\nSTDOUT+STDERR:\n%s",
+                p_plan.returncode, plan_out[-4000:])
 
     if p_acts.returncode != 0 or circuit_breaker.contains_auth_failure(acts_out):
         auth_failed = True
     if p_stats.returncode != 0 or circuit_breaker.contains_auth_failure(stats_out):
         auth_failed = True
+    # Deliberately NOT included in auth_failed / circuit-breaker: the training-plan
+    # sync is slow-moving, non-essential data (see garmin_training_plan_daily.py's
+    # own rate-limit guard) — losing a sync cycle is low-stakes, unlike losing
+    # biometric/activity data, so a failure here never trips the breaker or skips
+    # the BQ/Drive steps below.
+    if p_plan.returncode != 0:
+        LOGGER.warning("Garmin training-plan sync failed (non-fatal, continuing)")
 
     if auth_failed:
         circuit_breaker.record_failure()

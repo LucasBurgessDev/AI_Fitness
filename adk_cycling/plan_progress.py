@@ -85,6 +85,27 @@ def get_baseline_fitness(ftp_watts: float) -> dict[str, Any]:
     }
 
 
+def ensure_garmin_plan_synced() -> None:
+    """When USE_GARMIN_COACHING_PLAN is on, refresh plan_store from the latest
+    cached Garmin Coach plan before anything reads it — cheap (a cached GCS
+    read most of the time; see garmin_plan_store.py), so safe to call at the
+    top of every plan-reading entry point (get_plan_progress, suggest_next_session,
+    agent.get_training_plan). No-ops entirely when the flag is off."""
+    import feature_flags
+    if not feature_flags.USE_GARMIN_COACHING_PLAN:
+        return
+    try:
+        import garmin_plan_sync
+        garmin_plan_sync.sync_from_garmin()
+    except Exception as exc:
+        LOGGER.warning("Garmin plan sync failed (continuing with cached plan): %s", exc)
+
+
+def _plan_source() -> str:
+    import feature_flags
+    return "garmin" if feature_flags.USE_GARMIN_COACHING_PLAN else "custom"
+
+
 def _close_out_previous_plan(old_plan: dict, new_plan: dict, email: str) -> Optional[str]:
     """If an old plan is active, log a continuity note to coaching_log describing the
     transition, and return a plain-language summary the caller can weave into its own
@@ -285,9 +306,10 @@ def get_plan_progress() -> dict[str, Any]:
     """Load the active plan, match sessions against real activities, compute
     weekly adherence + fitness trajectory, persist the update, and return a
     plain dict ready for both the chat tool and the /plan page."""
+    ensure_garmin_plan_synced()
     plan = plan_store.load()
     if not plan.get("active"):
-        return {"active": False}
+        return {"active": False, "source": _plan_source()}
 
     from google.cloud import bigquery
     import agent as agent_mod
@@ -343,6 +365,7 @@ def get_plan_progress() -> dict[str, Any]:
 
     return {
         "active": True,
+        "source": _plan_source(),
         "goal": plan["goal"],
         "current_phase": _current_phase(plan, today_iso),
         "progress": progress,
@@ -362,6 +385,7 @@ def _current_phase(plan: dict, today_iso: str) -> Optional[dict]:
 def suggest_next_session(equipment_text: str, location: dict[str, Any]) -> dict[str, Any]:
     """Return today's (or the next pending) planned session, adjusted for the
     weather forecast and available equipment. Pure decision rules, no LLM call."""
+    ensure_garmin_plan_synced()
     plan = plan_store.load()
     if not plan.get("active"):
         return {"active": False}

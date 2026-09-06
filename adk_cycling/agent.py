@@ -386,7 +386,9 @@ def get_training_plan() -> str:
     from datetime import date, timedelta
 
     import plan_store
+    import plan_progress
 
+    plan_progress.ensure_garmin_plan_synced()
     plan = plan_store.load()
     if not plan.get("active"):
         return "No active training plan."
@@ -449,7 +451,11 @@ def suggest_next_session() -> str:
     forecast and available equipment.
 
     Always call this instead of inventing a session yourself when the user asks "what
-    should I do today/next" and a plan is active.
+    should I do today/next" and a plan is active. Before confirming an outdoor session,
+    also check recent recovery signals (get_recent_stats/get_training_load) and suggest
+    easing off if they look off, and — using your own knowledge of the area, not a tool —
+    suggest a specific route matching the session's distance/duration from the user's
+    saved location.
 
     Returns:
         The recommended session with any weather/equipment adjustment explained in
@@ -633,12 +639,34 @@ def link_session_calendar_event(session_id: str, event_id: str) -> str:
 # Runner construction
 # ---------------------------------------------------------------------------
 
+_CREATE_PLAN_TOOL_NOTE = (
+    "- **`create_training_plan(goal_text, target_date, discipline)`** — builds a new plan, "
+    "and is also how you reformulate one when the actual **goal** changes (different "
+    "target date, harder/easier goal, switching discipline) — there's no separate edit "
+    "tool for that, just call this again with the updated goal. It fully replaces the "
+    "existing plan (re-baselined from current fitness) and all its other sessions, so "
+    "don't reach for it just to move one session around — use `adjust_session` for that. "
+    "If a plan is already active, call `get_training_plan()` or `get_plan_progress()` "
+    "first, mention where they left off, and confirm they actually want to replace it."
+)
+_GARMIN_PLAN_NOTE = (
+    "- This app follows the user's real Garmin Coach training plan automatically — it's "
+    "synced from their Garmin account, so there's no manual plan-builder tool here. If "
+    "they want to change their training goal, tell them to adjust or start a plan in the "
+    "Garmin Connect app directly; it syncs here automatically (at most a day's lag)."
+)
+
+
 def _build_instruction(p: dict) -> str:
     with open(_SYSTEM_PROMPT_PATH) as f:
         template = f.read()
     ftp = float(p.get("ftp") or 0)
     weight = float(p.get("weight_kg") or 1)
     wpkg = round(ftp / weight, 2) if weight > 0 else "N/A"
+
+    import feature_flags
+    plan_creation_note = _GARMIN_PLAN_NOTE if feature_flags.USE_GARMIN_COACHING_PLAN else _CREATE_PLAN_TOOL_NOTE
+
     return template.format(
         stats_date=p.get("stats_date", ""),
         ftp=p.get("ftp", ""),
@@ -649,6 +677,7 @@ def _build_instruction(p: dict) -> str:
         goals=p.get("goals", ""),
         equipment=p.get("equipment", ""),
         location_name=(p.get("location") or {}).get("place_name", "Putney, London"),
+        plan_creation_note=plan_creation_note,
     )
 
 
@@ -799,28 +828,19 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             Confirmation with event ID, or error message.
         """
         import calendar_store
-        creds = calendar_store.load_tokens(user_email)
-        if creds is None:
+        result = calendar_store.create_event_for_session(
+            user_email,
+            {"title": title, "date": date, "target_duration_min": duration_minutes, "note": description},
+            start_time=start_time,
+        )
+        if result.get("not_connected"):
             return _NOT_CONNECTED
-        try:
-            import datetime
-            from googleapiclient.discovery import build
-            service = build("calendar", "v3", credentials=creds)
-            start_dt = datetime.datetime.fromisoformat(f"{date}T{start_time}:00")
-            end_dt = start_dt + datetime.timedelta(minutes=duration_minutes)
-            event_body = {
-                "summary": title,
-                "description": description,
-                "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/London"},
-                "end": {"dateTime": end_dt.isoformat(), "timeZone": "Europe/London"},
-            }
-            created = service.events().insert(calendarId="primary", body=event_body).execute()
-            event_id = created.get("id", "")
-            html_link = created.get("htmlLink", "")
-            return f"Event created: '{title}' on {date} at {start_time} for {duration_minutes} min. ID: {event_id}. Link: {html_link}"
-        except Exception as exc:
-            LOGGER.error("create_training_event error: %s", exc)
-            return f"Error creating calendar event: {exc}"
+        if not result.get("ok"):
+            return f"Error creating calendar event: {result.get('error')}"
+        return (
+            f"Event created: '{title}' on {date} at {start_time} for {duration_minutes} min. "
+            f"ID: {result['event_id']}. Link: {result['html_link']}"
+        )
 
     def delete_calendar_event(event_id: str) -> str:
         """Delete a Google Calendar event by ID.
@@ -928,31 +948,39 @@ def _make_runner(instruction: str, user_email: str = "", session_id: str = "") -
             category=category,
         )
 
+    tools = [
+        FunctionTool(func=query_garmin_data),
+        FunctionTool(func=get_recent_activities),
+        FunctionTool(func=get_recent_stats),
+        FunctionTool(func=get_intraday_stats),
+        FunctionTool(func=get_training_load),
+        FunctionTool(func=get_weekly_summary),
+        FunctionTool(func=get_body_composition_trend),
+        FunctionTool(func=list_calendar_events),
+        FunctionTool(func=create_training_event),
+        FunctionTool(func=delete_calendar_event),
+        FunctionTool(func=get_coaching_log),
+        FunctionTool(func=get_training_plan),
+        FunctionTool(func=get_plan_progress),
+        FunctionTool(func=suggest_next_session),
+        FunctionTool(func=get_weather_forecast),
+        FunctionTool(func=mark_session_complete),
+        FunctionTool(func=adjust_session),
+        FunctionTool(func=link_session_calendar_event),
+    ]
+    # create_training_plan (the custom AI-generated plan) is feature-flagged off
+    # by default — the real Garmin Coach plan drives everything instead (see
+    # feature_flags.py). The tool's code stays in place; it's just not offered
+    # to the model when the flag is on, so it can never be called.
+    import feature_flags
+    if not feature_flags.USE_GARMIN_COACHING_PLAN:
+        tools.append(FunctionTool(func=create_training_plan))
+
     agent = LlmAgent(
         model="gemini-2.5-flash",
         name="health_coach",
         instruction=instruction,
-        tools=[
-            FunctionTool(func=query_garmin_data),
-            FunctionTool(func=get_recent_activities),
-            FunctionTool(func=get_recent_stats),
-            FunctionTool(func=get_intraday_stats),
-            FunctionTool(func=get_training_load),
-            FunctionTool(func=get_weekly_summary),
-            FunctionTool(func=get_body_composition_trend),
-            FunctionTool(func=list_calendar_events),
-            FunctionTool(func=create_training_event),
-            FunctionTool(func=delete_calendar_event),
-            FunctionTool(func=get_coaching_log),
-            FunctionTool(func=get_training_plan),
-            FunctionTool(func=create_training_plan),
-            FunctionTool(func=get_plan_progress),
-            FunctionTool(func=suggest_next_session),
-            FunctionTool(func=get_weather_forecast),
-            FunctionTool(func=mark_session_complete),
-            FunctionTool(func=adjust_session),
-            FunctionTool(func=link_session_calendar_event),
-        ],
+        tools=tools,
     )
     return Runner(agent=agent, app_name=_APP_NAME, session_service=_session_service)
 

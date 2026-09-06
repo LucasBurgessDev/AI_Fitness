@@ -177,7 +177,19 @@
     });
   }
 
-  function renderEmptyState(root) {
+  function renderEmptyState(root, source) {
+    if (source === 'garmin') {
+      root.innerHTML = `
+        <div class="card">
+          <h3 style="margin-bottom:0.9rem">No active Garmin Coach plan</h3>
+          <p style="color:var(--text-muted);font-size:0.85rem">
+            This app follows the training plan from your Garmin account. Start one in the
+            Garmin Connect app and it'll show up here automatically (usually within a day).
+          </p>
+        </div>
+      `;
+      return;
+    }
     root.innerHTML = `
       <div class="card">
         <h3 style="margin-bottom:0.9rem">Set a training goal</h3>
@@ -198,6 +210,7 @@
     const plan = data.plan;
     const goal = data.goal;
     const progress = data.progress;
+    const isGarmin = data.source === 'garmin';
     const todayIso = new Date().toISOString().slice(0, 10);
     const daysLeft = daysBetween(todayIso, goal.target_date);
 
@@ -209,7 +222,9 @@
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:0.9rem">
           <div style="font-size:0.95rem;font-weight:600">${goal.raw_text}</div>
-          <button type="button" class="btn-secondary" id="toggle-change-goal">Change goal</button>
+          ${isGarmin
+            ? `<button type="button" class="btn-secondary" id="sync-calendar-btn">Sync to calendar</button>`
+            : `<button type="button" class="btn-secondary" id="toggle-change-goal">Change goal</button>`}
         </div>
         <div class="plan-header-grid">
           <div class="stat-block"><div class="stat-label">Target date</div><div class="stat-value" style="font-size:1.1rem">${goal.target_date}</div></div>
@@ -219,12 +234,13 @@
         </div>
         ${goal.feasibility_note ? `<div class="feasibility-note">${goal.feasibility_note}</div>` : ''}
         <div class="stage-strip">${renderStageStrip(plan, todayIso)}</div>
+        ${isGarmin ? '' : `
         <div id="change-goal-panel" style="display:none;margin-top:1.1rem;padding-top:1.1rem;border-top:1px solid var(--border)">
           ${goalFormHtml({
             idPrefix: 'change', prefill: goal, submitLabel: 'Replace plan',
             warning: `This replaces your current plan entirely (re-baselined from where your fitness is today) — it doesn't just tweak one field. ${overall != null ? `You're currently ${overall}% through the old one.` : ''}`,
           })}
-        </div>
+        </div>`}
       </div>
 
       <div class="card">
@@ -240,18 +256,38 @@
     root.innerHTML = html;
     pendingOutgoingSummary = null;
     renderLoadChart(progress.weeks);
-    wireGoalForm('change', 'Replace plan', 'Replacing…');
-    document.getElementById('toggle-change-goal').addEventListener('click', () => {
-      const panel = document.getElementById('change-goal-panel');
-      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    });
+    if (isGarmin) {
+      document.getElementById('sync-calendar-btn').addEventListener('click', async (e) => {
+        const btn = e.target;
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Syncing…';
+        try {
+          const res = await fetch('/api/plan/sync-calendar', { method: 'POST' });
+          const result = await res.json();
+          if (!res.ok || result.error) throw new Error(result.error || `HTTP ${res.status}`);
+          btn.textContent = `Synced ${result.synced}`;
+          setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+        } catch (err) {
+          btn.textContent = original;
+          btn.disabled = false;
+          alert(err.message);
+        }
+      });
+    } else {
+      wireGoalForm('change', 'Replace plan', 'Replacing…');
+      document.getElementById('toggle-change-goal').addEventListener('click', () => {
+        const panel = document.getElementById('change-goal-panel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      });
+    }
   }
 
   function renderStageStrip(plan, todayIso) {
     return (plan.phases || []).map(p => {
       const dates = (plan.sessions || []).filter(s => s.phase === p.name).map(s => s.date);
       const isCurrent = dates.length && todayIso >= dates[0] && todayIso <= dates[dates.length - 1];
-      const label = { base: 'Foundation', build: 'Build', peak: 'Peak', taper: 'Taper' }[p.name] || p.name;
+      const label = { base: 'Foundation', build: 'Build', peak: 'Peak', taper: 'Taper', garmin_coach: 'Garmin Coach Plan' }[p.name] || p.name;
       return `<div class="stage-block ${isCurrent ? 'current' : ''}">${label}<br>${p.weeks}wk</div>`;
     }).join('');
   }
@@ -307,7 +343,7 @@
       loading.style.display = 'none';
       root.style.display = 'block';
       if (!data.active) {
-        renderEmptyState(root);
+        renderEmptyState(root, data.source);
       } else {
         renderActivePlan(root, data);
       }

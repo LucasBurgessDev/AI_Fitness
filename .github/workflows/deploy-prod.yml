@@ -5,6 +5,14 @@ on:
     branches:
       - main
 
+# See deploy-dev.yml's identical guard: two pushes to main close together used
+# to race on the same Cloud Run resources and could ABORT with a resource
+# version conflict. Queue instead of cancel, so the second push's commit still
+# deploys once the first finishes.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: health-data-482722
   REGION: europe-west2
@@ -161,7 +169,7 @@ jobs:
           gcloud run jobs deploy "$JOB_NAME" \
             --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/garmin-fitness-daily:latest" \
             --service-account "$SA_EMAIL" \
-            --set-env-vars "TOKEN_CACHE_GCS_URI=gs://$BUCKET/garmin/token_cache.tar.gz,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,SAVE_PATH=/tmp,LOOKBACK_DAYS=3,FTP_LOOKBACK_DAYS=60,BQ_PROJECT_ID=$PROJECT_ID" \
+            --set-env-vars "TOKEN_CACHE_GCS_URI=gs://$BUCKET/garmin/token_cache.tar.gz,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,SAVE_PATH=/tmp,LOOKBACK_DAYS=3,FTP_LOOKBACK_DAYS=60,BQ_PROJECT_ID=$PROJECT_ID,GCS_PROFILE_BUCKET=$BUCKET,GARMIN_PLAN_SYNC_HOURS=24" \
             --max-retries 1 \
             --task-timeout 900 \
             --memory 1Gi \
@@ -217,7 +225,7 @@ jobs:
             --image "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/cycling-coach:latest" \
             --region "$REGION" \
             --service-account "$SA_EMAIL" \
-            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=$MORNING_SHEET_ID,EVENING_SHEET_ID=$EVENING_SHEET_ID" \
+            --set-env-vars "PROJECT_ID=$PROJECT_ID,DRIVE_FOLDER_ID=$DRIVE_FOLDER_ID,GCS_PROFILE_BUCKET=$BUCKET,REDIRECT_URI=https://cycling-coach-l3h3kcxbia-nw.a.run.app/auth/callback,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=1,MORNING_SHEET_ID=$MORNING_SHEET_ID,EVENING_SHEET_ID=$EVENING_SHEET_ID,USE_GARMIN_COACHING_PLAN=true" \
             --set-secrets "GOOGLE_CLIENT_ID=cycling-coach-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=cycling-coach-oauth-client-secret:latest,ALLOWED_EMAIL=cycling-coach-allowed-email:latest,SECRET_KEY=cycling-coach-secret-key:latest" \
             --allow-unauthenticated \
             --memory 1Gi \
