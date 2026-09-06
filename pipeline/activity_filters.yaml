@@ -8,6 +8,7 @@ include:
   cycling:
     - cycling
     - road_cycling
+    - road_biking
     - gravel_cycling
     - mountain_biking
     - indoor_cycling
