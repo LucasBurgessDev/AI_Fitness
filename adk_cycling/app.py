@@ -1835,6 +1835,12 @@ async def api_plan_progress(request: Request):
 @app.post("/api/plan/create")
 async def api_plan_create(request: Request):
     session = _require_session(request)
+    import feature_flags
+    if feature_flags.USE_GARMIN_COACHING_PLAN:
+        return JSONResponse(
+            {"error": "Custom plan creation is off — this app follows your Garmin Coach plan."},
+            status_code=400,
+        )
     import asyncio
     import plan_progress
     from datetime import date
@@ -1861,6 +1867,58 @@ async def api_plan_create(request: Request):
         LOGGER.exception("plan create error: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)
     return JSONResponse(plan)
+
+
+@app.post("/api/plan/sync-calendar")
+async def api_plan_sync_calendar(request: Request):
+    """Bulk-create Google Calendar events for every upcoming, non-rest plan session
+    that doesn't already have one. Separate from the chat tool's per-session flow
+    (agent.create_training_event) — this is the /plan page's explicit "Sync to
+    calendar" button, a deliberate user-initiated bulk action, not something the
+    agent does on its own (see system_prompt.txt's Training Plan section)."""
+    session = _require_session(request)
+    import asyncio
+    import calendar_store
+    import plan_store
+    from datetime import date
+
+    def _sync() -> dict:
+        plan = plan_store.load()
+        if not plan.get("active"):
+            return {"synced": 0, "skipped": 0, "error": "No active training plan."}
+
+        today_iso = date.today().isoformat()
+        sessions = plan.get("sessions") or []
+        updated = list(sessions)
+        synced = 0
+        skipped = 0
+        not_connected = False
+        for i, s in enumerate(sessions):
+            if s.get("session_type") == "rest" or s.get("date", "") < today_iso or s.get("calendar_event_id"):
+                continue
+            result = calendar_store.create_event_for_session(session["email"], s)
+            if result.get("not_connected"):
+                not_connected = True
+                break
+            if result.get("ok"):
+                updated[i] = {**s, "calendar_event_id": result["event_id"]}
+                synced += 1
+            else:
+                skipped += 1
+        if synced:
+            plan_store.save({**plan, "sessions": updated})
+
+        out = {"synced": synced, "skipped": skipped}
+        if not_connected:
+            out["error"] = "Calendar not connected — sign out and back in to grant access."
+        return out
+
+    try:
+        result = await asyncio.to_thread(_sync)
+    except Exception as exc:
+        LOGGER.exception("plan sync-calendar error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    return JSONResponse(result)
 
 
 # ---------------------------------------------------------------------------

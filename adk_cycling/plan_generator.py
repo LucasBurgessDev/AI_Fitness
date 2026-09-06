@@ -33,6 +33,11 @@ PHASE_LABELS: dict[str, str] = {
     "build": "build weeks",
     "peak": "peak weeks",
     "taper": "taper weeks",
+    # Garmin's adaptive-plan API doesn't expose phase boundaries the way our own
+    # generator does (see garmin_plan_sync.py) — its sessions all land in one
+    # synthetic "garmin_coach" phase, labelled plainly here rather than leaking
+    # that internal key.
+    "garmin_coach": "your Garmin Coach plan",
 }
 
 PLAIN_LABELS: dict[str, tuple[str, str]] = {
