@@ -2002,14 +2002,21 @@ async def startup_event():
     threading.Thread(target=warm_bq_cache, daemon=True).start()
 
 
-@app.get("/healthz")
+@app.get("/api/health")
 async def health():
     # Was "/health" — that path is already taken by health_analytics_page above
     # (the user-facing Health tab, linked from base.html and push notifications),
     # registered first, so it always won the route match and this liveness check
     # was permanently unreachable (redirected to /login like every other page
-    # instead of returning {"status": "ok"}). Renamed to the conventional
-    # /healthz path instead of touching the user-facing route.
+    # instead of returning {"status": "ok"}).
+    #
+    # First renamed to the conventional "/healthz" — but Cloud Run/Google
+    # Frontend reserves that exact literal path at the infrastructure level
+    # and intercepts it before it ever reaches the container (confirmed live:
+    # every other variant, e.g. "/health-check" or "/api/healthz", reaches
+    # this app fine and gets a normal FastAPI 404 — only the literal
+    # "/healthz" gets Google's own generic HTML 404 instead). Moved under
+    # the app's existing /api/ prefix instead, which isn't reserved.
     return {"status": "ok"}
 
 
