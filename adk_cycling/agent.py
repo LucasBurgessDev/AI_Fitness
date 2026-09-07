@@ -667,6 +667,12 @@ def _build_instruction(p: dict) -> str:
     import feature_flags
     plan_creation_note = _GARMIN_PLAN_NOTE if feature_flags.USE_GARMIN_COACHING_PLAN else _CREATE_PLAN_TOOL_NOTE
 
+    cycling_kpi = (p.get("kpis") or {}).get("weekly_cycling_km") or {}
+    if cycling_kpi.get("enabled") and cycling_kpi.get("target"):
+        weekly_cycling_km_target = f"{cycling_kpi['target']} km/week"
+    else:
+        weekly_cycling_km_target = "not set — ask the user if it comes up, or suggest setting one in Settings"
+
     return template.format(
         stats_date=p.get("stats_date", ""),
         ftp=p.get("ftp", ""),
@@ -678,6 +684,7 @@ def _build_instruction(p: dict) -> str:
         equipment=p.get("equipment", ""),
         location_name=(p.get("location") or {}).get("place_name", "Putney, London"),
         plan_creation_note=plan_creation_note,
+        weekly_cycling_km_target=weekly_cycling_km_target,
     )
 
 
